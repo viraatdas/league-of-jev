@@ -1,0 +1,8 @@
+.rudder/
+.rudder-workspaces/
+.rudder-worktrees/
+RUDDER.md
+RUDDER_SHARED.md
+.env
+node_modules/
+fixtures/*.json
