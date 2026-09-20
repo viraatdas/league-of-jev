@@ -17,34 +17,34 @@ BARON_RESPAWN = 360.0
 
 @dataclass
 class Perception:
-    """What the screen and minimap modules saw on the last frame. All optional; None = unknown."""
+    """API-derived situational signals. No screen reading in v0."""
 
-    enemy_champions_on_screen: int = 0
-    enemy_minions_on_screen: int = 0
-    ally_minions_on_screen: int = 0
-    nearest_enemy_champion_px: float | None = None  # distance from my champion, screen px
-    enemies_on_minimap: int = 0  # enemy champion icons currently visible on the minimap
-    under_enemy_tower: bool | None = None
-    my_map_pos: tuple[float, float] | None = None  # Summoner's Rift units, if known
+    position: str = "unknown"            # base | traveling | lane | forward | retreating | dead
+    lane_progress_pct: int | None = None  # 0 = own fountain, 100 = enemy fountain (dead reckoned)
+    hp_lost_recent_pct: float = 0.0       # HP% lost in the last few seconds
+    seconds_since_damage: float | None = None
+    recalling: bool = False
 
     def to_state(self) -> dict[str, Any]:
-        near = self.nearest_enemy_champion_px
-        if near is None:
-            closest = "none visible"
-        elif near < 350:
-            closest = "in melee or short dash range"
-        elif near < 700:
-            closest = "close, within a Q or E gap"
+        if self.hp_lost_recent_pct >= 12:
+            damage = "taking heavy damage right now"
+        elif self.hp_lost_recent_pct >= 3:
+            damage = "taking some damage"
+        elif self.seconds_since_damage is not None and self.seconds_since_damage < 8:
+            damage = "was hit a few seconds ago"
         else:
-            closest = "on screen but far"
-        return {
-            "enemy_champions_visible": self.enemy_champions_on_screen,
-            "closest_enemy_champion": closest,
-            "enemy_minions_nearby": self.enemy_minions_on_screen,
-            "ally_minions_nearby": self.ally_minions_on_screen,
-            "enemy_champions_visible_on_minimap": self.enemies_on_minimap,
-            "under_enemy_tower": self.under_enemy_tower,
-        }
+            damage = "not being attacked"
+        where = self.position
+        if self.lane_progress_pct is not None and where in ("lane", "forward", "traveling"):
+            if self.lane_progress_pct >= 56:
+                where = "pushed up near the enemy tower"
+            elif self.lane_progress_pct >= 47:
+                where = "at the middle of mid lane"
+            elif self.lane_progress_pct >= 38:
+                where = "near my own mid tower"
+            else:
+                where = "walking from base to lane"
+        return {"where_i_am": where, "damage": damage, "recalling": self.recalling}
 
 
 def _name(p: dict) -> str:
