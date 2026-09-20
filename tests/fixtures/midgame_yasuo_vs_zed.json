@@ -1,0 +1,576 @@
+{
+ "activePlayer": {
+  "abilities": {
+   "E": {
+    "abilityLevel": 3,
+    "displayName": "Molten Shield",
+    "id": "AnnieE",
+    "rawDescription": "GeneratedTip_Spell_AnnieE_Description",
+    "rawDisplayName": "GeneratedTip_Spell_AnnieE_DisplayName"
+   },
+   "Passive": {
+    "displayName": "Pyromania",
+    "id": "AnniePassive",
+    "rawDescription": "GeneratedTip_Passive_AnniePassive_Description",
+    "rawDisplayName": "GeneratedTip_Passive_AnniePassive_DisplayName"
+   },
+   "Q": {
+    "abilityLevel": 4,
+    "displayName": "Disintegrate",
+    "id": "AnnieQ",
+    "rawDescription": "GeneratedTip_Spell_AnnieQ_Description",
+    "rawDisplayName": "GeneratedTip_Spell_AnnieQ_DisplayName"
+   },
+   "R": {
+    "abilityLevel": 1,
+    "displayName": "Summon: Tibbers",
+    "id": "AnnieR",
+    "rawDescription": "GeneratedTip_Spell_AnnieR_Description",
+    "rawDisplayName": "GeneratedTip_Spell_AnnieR_DisplayName"
+   },
+   "W": {
+    "abilityLevel": 1,
+    "displayName": "Incinerate",
+    "id": "AnnieW",
+    "rawDescription": "GeneratedTip_Spell_AnnieW_Description",
+    "rawDisplayName": "GeneratedTip_Spell_AnnieW_DisplayName"
+   }
+  },
+  "championStats": {
+   "abilityPower": 0.0,
+   "armor": 0.0,
+   "armorPenetrationFlat": 0.0,
+   "armorPenetrationPercent": 0.0,
+   "attackDamage": 0.0,
+   "attackRange": 0.0,
+   "attackSpeed": 0.0,
+   "bonusArmorPenetrationPercent": 0.0,
+   "bonusMagicPenetrationPercent": 0.0,
+   "cooldownReduction": -0.0,
+   "critChance": 0.0,
+   "critDamage": 0.0,
+   "currentHealth": 620.0,
+   "healthRegenRate": 0.0,
+   "lifeSteal": 0.0,
+   "magicLethality": 0.0,
+   "magicPenetrationFlat": 0.0,
+   "magicPenetrationPercent": 0.0,
+   "magicResist": 0.0,
+   "maxHealth": 1480.0,
+   "moveSpeed": 0.0,
+   "physicalLethality": 0.0,
+   "resourceMax": 0.0,
+   "resourceRegenRate": 0.0,
+   "resourceType": "WIND",
+   "resourceValue": 0.0,
+   "spellVamp": 0.0,
+   "tenacity": 0.0
+  },
+  "currentGold": 1250.0,
+  "fullRunes": {
+   "generalRunes": [
+    {
+     "displayName": "Electrocute",
+     "id": 8112,
+     "rawDescription": "perk_tooltip_Electrocute",
+     "rawDisplayName": "perk_displayname_Electrocute"
+    },
+    {
+     "displayName": "Cheap Shot",
+     "id": 8126,
+     "rawDescription": "perk_tooltip_CheapShot",
+     "rawDisplayName": "perk_displayname_CheapShot"
+    },
+    {
+     "displayName": "Eyeball Collection",
+     "id": 8138,
+     "rawDescription": "perk_tooltip_EyeballCollection",
+     "rawDisplayName": "perk_displayname_EyeballCollection"
+    },
+    {
+     "displayName": "Relentless Hunter",
+     "id": 8105,
+     "rawDescription": "perk_tooltip_8105",
+     "rawDisplayName": "perk_displayname_8105"
+    },
+    {
+     "displayName": "Celerity",
+     "id": 8234,
+     "rawDescription": "perk_tooltip_Celerity",
+     "rawDisplayName": "perk_displayname_Celerity"
+    },
+    {
+     "displayName": "Gathering Storm",
+     "id": 8236,
+     "rawDescription": "perk_tooltip_GatheringStorm",
+     "rawDisplayName": "perk_displayname_GatheringStorm"
+    }
+   ],
+   "keystone": {
+    "displayName": "Electrocute",
+    "id": 8112,
+    "rawDescription": "perk_tooltip_Electrocute",
+    "rawDisplayName": "perk_displayname_Electrocute"
+   },
+   "primaryRuneTree": {
+    "displayName": "Domination",
+    "id": 8100,
+    "rawDescription": "perkstyle_tooltip_7200",
+    "rawDisplayName": "perkstyle_displayname_7200"
+   },
+   "secondaryRuneTree": {
+    "displayName": "Sorcery",
+    "id": 8200,
+    "rawDescription": "perkstyle_tooltip_7202",
+    "rawDisplayName": "perkstyle_displayname_7202"
+   },
+   "statRunes": [
+    {
+     "id": 5008,
+     "rawDescription": "perk_tooltip_StatModAdaptive"
+    },
+    {
+     "id": 5003,
+     "rawDescription": "perk_tooltip_StatModMagicResist"
+    },
+    {
+     "id": 5003,
+     "rawDescription": "perk_tooltip_StatModMagicResist"
+    }
+   ]
+  },
+  "level": 9,
+  "summonerName": "Viraat"
+ },
+ "allPlayers": [
+  {
+   "championName": "Yasuo",
+   "isBot": false,
+   "isDead": false,
+   "level": 9,
+   "position": "MIDDLE",
+   "rawChampionName": "game_character_displayname_Yasuo",
+   "respawnTimer": 0.0,
+   "runes": {},
+   "scores": {
+    "assists": 0,
+    "creepScore": 71,
+    "deaths": 1,
+    "kills": 2,
+    "wardScore": 0.0
+   },
+   "skinID": 0,
+   "summonerName": "Viraat",
+   "summonerSpells": {},
+   "team": "ORDER",
+   "items": [
+    {
+     "displayName": "Berserker's Greaves",
+     "itemID": 0,
+     "count": 1,
+     "slot": 0,
+     "price": 0,
+     "canUse": false,
+     "consumable": false
+    },
+    {
+     "displayName": "Noonquiver",
+     "itemID": 0,
+     "count": 1,
+     "slot": 1,
+     "price": 0,
+     "canUse": false,
+     "consumable": false
+    },
+    {
+     "displayName": "Doran's Blade",
+     "itemID": 0,
+     "count": 1,
+     "slot": 2,
+     "price": 0,
+     "canUse": false,
+     "consumable": false
+    }
+   ]
+  },
+  {
+   "championName": "Garen",
+   "isBot": false,
+   "isDead": false,
+   "level": 8,
+   "position": "TOP",
+   "rawChampionName": "game_character_displayname_Garen",
+   "respawnTimer": 0.0,
+   "runes": {},
+   "scores": {
+    "assists": 1,
+    "creepScore": 55,
+    "deaths": 2,
+    "kills": 0,
+    "wardScore": 0.0
+   },
+   "skinID": 0,
+   "summonerName": "Ally1",
+   "summonerSpells": {},
+   "team": "ORDER",
+   "items": [
+    {
+     "displayName": "Doran's Shield",
+     "itemID": 0,
+     "count": 1,
+     "slot": 0,
+     "price": 0,
+     "canUse": false,
+     "consumable": false
+    }
+   ]
+  },
+  {
+   "championName": "Lee Sin",
+   "isBot": false,
+   "isDead": false,
+   "level": 8,
+   "position": "JUNGLE",
+   "rawChampionName": "game_character_displayname_Lee Sin",
+   "respawnTimer": 0.0,
+   "runes": {},
+   "scores": {
+    "assists": 3,
+    "creepScore": 40,
+    "deaths": 1,
+    "kills": 1,
+    "wardScore": 0.0
+   },
+   "skinID": 0,
+   "summonerName": "Ally2",
+   "summonerSpells": {},
+   "team": "ORDER",
+   "items": [
+    {
+     "displayName": "Boots",
+     "itemID": 0,
+     "count": 1,
+     "slot": 0,
+     "price": 0,
+     "canUse": false,
+     "consumable": false
+    }
+   ]
+  },
+  {
+   "championName": "Jinx",
+   "isBot": false,
+   "isDead": false,
+   "level": 8,
+   "position": "BOTTOM",
+   "rawChampionName": "game_character_displayname_Jinx",
+   "respawnTimer": 0.0,
+   "runes": {},
+   "scores": {
+    "assists": 1,
+    "creepScore": 60,
+    "deaths": 0,
+    "kills": 1,
+    "wardScore": 0.0
+   },
+   "skinID": 0,
+   "summonerName": "Ally3",
+   "summonerSpells": {},
+   "team": "ORDER",
+   "items": [
+    {
+     "displayName": "Doran's Blade",
+     "itemID": 0,
+     "count": 1,
+     "slot": 0,
+     "price": 0,
+     "canUse": false,
+     "consumable": false
+    }
+   ]
+  },
+  {
+   "championName": "Thresh",
+   "isBot": false,
+   "isDead": false,
+   "level": 7,
+   "position": "UTILITY",
+   "rawChampionName": "game_character_displayname_Thresh",
+   "respawnTimer": 0.0,
+   "runes": {},
+   "scores": {
+    "assists": 2,
+    "creepScore": 10,
+    "deaths": 1,
+    "kills": 0,
+    "wardScore": 0.0
+   },
+   "skinID": 0,
+   "summonerName": "Ally4",
+   "summonerSpells": {},
+   "team": "ORDER",
+   "items": [
+    {
+     "displayName": "Relic Shield",
+     "itemID": 0,
+     "count": 1,
+     "slot": 0,
+     "price": 0,
+     "canUse": false,
+     "consumable": false
+    }
+   ]
+  },
+  {
+   "championName": "Darius",
+   "isBot": false,
+   "isDead": false,
+   "level": 9,
+   "position": "TOP",
+   "rawChampionName": "game_character_displayname_Darius",
+   "respawnTimer": 0.0,
+   "runes": {},
+   "scores": {
+    "assists": 0,
+    "creepScore": 62,
+    "deaths": 0,
+    "kills": 2,
+    "wardScore": 0.0
+   },
+   "skinID": 0,
+   "summonerName": "Enemy1",
+   "summonerSpells": {},
+   "team": "CHAOS",
+   "items": [
+    {
+     "displayName": "Doran's Shield",
+     "itemID": 0,
+     "count": 1,
+     "slot": 0,
+     "price": 0,
+     "canUse": false,
+     "consumable": false
+    },
+    {
+     "displayName": "Boots",
+     "itemID": 0,
+     "count": 1,
+     "slot": 1,
+     "price": 0,
+     "canUse": false,
+     "consumable": false
+    }
+   ]
+  },
+  {
+   "championName": "Graves",
+   "isBot": false,
+   "isDead": true,
+   "level": 8,
+   "position": "JUNGLE",
+   "rawChampionName": "game_character_displayname_Graves",
+   "respawnTimer": 18.0,
+   "runes": {},
+   "scores": {
+    "assists": 2,
+    "creepScore": 38,
+    "deaths": 1,
+    "kills": 1,
+    "wardScore": 0.0
+   },
+   "skinID": 0,
+   "summonerName": "Enemy2",
+   "summonerSpells": {},
+   "team": "CHAOS",
+   "items": [
+    {
+     "displayName": "Boots",
+     "itemID": 0,
+     "count": 1,
+     "slot": 0,
+     "price": 0,
+     "canUse": false,
+     "consumable": false
+    }
+   ]
+  },
+  {
+   "championName": "Zed",
+   "isBot": false,
+   "isDead": false,
+   "level": 9,
+   "position": "MIDDLE",
+   "rawChampionName": "game_character_displayname_Zed",
+   "respawnTimer": 0.0,
+   "runes": {},
+   "scores": {
+    "assists": 1,
+    "creepScore": 66,
+    "deaths": 2,
+    "kills": 1,
+    "wardScore": 0.0
+   },
+   "skinID": 0,
+   "summonerName": "Enemy3",
+   "summonerSpells": {},
+   "team": "CHAOS",
+   "items": [
+    {
+     "displayName": "Serrated Dirk",
+     "itemID": 0,
+     "count": 1,
+     "slot": 0,
+     "price": 0,
+     "canUse": false,
+     "consumable": false
+    },
+    {
+     "displayName": "Boots",
+     "itemID": 0,
+     "count": 1,
+     "slot": 1,
+     "price": 0,
+     "canUse": false,
+     "consumable": false
+    },
+    {
+     "displayName": "Long Sword",
+     "itemID": 0,
+     "count": 1,
+     "slot": 2,
+     "price": 0,
+     "canUse": false,
+     "consumable": false
+    }
+   ]
+  },
+  {
+   "championName": "Caitlyn",
+   "isBot": false,
+   "isDead": false,
+   "level": 8,
+   "position": "BOTTOM",
+   "rawChampionName": "game_character_displayname_Caitlyn",
+   "respawnTimer": 0.0,
+   "runes": {},
+   "scores": {
+    "assists": 1,
+    "creepScore": 58,
+    "deaths": 1,
+    "kills": 0,
+    "wardScore": 0.0
+   },
+   "skinID": 0,
+   "summonerName": "Enemy4",
+   "summonerSpells": {},
+   "team": "CHAOS",
+   "items": [
+    {
+     "displayName": "Doran's Blade",
+     "itemID": 0,
+     "count": 1,
+     "slot": 0,
+     "price": 0,
+     "canUse": false,
+     "consumable": false
+    }
+   ]
+  },
+  {
+   "championName": "Lulu",
+   "isBot": false,
+   "isDead": false,
+   "level": 7,
+   "position": "UTILITY",
+   "rawChampionName": "game_character_displayname_Lulu",
+   "respawnTimer": 0.0,
+   "runes": {},
+   "scores": {
+    "assists": 1,
+    "creepScore": 8,
+    "deaths": 1,
+    "kills": 0,
+    "wardScore": 0.0
+   },
+   "skinID": 0,
+   "summonerName": "Enemy5",
+   "summonerSpells": {},
+   "team": "CHAOS",
+   "items": [
+    {
+     "displayName": "Spellthief's Edge",
+     "itemID": 0,
+     "count": 1,
+     "slot": 0,
+     "price": 0,
+     "canUse": false,
+     "consumable": false
+    }
+   ]
+  }
+ ],
+ "events": {
+  "Events": [
+   {
+    "EventID": 0,
+    "EventName": "GameStart",
+    "EventTime": 0.0
+   },
+   {
+    "EventID": 1,
+    "EventName": "MinionsSpawning",
+    "EventTime": 65.0
+   },
+   {
+    "EventID": 2,
+    "EventName": "FirstBlood",
+    "EventTime": 231.0,
+    "Recipient": "Viraat"
+   },
+   {
+    "EventID": 3,
+    "EventName": "ChampionKill",
+    "EventTime": 231.0,
+    "KillerName": "Viraat",
+    "VictimName": "Enemy3",
+    "Assisters": []
+   },
+   {
+    "EventID": 4,
+    "EventName": "DragonKill",
+    "EventTime": 452.0,
+    "KillerName": "Enemy2",
+    "DragonType": "Fire",
+    "Stolen": "False",
+    "Assisters": []
+   },
+   {
+    "EventID": 5,
+    "EventName": "ChampionKill",
+    "EventTime": 560.0,
+    "KillerName": "Enemy3",
+    "VictimName": "Viraat",
+    "Assisters": [
+     "Enemy2"
+    ]
+   },
+   {
+    "EventID": 6,
+    "EventName": "ChampionKill",
+    "EventTime": 583.0,
+    "KillerName": "Ally2",
+    "VictimName": "Enemy2",
+    "Assisters": [
+     "Viraat"
+    ]
+   }
+  ]
+ },
+ "gameData": {
+  "gameMode": "CLASSIC",
+  "gameTime": 600.0,
+  "mapName": "Map11",
+  "mapNumber": 11,
+  "mapTerrain": "Default"
+ }
+}

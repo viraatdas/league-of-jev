@@ -6,3 +6,7 @@ RUDDER_SHARED.md
 .env
 node_modules/
 fixtures/*.json
+.venv/
+__pycache__/
+*.pyc
+snapshots/

@@ -1,0 +1,30 @@
+[project]
+name = "league-of-jev"
+version = "0.1.0"
+description = "Jev (TypeSafe System One) plays Yasuo: Riot Live Client API + screen perception + macOS input"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28.1",
+    "mss>=10.2.0",
+    "numpy>=2.5.3",
+    "opencv-python-headless>=5.0.0.93",
+    "pyobjc-framework-applicationservices>=12.2.2",
+    "pyobjc-framework-quartz>=12.2.2",
+    "python-dotenv>=1.2.3",
+    "rich>=15.0.0",
+    "typer>=0.27.2",
+    "typesafe-sdk>=0.7.0",
+]
+
+[project.scripts]
+jev = "jev.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["jev"]
+
+[tool.uv]
+package = true
