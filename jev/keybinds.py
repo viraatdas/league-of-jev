@@ -193,11 +193,14 @@ def find_config_dir() -> Path | None:
     for d in CANDIDATE_DIRS:
         if d.is_dir():
             return d
-    root = Path("/Applications/League of Legends.app")
-    if root.exists():
-        for p in root.glob("Contents/*/Config"):
-            if p.is_dir():
-                return p
+    roots = [Path("/Applications/League of Legends.app"), Path.home() / "Library/Application Support/Riot Games"]
+    for root in roots:
+        if not root.exists():
+            continue
+        for pattern in ("Contents/*/Config", "Contents/*/*/Config", "*/Config", "*/*/Config"):
+            for p in root.glob(pattern):
+                if p.is_dir() and ((p / "input.ini").exists() or (p / "PersistedSettings.json").exists() or (p / "game.cfg").exists()):
+                    return p
     return None
 
 

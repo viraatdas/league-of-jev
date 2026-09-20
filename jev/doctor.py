@@ -93,11 +93,29 @@ def check_keybinds() -> tuple[bool, str]:
 
 
 def check_game_files() -> tuple[bool, str]:
-    game = LEAGUE_APP / "Contents" / "LoL" / "Game"
-    if not game.exists():
-        return False, "game files not patched yet (Contents/LoL/Game missing)"
-    n = sum(1 for _ in game.rglob("*"))
-    return n > 500, f"{n} files under Contents/LoL/Game"
+    """Layout-agnostic: look for the game binary anywhere in the bundle and report size."""
+    if not LEAGUE_APP.exists():
+        return False, "bundle missing"
+    binaries = [p for p in LEAGUE_APP.rglob("League of Legends") if p.is_file() and "MacOS" in p.parts]
+    total = 0
+    for p in LEAGUE_APP.rglob("*"):
+        try:
+            if p.is_file():
+                total += p.stat().st_size
+        except OSError:
+            pass
+    gb = total / 1e9
+    patching = Path("/Users/Shared/Riot Games/Metadata/league_of_legends.live.game_patch").exists()
+    if not binaries:
+        return False, f"no game binary yet ({gb:.1f} GB on disk, patch dir {'present' if patching else 'absent'})"
+    return True, f"game binary at {binaries[0].relative_to(LEAGUE_APP)} ({gb:.1f} GB on disk)"
+
+
+def check_frontmost() -> tuple[bool, str]:
+    from jev.control import frontmost_app_name
+
+    name = frontmost_app_name()
+    return "league" in name.lower(), f"frontmost app: {name or 'unknown'} (input only sent while League is frontmost)"
 
 
 def run_all() -> list[tuple[str, bool, str]]:
@@ -106,6 +124,7 @@ def run_all() -> list[tuple[str, bool, str]]:
         ("League installed", check_league),
         ("Game files", check_game_files),
         ("Keybinds", check_keybinds),
+        ("Frontmost app", check_frontmost),
         ("Game API", check_game_api),
         ("Accessibility", check_accessibility),
         ("Screen Recording", check_screen_recording),

@@ -41,19 +41,43 @@ KEYCODES: dict[str, int] = {
 }
 
 
-class Controller:
-    """Posts mouse and keyboard events. With dry_run=True it only logs what it would do."""
+def frontmost_app_name() -> str:
+    try:
+        from AppKit import NSWorkspace
 
-    def __init__(self, dry_run: bool = False, log=None) -> None:
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        return str(app.localizedName()) if app is not None else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+class Controller:
+    """Posts mouse and keyboard events. With dry_run=True it only logs what it would do.
+
+    Input is only sent while League is the frontmost app, so switching to the terminal
+    (Cmd-Tab, then Ctrl-C) is always safe.
+    """
+
+    def __init__(self, dry_run: bool = False, log=None, require_frontmost: str | None = "League") -> None:
         self.dry_run = dry_run
         self.log = log or (lambda msg: None)
         self._pos = (0.0, 0.0)
+        self.require_frontmost = require_frontmost
+        self.blocked = 0
+
+    def _allowed(self) -> bool:
+        if self.dry_run:
+            return False
+        if self.require_frontmost and self.require_frontmost.lower() not in frontmost_app_name().lower():
+            self.blocked += 1
+            return False
+        return True
 
     # -- mouse -----------------------------------------------------------------
     def move(self, x: float, y: float) -> None:
         self._pos = (x, y)
         self.log(f"move({x:.0f},{y:.0f})")
-        if self.dry_run:
+        if not self._allowed():
             return
         ev = CGEventCreateMouseEvent(None, kCGEventMouseMoved, (x, y), kCGMouseButtonLeft)
         CGEventPost(kCGHIDEventTap, ev)
@@ -61,7 +85,7 @@ class Controller:
     def click(self, x: float, y: float, button: str = "right", hold_ms: int = 25) -> None:
         self.move(x, y)
         self.log(f"click_{button}({x:.0f},{y:.0f})")
-        if self.dry_run:
+        if not self._allowed():
             return
         if button == "left":
             down, up, btn = kCGEventLeftMouseDown, kCGEventLeftMouseUp, kCGMouseButtonLeft
@@ -76,7 +100,7 @@ class Controller:
         code = KEYCODES[name.lower()]
         mods = "".join(m for m, on in (("ctrl+", ctrl), ("shift+", shift), ("alt+", alt), ("cmd+", cmd)) if on)
         self.log(f"key({mods}{name})")
-        if self.dry_run:
+        if not self._allowed():
             return
         flags = 0
         if ctrl:

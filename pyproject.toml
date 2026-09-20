@@ -9,6 +9,7 @@ dependencies = [
     "numpy>=2.5.3",
     "opencv-python-headless>=5.0.0.93",
     "pyobjc-framework-applicationservices>=12.2.2",
+    "pyobjc-framework-cocoa>=12.2.2",
     "pyobjc-framework-quartz>=12.2.2",
     "python-dotenv>=1.2.3",
     "rich>=15.0.0",
