@@ -141,23 +141,21 @@ Riot game API ──poll 2-4 Hz──▶ Poller ──▶ State builder ──�
 
 ## Setup checklist
 
-1. **League of Legends.** `brew install --cask league-of-legends` has been run
-   and staged the Riot installer. Open "Install League of Legends na.app" from
-   `/opt/homebrew/Caskroom/league-of-legends/1.0/` and let the Riot Client
-   download the game. The Mac client runs on Apple silicon and includes
-   embedded Vanguard, no separate install. You need a Riot account on NA
-   (the cask is the NA installer).
-2. **TypeSafe key.** Create one at https://console.typesafe.ai/keys and put it
-   in `.env` as `TYPESAFE_API_KEY`. `.env` is gitignored.
+1. **League of Legends.** The user is downloading the Mac client directly from
+   Riot. It runs on Apple silicon and includes embedded Vanguard, no separate
+   install.
+2. **TypeSafe key.** Done. It lives in the gitignored `.env` as
+   `TYPESAFE_API_KEY` and was verified against `GET /v1/models`.
 3. **Toolchain.** Node 26, pnpm, and bun are already installed. The app uses
    `@typesafe-ai/sdk` (Node 20+). The TypeSafe Claude Code plugin is installed.
 
 ## Open questions (not blocking M1)
 
 - Region: NA assumed. If you play on another server the cask URL changes.
-- Your champion pool and main role, which seed the `next_item` candidates and
-  the champ select assistant.
-- Voice first or overlay first for M3.
+- Champion: Yasuo. Seeds the `next_item` candidates and the champ select pool.
+- Voice and overlay are deprioritized. The user wants the harness to play the
+  game itself with Jev driving decisions. Open question: which control harness,
+  see the harness notes once decided.
 - Whether `coach` mode ever runs outside Practice Tool and vs AI on your main.
 
 ## References
