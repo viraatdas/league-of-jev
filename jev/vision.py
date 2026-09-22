@@ -55,12 +55,19 @@ class View:
 
 
 def _masks(hsv: np.ndarray) -> dict[str, np.ndarray]:
-    h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    """Team colour masks (uint8 0/255). cv2.inRange runs vectorised in C, ~10x numpy comparisons."""
+    red = cv2.inRange(hsv, (0, 120, 110), (8, 255, 255))
+    red |= cv2.inRange(hsv, (172, 120, 110), (180, 255, 255))
     return {
-        "enemy": (((h <= 8) | (h >= 172)) & (s >= 120) & (v >= 110)),
-        "ally": ((h >= 92) & (h <= 128) & (s >= 110) & (v >= 120)),
-        "self": ((h >= 18) & (h <= 34) & (s >= 120) & (v >= 150)),
+        "enemy": red,
+        "ally": cv2.inRange(hsv, (92, 110, 120), (128, 255, 255)),
+        "self": cv2.inRange(hsv, (18, 120, 150), (34, 255, 255)),
     }
+
+
+def to_bgr(img: np.ndarray) -> np.ndarray:
+    """Capture frames are BGRA; saved screenshots are BGR."""
+    return cv2.cvtColor(img, cv2.COLOR_BGRA2BGR) if img.ndim == 3 and img.shape[2] == 4 else img
 
 
 class VisionReader:
@@ -70,40 +77,61 @@ class VisionReader:
         self.view = (x0, y0, x1, y1)
 
     # -- health bars ------------------------------------------------------------------
-    def _bars(self, mask: np.ndarray, dark: np.ndarray, team: str, ox: int, oy: int) -> list[Unit]:
-        # Minion bars are read from the raw mask (neighbouring bars stay apart); champion bars
-        # from a mask closed horizontally, because their 1000-HP tick marks split the fill.
-        raw = mask.astype(np.uint8)
-        closed = cv2.morphologyEx(raw, cv2.MORPH_CLOSE, np.ones((1, 3), np.uint8))
-        out = self._bars_in(raw, dark, team, ox, oy, "minion")
-        out += self._bars_in(closed, dark, team, ox, oy, "champion")
+    def _bars(self, masks: dict[str, np.ndarray], dark: np.ndarray, ox: int, oy: int) -> list[Unit]:
+        """All teams in one pass per bar size: connected components on the union of the colour
+        masks, each bar's team read from the colour inside its fill. Minion bars come from the raw
+        mask (neighbouring bars stay apart); champion bars from a mask closed horizontally,
+        because their 1000-HP tick marks split the fill."""
+        union = masks["enemy"] | masks["ally"] | masks["self"]
+        _, _, stats, _ = cv2.connectedComponentsWithStats(union, connectivity=4)
+        st = stats[1:]
+        out = self._bars_in(st, union.shape, masks, dark, ox, oy, "minion")
+        out += self._bars_in(self._merge_ticks(st), union.shape, masks, dark, ox, oy, "champion")
         return out
 
-    def _bars_in(self, mask: np.ndarray, dark: np.ndarray, team: str, ox: int, oy: int, want: str) -> list[Unit]:
+    def _merge_ticks(self, st: np.ndarray) -> np.ndarray:
+        """Champion bar fills are split by 1-2 px tick marks: join champion-height pieces that sit
+        on the same rows with a gap of at most 3 px (same result as a horizontal closing, without
+        a second connected-components pass)."""
+        lo, hi = self.vc.champ_bar_h
+        c = st[(st[:, 3] >= lo - 1) & (st[:, 3] <= hi + 1)]
+        if len(c) == 0:
+            return c
+        c = c[np.lexsort((c[:, 0], c[:, 1]))]
+        merged = [list(c[0])]
+        for x, y, w, h, a in c[1:]:
+            m = merged[-1]
+            if abs(y - m[1]) <= 1 and abs(h - m[3]) <= 1 and 0 <= x - (m[0] + m[2]) <= 3:
+                gap = x - (m[0] + m[2])
+                m[2] = x + w - m[0]
+                m[3] = max(m[3], h)
+                m[4] += a + gap * h  # count the tick pixels as filled, as the closing did
+            else:
+                merged.append([x, y, w, h, a])
+        return np.array(merged, dtype=np.int64)
+
+    def _bars_in(self, st: np.ndarray, shape: tuple[int, int], masks: dict[str, np.ndarray], dark: np.ndarray, ox: int, oy: int, want: str) -> list[Unit]:
         vc = self.vc
-        n, _, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=4)
         out: list[Unit] = []
-        H, W = mask.shape
-        for i in range(1, n):
-            x, y, w, h, area = (int(v) for v in stats[i])
-            if h < vc.minion_bar_h[0] or h > vc.champ_bar_h[1] or w < 2 or w > vc.champ_bar_w + 4:
-                continue
-            if area < 0.7 * w * h:  # bars are solid
-                continue
-            if y < 1 or y + h >= H:
-                continue
-            if want == "minion" and vc.minion_bar_h[0] <= h <= vc.minion_bar_h[1] and w <= vc.minion_bar_w + 2:
-                kind, full = "minion", vc.minion_bar_w
-                dx, dy = vc.minion_body_offset
-            elif want == "champion" and vc.champ_bar_h[0] <= h <= vc.champ_bar_h[1] and w >= 3:
-                kind, full = "champion", vc.champ_bar_w
-                dx, dy = vc.champ_body_offset
+        H, W = shape
+        if len(st) == 0:
+            return out
+        if want == "minion":
+            (lo_h, hi_h), lo_w, hi_w = vc.minion_bar_h, 2, vc.minion_bar_w + 2
+            kind, full, (dx, dy) = "minion", vc.minion_bar_w, vc.minion_body_offset
+        else:
+            (lo_h, hi_h), lo_w, hi_w = vc.champ_bar_h, 3, vc.champ_bar_w + 4
+            kind, full, (dx, dy) = "champion", vc.champ_bar_w, vc.champ_body_offset
+        # Vectorised size filter: only plausible bars reach the per-bar checks. Bars are solid.
+        keep = np.nonzero((st[:, 3] >= lo_h) & (st[:, 3] <= hi_h) & (st[:, 2] >= lo_w) & (st[:, 2] <= hi_w)
+                          & (st[:, 4] >= 0.7 * st[:, 2] * st[:, 3]) & (st[:, 1] >= 1) & (st[:, 1] + st[:, 3] < H))[0]
+        for i in keep:
+            x, y, w, h, _area = (int(v) for v in st[i])
+            if kind == "champion":
                 # A champion bar has its level box just left of it: a dark block.
                 box = dark[y:y + h, max(0, x - 20):max(0, x - 4)]
                 if box.size == 0 or box.mean() < 0.35:
                     continue
-            else:
-                continue
             # Frame check: the dark frame runs above and below the whole bar, not just the fill,
             # and closes on the left. Red damage numbers and scenery fail this.
             x_end = min(W, x + full + 1)
@@ -117,34 +145,34 @@ class VisionReader:
                 empty = dark[y + h // 2, x + w + 1:x_end - 1]
                 if empty.size and empty.mean() < 0.5:
                     continue
+            # Team from the fill's colour along its middle row.
+            row = y + h // 2
+            counts = {t: int(np.count_nonzero(m[row, x:x + w])) for t, m in masks.items()}
+            team = max(counts, key=counts.get)
+            if counts[team] == 0:
+                continue
             hp = min(1.0, w / full)
-            cx = ox + x + full / 2 + dx
-            cy = oy + y + h / 2 + dy
-            out.append(Unit(kind, team if not (team == "self") else "self", cx, cy, hp, (ox + x, oy + y, w, h)))
+            out.append(Unit(kind, team, ox + x + full / 2 + dx, oy + y + h / 2 + dy, hp, (ox + x, oy + y, w, h)))
         return out
 
     def read_units(self, frame: np.ndarray) -> tuple[list[Unit], Unit | None]:
         x0, y0, x1, y1 = self.view
-        crop = frame[y0:y1, x0:x1]
-        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+        hsv = cv2.cvtColor(to_bgr(frame[y0:y1, x0:x1]), cv2.COLOR_BGR2HSV)
         dark = hsv[:, :, 2] < self.vc.frame_dark_v
-        # Blank the minimap corner so its icons are never read as units.
+        # Blank the minimap corner and the HUD so their icons are never read as units.
         mx, my, _ = self.geo.minimap or (x1, y1, 0)
-        units: list[Unit] = []
+        hx0, hy0, hx1, hy1 = self.vc.hud_block
+        masks = _masks(hsv)
+        for m in masks.values():
+            m[max(0, my - 20 - y0):, max(0, mx - 20 - x0):] = 0
+            m[max(0, hy0 - y0):, max(0, hx0 - x0):max(0, hx1 - x0)] = 0
+        found = self._bars(masks, dark, x0, y0)
+        units = [u for u in found if u.team != "self"]
+        mine = [u for u in found if u.team == "self" and u.kind == "champion"]
         me: Unit | None = None
-        for team, m in _masks(hsv).items():
-            m = m.copy()
-            m[max(0, my - 20 - y0):, max(0, mx - 20 - x0):] = False
-            hx0, hy0, hx1, hy1 = self.vc.hud_block
-            m[max(0, hy0 - y0):, max(0, hx0 - x0):max(0, hx1 - x0)] = False
-            found = self._bars(m, dark, team, x0, y0)
-            if team == "self":
-                champs = [u for u in found if u.kind == "champion"]
-                if champs:
-                    cx, cy = self.champion_px()
-                    me = min(champs, key=lambda u: u.dist_px(cx, cy))
-                continue
-            units.extend(found)
+        if mine:
+            cx, cy = self.champion_px()
+            me = min(mine, key=lambda u: u.dist_px(cx, cy))
         return units, me
 
     def champion_px(self) -> tuple[float, float]:
@@ -158,7 +186,7 @@ class VisionReader:
             patch = frame[cy - r:cy + r, cx - r:cx + r]
             if patch.size == 0:
                 continue
-            hsv = cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)
+            hsv = cv2.cvtColor(to_bgr(np.ascontiguousarray(patch)), cv2.COLOR_BGR2HSV)
             lit = float((hsv[:, :, 2] > 150).mean())
             hud.lit[name] = lit
             hud.ready[name] = lit >= self.vc.icon_ready_lit

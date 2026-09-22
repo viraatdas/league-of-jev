@@ -96,7 +96,8 @@ class HpTracker:
 class Player:
     def __init__(self, dry_run: bool = False, quick_cast: bool | None = None, role: str = "", logfile=None, keep_front: bool = True,
                  forever: bool = False, tactic_hz: float = 8.0, champion: str | None = None, explore: float = 0.0,
-                 decision_log: str | None = "logs/decisions.jsonl", save_frames_s: float = 0.0) -> None:
+                 decision_log: str | None = "logs/decisions.jsonl", save_frames_s: float = 0.0,
+                 capture: str = "sck", capture_fps: int = 60) -> None:
         self.dry_run = dry_run
         self.forever = forever
         self.keep_front = keep_front
@@ -143,6 +144,11 @@ class Player:
         self.dlog = DecisionLog(decision_log if not dry_run else None)
         self._wake_actor = threading.Event()   # set on every new frame and every new Jev answer
         self.save_frames_s = save_frames_s
+        self.capture_backend = capture
+        self.capture_fps = capture_fps
+        self.capture_name = "-"
+        self.perceive_ms = 0.0
+        self.frame_age_ms = 0.0
         self._last_logged_seq = 0
         self.tactics: TacticalBrain | None = None
         self.micro: Micro | None = None
@@ -205,44 +211,58 @@ class Player:
         }
 
     def _perceive_loop(self) -> None:
-        """One full-screen grab per frame (the fixed capture cost dominates), sliced for the
-        minimap and read for health bars and HUD icons. Runs as fast as capture allows."""
-        import mss
-        import numpy as np
+        """Reads every captured frame: health bars and HUD icons each frame, the minimap at most
+        every 33 ms (it only feeds macro positioning). ScreenCaptureKit pushes frames as the
+        display refreshes; mss is the fallback. One frame feeds all readers, so they agree."""
+        from jev.capture import open_capture
 
-        sct = mss.mss()
-        mon = sct.monitors[1]
+        cap = open_capture(self.screen.px_w, self.screen.px_h, prefer=self.capture_backend, fps=self.capture_fps)
+        self.capture_name = cap.name
+        self.log_lines.append(f"capture: {cap.name}")
         x0, y0, side = config.GEOMETRY.minimap
-        n, t_rate = 0, time.time()
-        while not self._stop.is_set():
-            if self.paused:
-                time.sleep(0.1)
-                continue
-            try:
-                t_cap = time.time()  # latency is measured from the start of the capture
-                frame = np.array(sct.grab(mon))[:, :, :3]
-                if self.mm is not None:
-                    self.mm_state = self.mm.read(np.ascontiguousarray(frame[y0:y0 + side, x0:x0 + side]))
-                if self.vision is not None:
-                    v = self.vision.read(frame)
-                    v.ts = t_cap
-                    self.view = v
-                self._wake_actor.set()
-                if self.save_frames_s and t_cap - getattr(self, "_last_saved", 0.0) >= self.save_frames_s:
-                    import cv2
-                    from pathlib import Path
+        seq, n, t_rate, last_mm = 0, 0, time.time(), 0.0
+        read_ms: collections.deque[float] = collections.deque(maxlen=120)
+        try:
+            while not self._stop.is_set():
+                f = cap.wait(seq, 0.2)
+                if f is None:
+                    continue
+                seq = f.seq
+                if self.paused:
+                    continue
+                try:
+                    t0 = time.perf_counter()
+                    frame = f.img
+                    if self.mm is not None and f.ts - last_mm >= 0.033:
+                        last_mm = f.ts
+                        st = self.mm.read(frame[y0:y0 + side, x0:x0 + side])
+                        st.ts = f.ts
+                        self.mm_state = st
+                    if self.vision is not None:
+                        v = self.vision.read(frame)
+                        v.ts = f.ts  # latency is measured from when the frame was captured
+                        self.view = v
+                    read_ms.append((time.perf_counter() - t0) * 1000)
+                    self.perceive_ms = sorted(read_ms)[len(read_ms) // 2]
+                    self.frame_age_ms = (time.time() - f.ts) * 1000
+                    self._wake_actor.set()
+                    if self.save_frames_s and f.ts - getattr(self, "_last_saved", 0.0) >= self.save_frames_s:
+                        import cv2
+                        from pathlib import Path
 
-                    self._last_saved = t_cap
-                    d = Path("snapshots/live")
-                    d.mkdir(parents=True, exist_ok=True)
-                    cv2.imwrite(str(d / f"{time.strftime('%H%M%S')}.png"), frame)
-            except Exception as e:  # noqa: BLE001
-                self.log_lines.append(f"perception error: {e}")
-                time.sleep(0.2)
-            n += 1
-            if time.time() - t_rate >= 2.0:
-                self.perceive_fps = n / (time.time() - t_rate)
-                n, t_rate = 0, time.time()
+                        self._last_saved = f.ts
+                        d = Path("snapshots/live")
+                        d.mkdir(parents=True, exist_ok=True)
+                        cv2.imwrite(str(d / f"{time.strftime('%H%M%S')}.png"), frame)
+                except Exception as e:  # noqa: BLE001
+                    self.log_lines.append(f"perception error: {e}")
+                    time.sleep(0.05)
+                n += 1
+                if time.time() - t_rate >= 2.0:
+                    self.perceive_fps = n / (time.time() - t_rate)
+                    n, t_rate = 0, time.time()
+        finally:
+            cap.stop()
 
     def _api_loop(self) -> None:
         fails = 0
@@ -299,7 +319,8 @@ class Player:
                     parts.append(f"{kind} {lat[0]:.0f}/{lat[1]:.0f}")
             if parts:
                 out.append("screen->input ms (p50/p90): " + "  ".join(parts))
-        out.append(f"APM {self.ctl.apm()}   vision {self.perceive_fps:.0f} fps   api {self.api_ms:.0f} ms   micro: {self.micro.last_action if self.micro else '-'}")
+        out.append(f"APM {self.ctl.apm()}   {self.capture_name} {self.perceive_fps:.0f} fps, read {self.perceive_ms:.1f} ms   api {self.api_ms:.0f} ms")
+        out.append(f"micro: {self.micro.last_action if self.micro else '-'}")
         return out
 
     def _micro_step(self, data: dict, ap: dict, stats: dict, now: float) -> bool:

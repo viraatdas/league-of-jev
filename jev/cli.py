@@ -95,13 +95,15 @@ def play(
     explore: float = typer.Option(0.0, help="Share of tactical picks sampled from Jev's distribution instead of its top choice (bot games)"),
     decision_log: str = typer.Option("logs/decisions.jsonl", help="Tactical decisions with outcomes, for `jev review`"),
     save_frames: float = typer.Option(0.0, help="Save a raw frame to snapshots/live every N seconds (calibration)"),
+    capture: str = typer.Option("sck", help="Screen capture: sck (ScreenCaptureKit stream) | mss (blocking grab)"),
+    capture_fps: int = typer.Option(60, help="ScreenCaptureKit frame rate cap; 120 on a 120 Hz display halves the frame wait"),
 ) -> None:
     """Play the current game with Jev driving strategy (1/s), tactics (~7/s) and the build."""
     from jev.loop import Player
 
     player = Player(dry_run=dry_run, logfile=logfile, keep_front=keep_front, forever=forever, tactic_hz=tactic_hz,
                     champion=champion or None, role=role, explore=explore, decision_log=decision_log,
-                    save_frames_s=save_frames)
+                    save_frames_s=save_frames, capture=capture, capture_fps=capture_fps)
     if not overlay:
         player.run()
         return

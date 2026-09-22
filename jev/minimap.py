@@ -78,11 +78,12 @@ class MinimapReader:
     def read(self, frame: np.ndarray | None = None) -> MinimapState:
         t0 = time.perf_counter()
         img = self.grab() if frame is None else frame
+        if img.ndim == 3 and img.shape[2] == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
-        red = (((h <= 8) | (h >= 172)) & (s >= 140) & (v >= 140)).astype(np.uint8) * 255
-        blue = ((h >= 95) & (h <= 125) & (s >= 120) & (v >= 150)).astype(np.uint8) * 255
-        white = ((s <= 45) & (v >= 215)).astype(np.uint8) * 255
+        red = cv2.inRange(hsv, (0, 140, 140), (8, 255, 255)) | cv2.inRange(hsv, (172, 140, 140), (180, 255, 255))
+        blue = cv2.inRange(hsv, (95, 120, 150), (125, 255, 255))
+        white = cv2.inRange(hsv, (0, 0, 215), (180, 45, 255))
         red &= self.static
         blue &= self.static
         # Time-based decay (10 s time constant) so the filter is the same at any frame rate.

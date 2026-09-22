@@ -18,6 +18,12 @@ action needs them. Code-only reflexes: last hits from minion HP trends, R the mo
 tornado lifts the target, level-ups, and a survival floor that retreats when HP collapses
 between Jev answers. Input is capped at about 545 orders a minute; the overlay shows APM.
 
+Perception latency (`tests/bench_perception.py`): ScreenCaptureKit hands over a frame about 2 ms
+after capture, and reading it (health bars, HUD, minimap) takes about 7 ms, so a frame is text
+about 9 ms after it was captured (the old blocking mss grab: 20-26 ms). The actor wakes on every
+new frame and every Jev answer. Code reflexes act within one read of the frame; Jev's moves add
+its ~133 ms round trip.
+
 Riot's third-party policy prohibits automated input. Run this in Practice Tool or a custom
 game against bots. Queueing it into matchmade games is your account and your call.
 
@@ -84,7 +90,8 @@ single event, so you can grab the mouse back at any time.
 - `jev/brain.py` the strategy question pack and the `Decision` it returns
 - `jev/tactics.py` the tactical head: action filters, state, back-to-back Jev thread
 - `jev/items.py` the build head: Data Dragon catalog, need questions, shortlist, recipe-aware purchases
-- `jev/vision.py` health bars (units and HP) and HUD icons (cooldowns) from one screen grab
+- `jev/capture.py` ScreenCaptureKit stream of the whole display (game view, minimap, HUD in one frame), mss fallback
+- `jev/vision.py` health bars (units and HP) and HUD icons (cooldowns) from each frame, ~5 ms
 - `jev/minimap.py` minimap reader: own position, minions, champions
 - `jev/micro.py` unit tracking, last-hit prediction, Q-stack count, combo executor, reflexes
 - `jev/overlay.py` click-through panel with every head's answers and probabilities
