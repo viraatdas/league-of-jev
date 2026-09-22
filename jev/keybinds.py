@@ -61,7 +61,11 @@ class Bind:
 
     @classmethod
     def parse(cls, text: str) -> "Bind":
-        tokens = re.findall(r"\[([^\]]+)\]", text or "")
+        # League lists alternates as "[a],[x]"; use the first one.
+        first = (text or "").split("],[")[0]
+        if "],[" in (text or ""):
+            first += "]"
+        tokens = re.findall(r"\[([^\]]+)\]", first)
         mods: dict[str, bool] = {}
         key: str | None = None
         mouse: int | None = None
@@ -81,7 +85,9 @@ class Bind:
 
     @property
     def usable(self) -> bool:
-        return self.key is not None and self.mouse_button is None
+        from jev.control import KEYCODES
+
+        return self.key is not None and self.mouse_button is None and self.key in KEYCODES
 
     def __str__(self) -> str:
         parts = [m for m, on in (("ctrl", self.ctrl), ("shift", self.shift), ("alt", self.alt), ("cmd", self.cmd)) if on]
@@ -116,6 +122,10 @@ class Keybinds:
 
     @property
     def attack_move(self) -> Bind:
+        """The 'press key then click' attack-move (evtPlayerAttackMove). The Click variant is a mouse combo."""
+        b = self.events.get("evtPlayerAttackMove")
+        if b is not None and b.usable:
+            return b
         return self._ev("evtPlayerAttackMoveClick")
 
     @property

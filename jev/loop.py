@@ -8,6 +8,7 @@ import time
 
 from rich.console import Console
 from rich.live import Live
+from rich.markup import escape
 from rich.table import Table
 
 from jev import config, keybinds
@@ -129,17 +130,17 @@ class Player:
         me = self.state.get("me", {})
         t.add_row("game", str(self.state.get("game", {}).get("time")))
         t.add_row("me", f"{me.get('champion')} L{me.get('level')} HP {me.get('hp_percent')}% gold {me.get('gold')} {me.get('kda')} cs {me.get('cs')}")
-        t.add_row("opponent", json.dumps(self.state.get("lane_opponent")))
+        t.add_row("opponent", escape(json.dumps(self.state.get("lane_opponent"))))
         t.add_row("where", f"{perception.position} lane {perception.lane_progress_pct}% dmg {perception.hp_lost_recent_pct:.0f}%")
-        t.add_row("jev", self.decision.summary() if self.decision else "waiting")
+        t.add_row("jev", escape(self.decision.summary()) if self.decision else "waiting")
         t.add_row("intent", self.intent)
-        t.add_row("keys", self.kb.describe())
-        t.add_row("actions", "\n".join(self.log_lines))
+        t.add_row("keys", escape(self.kb.describe()))
+        t.add_row("actions", escape("\n".join(self.log_lines)))
         return t
 
     # -- main -----------------------------------------------------------------------------
     def run(self) -> None:
-        console.print(f"keybinds: {self.kb.describe()}")
+        console.print(f"keybinds: {self.kb.describe()}", markup=False)
         console.print("waiting for a game (start a Practice Tool or custom game and lock the camera)...")
         while not self.riot.is_game_running():
             time.sleep(1)

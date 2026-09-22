@@ -56,8 +56,8 @@ def keys() -> None:
     """Show the key bindings and quick-cast flags read from League's config."""
     from jev import keybinds
 
-    console.print(keybinds.load().describe())
-    console.print(keybinds.load_game_cfg())
+    console.print(keybinds.load().describe(), markup=False, highlight=False)
+    console.print(str(keybinds.load_game_cfg()), markup=False, highlight=False)
 
 
 @app.command()

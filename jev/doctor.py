@@ -96,7 +96,7 @@ def check_game_files() -> tuple[bool, str]:
     """Layout-agnostic: look for the game binary anywhere in the bundle and report size."""
     if not LEAGUE_APP.exists():
         return False, "bundle missing"
-    binaries = [p for p in LEAGUE_APP.rglob("League of Legends") if p.is_file() and "MacOS" in p.parts]
+    binaries = [p for p in LEAGUE_APP.rglob("LeagueofLegends") if p.is_file() and "MacOS" in p.parts]
     total = 0
     for p in LEAGUE_APP.rglob("*"):
         try:

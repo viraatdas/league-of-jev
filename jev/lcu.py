@@ -60,7 +60,20 @@ class LCU:
         return str(body).strip('"') if code == 200 else f"http {code}"
 
     # -- lobby -----------------------------------------------------------------------------
+    PRACTICE_TOOL_QUEUE = 3140
+    CUSTOM_BLIND_QUEUE = 3100
+
+    def delete_lobby(self) -> tuple[int, Any]:
+        return self.req("DELETE", "/lol-lobby/v2/lobby")
+
+    def lobby(self) -> tuple[int, Any]:
+        return self.req("GET", "/lol-lobby/v2/lobby")
+
     def create_practice_tool(self) -> tuple[int, Any]:
+        """The custom-lobby payload returns INVALID_LOBBY on this client; the queue form works."""
+        return self.req("POST", "/lol-lobby/v2/lobby", {"queueId": self.PRACTICE_TOOL_QUEUE})
+
+    def create_practice_tool_legacy(self) -> tuple[int, Any]:
         payload = {
             "customGameLobby": {
                 "configuration": {
@@ -80,6 +93,9 @@ class LCU:
         return self.req("POST", "/lol-lobby/v2/lobby", payload)
 
     def create_custom_vs_bots(self) -> tuple[int, Any]:
+        return self.req("POST", "/lol-lobby/v2/lobby", {"queueId": self.CUSTOM_BLIND_QUEUE})
+
+    def create_custom_vs_bots_legacy(self) -> tuple[int, Any]:
         payload = {
             "customGameLobby": {
                 "configuration": {
