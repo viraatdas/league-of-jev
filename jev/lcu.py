@@ -69,9 +69,28 @@ class LCU:
     def lobby(self) -> tuple[int, Any]:
         return self.req("GET", "/lol-lobby/v2/lobby")
 
+    def _custom(self, queue_id: int, game_mode: str, name: str) -> dict:
+        # This client wants both the custom queue id and the customGameLobby block.
+        return {
+            "queueId": queue_id,
+            "customGameLobby": {
+                "configuration": {
+                    "gameMode": game_mode,
+                    "gameMutator": "",
+                    "gameServerRegion": "",
+                    "mapId": 11,
+                    "mutators": {"id": 1},
+                    "spectatorPolicy": "AllAllowed",
+                    "teamSize": 5,
+                },
+                "lobbyName": name,
+                "lobbyPassword": None,
+            },
+            "isCustom": True,
+        }
+
     def create_practice_tool(self) -> tuple[int, Any]:
-        """The custom-lobby payload returns INVALID_LOBBY on this client; the queue form works."""
-        return self.req("POST", "/lol-lobby/v2/lobby", {"queueId": self.PRACTICE_TOOL_QUEUE})
+        return self.req("POST", "/lol-lobby/v2/lobby", self._custom(self.PRACTICE_TOOL_QUEUE, "PRACTICETOOL", "jev practice"))
 
     def create_practice_tool_legacy(self) -> tuple[int, Any]:
         payload = {
@@ -93,7 +112,7 @@ class LCU:
         return self.req("POST", "/lol-lobby/v2/lobby", payload)
 
     def create_custom_vs_bots(self) -> tuple[int, Any]:
-        return self.req("POST", "/lol-lobby/v2/lobby", {"queueId": self.CUSTOM_BLIND_QUEUE})
+        return self.req("POST", "/lol-lobby/v2/lobby", self._custom(self.CUSTOM_BLIND_QUEUE, "CLASSIC", "jev custom"))
 
     def create_custom_vs_bots_legacy(self) -> tuple[int, Any]:
         payload = {
