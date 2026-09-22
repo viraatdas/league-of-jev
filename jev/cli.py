@@ -81,11 +81,37 @@ def record(hz: float = 2.0) -> None:
 
 
 @app.command()
-def play(dry_run: bool = typer.Option(False, help="Log actions instead of sending input")) -> None:
+def play(
+    dry_run: bool = typer.Option(False, help="Log actions instead of sending input"),
+    logfile: Path | None = typer.Option(None, help="Append one status line per second here"),
+) -> None:
     """Play the current game as Yasuo with Jev driving intent."""
     from jev.loop import Player
 
-    Player(dry_run=dry_run).run()
+    Player(dry_run=dry_run, logfile=logfile).run()
+
+
+@app.command()
+def lcu(action: str = typer.Argument("status", help="status | practice | custom | bots | start | pick")) -> None:
+    """Drive the League client: create a Practice Tool lobby, add bots, start, pick Yasuo."""
+    from jev.lcu import LCU, YASUO
+
+    c = LCU()
+    if action == "status":
+        console.print(f"lockfile {c.lockfile}")
+        console.print(f"phase: {c.gameflow()}")
+        console.print(c.summoner())
+    elif action == "practice":
+        console.print(c.create_practice_tool())
+    elif action == "custom":
+        console.print(c.create_custom_vs_bots())
+    elif action == "bots":
+        console.print(c.add_bot(238, "200"))   # Zed mid
+    elif action == "start":
+        console.print(c.start_champ_select())
+    elif action == "pick":
+        console.print(c.pick(YASUO))
+    c.close()
 
 
 @app.command()

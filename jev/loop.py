@@ -83,8 +83,10 @@ class HpTracker:
 
 
 class Player:
-    def __init__(self, dry_run: bool = False, quick_cast: bool | None = None, role: str = "MIDDLE") -> None:
+    def __init__(self, dry_run: bool = False, quick_cast: bool | None = None, role: str = "MIDDLE", logfile=None) -> None:
         self.dry_run = dry_run
+        self.logfile = logfile
+        self._last_logged = 0.0
         self.role = role
         self.log_lines: collections.deque[str] = collections.deque(maxlen=8)
         self.ctl = Controller(dry_run=dry_run, log=self._log_action)
@@ -159,6 +161,7 @@ class Player:
                     perception = self._tick(data, t0)
                     self.state = build_state(data, perception, self.role)
                     live.update(self._table(perception))
+                    self._logline(perception, t0)
                     time.sleep(max(0.0, tick - (time.time() - t0)))
         finally:
             self._stop.set()
@@ -245,6 +248,21 @@ class Player:
             else:
                 m.start_recall(now)
         return p
+
+    def _logline(self, p: Perception, now: float) -> None:
+        if not self.logfile or now - self._last_logged < 1.0:
+            return
+        self._last_logged = now
+        me = self.state.get("me", {})
+        line = (
+            f"{time.strftime('%H:%M:%S')} t={self.state.get('game', {}).get('time')} "
+            f"L{me.get('level')} hp={me.get('hp_percent')}% gold={me.get('gold')} {me.get('kda')} cs={me.get('cs')} "
+            f"| {p.position} lane={p.lane_progress_pct}% dmg={p.hp_lost_recent_pct:.0f} | intent={self.intent} "
+            f"| jev={self.decision.summary() if self.decision else '-'} | act={self.mech.last_action if self.mech else ''} "
+            f"blocked={self.ctl.blocked}\n"
+        )
+        with open(self.logfile, "a") as f:
+            f.write(line)
 
     def _shop_if_possible(self) -> None:
         d = self.decision
