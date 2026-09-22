@@ -259,6 +259,33 @@ class Mechanics:
             self.walk(1, move_speed, now, attack=True)
         self.blind_q(now)
 
+    def ensure_camera_locked(self, reader) -> str:
+        """Snap the camera onto the champion (held key), read the minimap box, release, read again.
+        If the box moves back the camera is unlocked: toggle the lock and verify. Returns a note."""
+        from jev.minimap import dist
+
+        def box():
+            st = reader.read()
+            return st.self_pos
+
+        self.ctl.hold(self.kb.camera_snap, True)
+        time.sleep(0.35)
+        snapped = box()
+        self.ctl.hold(self.kb.camera_snap, False)
+        time.sleep(0.5)
+        free = box()
+        if snapped is None or free is None:
+            return "camera: could not read minimap box"
+        if dist(snapped, free) < 300:
+            return "camera: locked"
+        self.ctl.press(self.kb.camera_lock)
+        time.sleep(0.6)
+        after = box()
+        if after is not None and dist(after, snapped) < 400:
+            return "camera: was unlocked, now locked"
+        self.ctl.press(self.kb.camera_lock)  # undo if the toggle made it worse
+        return "camera: toggle did not lock (left as found)"
+
     def resync_to_own_tower(self) -> None:
         """Mid-game start: assume nothing about position, walk to the own tower and re-base the
         dead reckoning there."""
@@ -271,6 +298,13 @@ class Mechanics:
             self.walk(-1, move_speed, now, px=self.geo.retreat_click_px)
         if abs(self.nav.progress - target) <= 0.01:
             self.last_action = "holding at own tower"
+
+    def step_back(self, move_speed: float, now: float) -> None:
+        """Out of tower range: a short step back down the lane, not a full retreat."""
+        target = max(config.OWN_TOWER, self.nav.progress - 0.06)
+        if not self.go_progress(target, move_speed, now, attack=False, force=True):
+            self.walk(-1, move_speed, now)
+        self.last_action = "step back from tower"
 
     def defend(self, move_speed: float, now: float) -> None:
         self.retreat(move_speed, now)

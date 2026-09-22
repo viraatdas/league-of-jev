@@ -36,12 +36,14 @@ def choose_intent(d: Decision | None, state: dict, p: Perception, now: float, gu
         guard.retreat_until = now + 4.0  # survival floor, shorter than Jev's own retreat calls
     if p.hp_lost_recent_pct >= config.TIMING.heavy_damage_pct:
         guard.retreat_until = now + 5.0  # tower-sized chunks: step out before the next shot
-    if p.near_enemy_tower and d is not None and d.intent != "push_tower":
-        guard.retreat_until = now + 3.0
+    if p.near_enemy_tower and (d is None or d.intent != "push_tower"):
+        guard.step_back_until = now + 2.5
     if p.nearest_enemy_champion_units is not None and p.nearest_enemy_champion_units < 600 and me["hp_percent"] < 30:
         guard.retreat_until = now + 5.0
     if now < guard.retreat_until:
         return "retreat"
+    if now < guard.step_back_until:
+        return "step_back"
     if d is None:
         return "farm"
     if d.danger >= 2.5:
@@ -58,6 +60,7 @@ class Guards:
 
     def __init__(self) -> None:
         self.retreat_until = 0.0
+        self.step_back_until = 0.0
         self.left_base_at = 0.0
         self.last_level_t = 0.0
         self.resync_until = 0.0
@@ -112,7 +115,7 @@ class Player:
         self.paused = False
         self._last_sig = (None, None, 0)
         self._gold_hist: collections.deque[tuple[float, float, int]] = collections.deque()
-        self.mm: MinimapReader | None = MinimapReader(self.screen) if config.GEOMETRY.minimap else None
+        self.mm: MinimapReader | None = MinimapReader(self.screen) if (config.GEOMETRY.minimap and not dry_run) else None
         self.mm_state: MinimapState | None = None
         self.side = "ORDER"
         self.dead_enemy_mid_towers: set[int] = set()
@@ -185,6 +188,7 @@ class Player:
         self.side = side
         self.mech = Mechanics(self.ctl, self.screen, self.kb, side)
         console.print(f"game found, side {side}, champion {me.get('championName')}")
+        self._camera_checked = False
         gt = float((data.get("gameData") or {}).get("gameTime", 0.0))
         if gt > 90 and not me.get("isDead"):
             # Joined mid-game: position unknown, so walk to the own tower first and re-base there.
@@ -319,6 +323,12 @@ class Player:
             return p
         if self.phase == "dead":
             self.phase = "base"
+            self._camera_checked = False
+
+        if not getattr(self, "_camera_checked", False) and self.mm is not None and self.ctl.keys_ok():
+            self._camera_checked = True
+            note = m.ensure_camera_locked(self.mm)
+            self.log_lines.append(note)
 
         # Shop once per visit to base: at game start, after respawn, after a recall.
         if self.phase == "base" and not self._base_shop_done:
@@ -370,6 +380,8 @@ class Player:
             m.push(move_speed, now)
         elif self.intent == "retreat":
             m.retreat(move_speed, now)
+        elif self.intent == "step_back":
+            m.step_back(move_speed, now)
         elif self.intent == "defend":
             m.defend(move_speed, now)
         elif self.intent == "group":

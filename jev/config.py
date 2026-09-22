@@ -25,7 +25,7 @@ LANE_CENTER = 0.50
 OWN_TOWER = 0.42
 ENEMY_TOWER = 0.60
 MAX_ADVANCE = 0.48          # default farming limit; Jev's aggression moves it between 0.45 and 0.52
-HARD_LIMIT = 0.545          # enemy tower range edge is ~0.56; never farm past this
+HARD_LIMIT = 0.53           # enemy tower range edge is ~0.56; never farm past this
 PUSH_ADVANCE = 0.54         # push_tower may go this far (minions tank the tower)
 DIAGONAL_UNITS = 19660.0    # fountain to fountain
 
