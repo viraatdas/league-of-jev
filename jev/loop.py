@@ -149,6 +149,8 @@ class Player:
         side = me.get("team", "ORDER")
         self.mech = Mechanics(self.ctl, self.screen, self.kb, side)
         console.print(f"game found, side {side}, champion {me.get('championName')}")
+        cx, cy = self.mech._center()
+        self.ctl.focus(*self.screen.to_points(cx, cy + 40))
         threading.Thread(target=self._brain_loop, daemon=True).start()
         tick = 1 / config.TIMING.tick_hz
         perception = Perception()
@@ -176,7 +178,8 @@ class Player:
         ap = data.get("activePlayer", {})
         cs = ap.get("championStats", {})
         hp_pct = 100 * cs.get("currentHealth", 0) / max(cs.get("maxHealth", 1), 1)
-        move_speed = float(cs.get("moveSpeed", 345))
+        # The fountain speed buff reports 700+; cap so dead reckoning does not sprint ahead of the champion.
+        move_speed = min(float(cs.get("moveSpeed", 345)), config.TIMING.max_reckon_speed)
         me = find_me(data) or {}
         lost = self.hp.update(hp_pct, now)
         p = Perception(

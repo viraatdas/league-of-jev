@@ -41,14 +41,38 @@ KEYCODES: dict[str, int] = {
 }
 
 
+GAME_BUNDLE_HINT = "gameclient"  # com.riotgames.LeagueofLegends.GameClient
+
+
 def frontmost_app_name() -> str:
     try:
         from AppKit import NSWorkspace
 
         app = NSWorkspace.sharedWorkspace().frontmostApplication()
-        return str(app.localizedName()) if app is not None else ""
+        if app is None:
+            return ""
+        return f"{app.localizedName()} [{app.bundleIdentifier() or ''}]"
     except Exception:  # noqa: BLE001
         return ""
+
+
+def game_is_frontmost() -> bool:
+    name = frontmost_app_name().lower()
+    return GAME_BUNDLE_HINT in name or "league of legends (tm) client" in name
+
+
+def activate_game() -> bool:
+    """Bring the game process (not the lobby client) to the front."""
+    try:
+        from AppKit import NSApplicationActivateIgnoringOtherApps, NSWorkspace
+
+        for app in NSWorkspace.sharedWorkspace().runningApplications():
+            bid = str(app.bundleIdentifier() or "").lower()
+            if GAME_BUNDLE_HINT in bid:
+                return bool(app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps))
+    except Exception:  # noqa: BLE001
+        return False
+    return False
 
 
 class Controller:
@@ -68,7 +92,7 @@ class Controller:
     def _allowed(self) -> bool:
         if self.dry_run:
             return False
-        if self.require_frontmost and self.require_frontmost.lower() not in frontmost_app_name().lower():
+        if self.require_frontmost and not game_is_frontmost():
             self.blocked += 1
             return False
         return True
@@ -96,21 +120,23 @@ class Controller:
         CGEventPost(kCGHIDEventTap, CGEventCreateMouseEvent(None, up, (x, y), btn))
 
     # -- keyboard --------------------------------------------------------------
-    def key(self, name: str, ctrl: bool = False, shift: bool = False, alt: bool = False, cmd: bool = False, hold_ms: int = 35) -> None:
+    _MOD_CODES = (("ctrl", 59, kCGEventFlagMaskControl), ("shift", 56, kCGEventFlagMaskShift), ("alt", 58, kCGEventFlagMaskAlternate), ("cmd", 55, kCGEventFlagMaskCommand))
+
+    def key(self, name: str, ctrl: bool = False, shift: bool = False, alt: bool = False, cmd: bool = False, hold_ms: int = 60) -> None:
+        """Key press. Modifiers are sent as real key-down/up events around the key, with the
+        matching flags on the key events: the game ignores a bare flag without the modifier press."""
         code = KEYCODES[name.lower()]
-        mods = "".join(m for m, on in (("ctrl+", ctrl), ("shift+", shift), ("alt+", alt), ("cmd+", cmd)) if on)
+        wanted = {"ctrl": ctrl, "shift": shift, "alt": alt, "cmd": cmd}
+        mods = "".join(f"{m}+" for m, on in wanted.items() if on)
         self.log(f"key({mods}{name})")
         if not self._allowed():
             return
         flags = 0
-        if ctrl:
-            flags |= kCGEventFlagMaskControl
-        if shift:
-            flags |= kCGEventFlagMaskShift
-        if alt:
-            flags |= kCGEventFlagMaskAlternate
-        if cmd:
-            flags |= kCGEventFlagMaskCommand
+        active = [(m, c, f) for m, c, f in self._MOD_CODES if wanted[m]]
+        for _, mcode, mflag in active:
+            CGEventPost(kCGHIDEventTap, CGEventCreateKeyboardEvent(None, mcode, True))
+            flags |= mflag
+            time.sleep(0.03)
         down = CGEventCreateKeyboardEvent(None, code, True)
         up = CGEventCreateKeyboardEvent(None, code, False)
         if flags:
@@ -119,6 +145,16 @@ class Controller:
         CGEventPost(kCGHIDEventTap, down)
         time.sleep(hold_ms / 1000)
         CGEventPost(kCGHIDEventTap, up)
+        for _, mcode, _ in reversed(active):
+            time.sleep(0.03)
+            CGEventPost(kCGHIDEventTap, CGEventCreateKeyboardEvent(None, mcode, False))
+
+    def focus(self, x: float, y: float) -> None:
+        """Activate the game process and left-click inside its window so it has keyboard focus."""
+        activate_game()
+        time.sleep(0.4)
+        self.click(x, y, "left")
+        time.sleep(0.2)
 
     def press(self, bind, hold_ms: int = 35) -> None:
         """Press a keybinds.Bind (key plus modifiers) exactly as League has it configured."""

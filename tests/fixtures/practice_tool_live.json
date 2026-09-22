@@ -1,0 +1,232 @@
+{
+	"activePlayer": {
+		"abilities": {
+			"E": {
+				"abilityLevel": 0,
+				"displayName": "Sweeping Blade",
+				"id": "YasuoE",
+				"rawDescription": "GeneratedTip_Spell_YasuoE_Description",
+				"rawDisplayName": "GeneratedTip_Spell_YasuoE_DisplayName"
+			},
+			"Passive": {
+				"displayName": "Way of the Wanderer",
+				"id": "YasuoPassive",
+				"rawDescription": "GeneratedTip_Passive_YasuoPassive_Description",
+				"rawDisplayName": "GeneratedTip_Passive_YasuoPassive_DisplayName"
+			},
+			"Q": {
+				"abilityLevel": 0,
+				"displayName": "Steel Tempest",
+				"id": "YasuoQ1Wrapper",
+				"rawDescription": "GeneratedTip_Spell_YasuoQ1Wrapper_Description",
+				"rawDisplayName": "GeneratedTip_Spell_YasuoQ1Wrapper_DisplayName"
+			},
+			"R": {
+				"abilityLevel": 0,
+				"displayName": "Last Breath",
+				"id": "YasuoR",
+				"rawDescription": "GeneratedTip_Spell_YasuoR_Description",
+				"rawDisplayName": "GeneratedTip_Spell_YasuoR_DisplayName"
+			},
+			"W": {
+				"abilityLevel": 0,
+				"displayName": "Wind Wall",
+				"id": "YasuoW",
+				"rawDescription": "GeneratedTip_Spell_YasuoW_Description",
+				"rawDisplayName": "GeneratedTip_Spell_YasuoW_DisplayName"
+			}
+		},
+		"championStats": {
+			"abilityHaste": 0.0,
+			"abilityPower": 0.0,
+			"armor": 32.0,
+			"armorPenetrationFlat": 0.0,
+			"armorPenetrationPercent": 1.0,
+			"attackDamage": 70.80000305175781,
+			"attackRange": 175.0,
+			"attackSpeed": 0.6970000267028809,
+			"bonusArmorPenetrationPercent": 1.0,
+			"bonusMagicPenetrationPercent": 1.0,
+			"critChance": 0.0,
+			"critDamage": 190.0,
+			"currentHealth": 655.0,
+			"healShieldPower": 0.0,
+			"healthRegenRate": 1.2999999523162842,
+			"lifeSteal": 0.0,
+			"magicLethality": 0.0,
+			"magicPenetrationFlat": 0.0,
+			"magicPenetrationPercent": 1.0,
+			"magicResist": 32.0,
+			"maxHealth": 655.0,
+			"moveSpeed": 747.5,
+			"omnivamp": 0.0,
+			"physicalLethality": 0.0,
+			"physicalVamp": 0.0,
+			"resourceMax": 125.0,
+			"resourceRegenRate": 0.0,
+			"resourceType": "WIND",
+			"resourceValue": 125.0,
+			"spellVamp": 0.0,
+			"tenacity": 5.0
+		},
+		"currentGold": 500.0,
+		"fullRunes": {
+			"generalRunes": [
+				{
+					"displayName": "Dark Harvest",
+					"id": 8128,
+					"rawDescription": "perk_tooltip_DarkHarvest",
+					"rawDisplayName": "perk_displayname_DarkHarvest"
+				},
+				{
+					"displayName": "Sudden Impact",
+					"id": 8143,
+					"rawDescription": "perk_tooltip_SuddenImpact",
+					"rawDisplayName": "perk_displayname_SuddenImpact"
+				},
+				{
+					"displayName": "Grisly Mementos",
+					"id": 8140,
+					"rawDescription": "perk_tooltip_GrislyMementos",
+					"rawDisplayName": "perk_displayname_GrislyMementos"
+				},
+				{
+					"displayName": "Treasure Hunter",
+					"id": 8135,
+					"rawDescription": "perk_tooltip_TreasureHunter",
+					"rawDisplayName": "perk_displayname_TreasureHunter"
+				},
+				{
+					"displayName": "Triumph",
+					"id": 9111,
+					"rawDescription": "perk_tooltip_9111",
+					"rawDisplayName": "perk_displayname_9111"
+				},
+				{
+					"displayName": "Coup de Grace",
+					"id": 8014,
+					"rawDescription": "perk_tooltip_CoupDeGrace",
+					"rawDisplayName": "perk_displayname_CoupDeGrace"
+				}
+			],
+			"keystone": {
+				"displayName": "Dark Harvest",
+				"id": 8128,
+				"rawDescription": "perk_tooltip_DarkHarvest",
+				"rawDisplayName": "perk_displayname_DarkHarvest"
+			},
+			"primaryRuneTree": {
+				"displayName": "Domination",
+				"id": 8100,
+				"rawDescription": "perkstyle_tooltip_7200",
+				"rawDisplayName": "perkstyle_displayname_7200"
+			},
+			"secondaryRuneTree": {
+				"displayName": "Precision",
+				"id": 8000,
+				"rawDescription": "perkstyle_tooltip_7201",
+				"rawDisplayName": "perkstyle_displayname_7201"
+			},
+			"statRunes": [
+				{
+					"id": 5008,
+					"rawDescription": "perk_tooltip_StatModAdaptive"
+				},
+				{
+					"id": 5008,
+					"rawDescription": "perk_tooltip_StatModAdaptive"
+				},
+				{
+					"id": 5011,
+					"rawDescription": "perk_tooltip_StatModHealth"
+				}
+			]
+		},
+		"level": 1,
+		"riotId": "TheSoulOfFire#NA1",
+		"riotIdGameName": "TheSoulOfFire",
+		"riotIdTagLine": "NA1",
+		"summonerName": "TheSoulOfFire#NA1",
+		"teamRelativeColors": true
+	},
+	"allPlayers": [
+		{
+			"championName": "Yasuo",
+			"isBot": false,
+			"isDead": false,
+			"items": [],
+			"level": 1,
+			"position": "NONE",
+			"rawChampionName": "game_character_displayname_Yasuo",
+			"rawSkinName": "game_character_displayname_Yasuo",
+			"respawnTimer": 0.0,
+			"riotId": "TheSoulOfFire#NA1",
+			"riotIdGameName": "TheSoulOfFire",
+			"riotIdTagLine": "NA1",
+			"runes": {
+				"keystone": {
+					"displayName": "Dark Harvest",
+					"id": 8128,
+					"rawDescription": "perk_tooltip_DarkHarvest",
+					"rawDisplayName": "perk_displayname_DarkHarvest"
+				},
+				"primaryRuneTree": {
+					"displayName": "Domination",
+					"id": 8100,
+					"rawDescription": "perkstyle_tooltip_7200",
+					"rawDisplayName": "perkstyle_displayname_7200"
+				},
+				"secondaryRuneTree": {
+					"displayName": "Precision",
+					"id": 8000,
+					"rawDescription": "perkstyle_tooltip_7201",
+					"rawDisplayName": "perkstyle_displayname_7201"
+				}
+			},
+			"scores": {
+				"assists": 0,
+				"creepScore": 0,
+				"deaths": 0,
+				"kills": 0,
+				"wardScore": 0.0
+			},
+			"skinID": 0,
+			"skinName": "Yasuo",
+			"summonerName": "TheSoulOfFire#NA1",
+			"summonerSpells": {
+				"summonerSpellOne": {
+					"displayName": "Ghost",
+					"rawDescription": "GeneratedTip_SummonerSpell_SummonerHaste_Description",
+					"rawDisplayName": "GeneratedTip_SummonerSpell_SummonerHaste_DisplayName"
+				},
+				"summonerSpellTwo": {
+					"displayName": "Heal",
+					"rawDescription": "GeneratedTip_SummonerSpell_SummonerHeal_Description",
+					"rawDisplayName": "GeneratedTip_SummonerSpell_SummonerHeal_DisplayName"
+				}
+			},
+			"team": "ORDER"
+		}
+	],
+	"events": {
+		"Events": [
+			{
+				"EventID": 0,
+				"EventName": "GameStart",
+				"EventTime": 0.03469033166766167
+			},
+			{
+				"EventID": 1,
+				"EventName": "MinionsSpawning",
+				"EventTime": 30.052515029907228
+			}
+		]
+	},
+	"gameData": {
+		"gameMode": "PRACTICETOOL",
+		"gameTime": 39.40473556518555,
+		"mapName": "Map11",
+		"mapNumber": 11,
+		"mapTerrain": "Default"
+	}
+}

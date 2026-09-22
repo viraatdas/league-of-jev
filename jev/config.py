@@ -24,8 +24,10 @@ DIAGONAL_UNITS = 19660.0    # fountain to fountain
 class Geometry:
     """Where things are on screen. Calibrate with `jev snapshot` once the game runs."""
 
+    # Where the locked camera puts the champion, in frame pixels. None = frame centre.
+    champion_px: tuple[int, int] | None = (832, 645)
     # Optional minimap square (x, y, side) in frame pixels. None = use screen-relative clicks only.
-    minimap: tuple[int, int, int] | None = None
+    minimap: tuple[int, int, int] | None = (1350, 705, 372)
     # Optional shop search box (x, y) in frame pixels. None = shopping disabled.
     shop_search: tuple[int, int] | None = None
     move_click_px: int = 420        # how far ahead to click when walking
@@ -46,6 +48,7 @@ class Timing:
     heavy_damage_pct: float = 12.0  # HP% lost within the window that counts as heavy
     retreat_hold_s: float = 7.0     # keep retreating this long after a safety trigger
     no_recall_after_base_s: float = 25.0
+    max_reckon_speed: float = 400.0
 
 
 GEOMETRY = Geometry()

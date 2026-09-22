@@ -8,6 +8,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
@@ -23,7 +24,7 @@ def doctor() -> None:
     t.add_column("ok")
     t.add_column("detail")
     for name, ok, msg in run_all():
-        t.add_row(name, "[green]yes" if ok else "[red]no", msg)
+        t.add_row(Text(name), Text("yes" if ok else "no", style="green" if ok else "red"), Text(msg))
     console.print(t)
 
 

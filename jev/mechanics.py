@@ -58,6 +58,8 @@ class Mechanics:
 
     # -- geometry helpers ---------------------------------------------------------
     def _center(self) -> tuple[float, float]:
+        if self.geo.champion_px:
+            return float(self.geo.champion_px[0]), float(self.geo.champion_px[1])
         return self.screen.center_px()
 
     def _ahead(self, px: float, sign: int = 1) -> tuple[float, float]:

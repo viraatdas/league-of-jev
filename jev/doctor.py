@@ -112,10 +112,9 @@ def check_game_files() -> tuple[bool, str]:
 
 
 def check_frontmost() -> tuple[bool, str]:
-    from jev.control import frontmost_app_name
+    from jev.control import frontmost_app_name, game_is_frontmost
 
-    name = frontmost_app_name()
-    return "league" in name.lower(), f"frontmost app: {name or 'unknown'} (input only sent while League is frontmost)"
+    return game_is_frontmost(), f"frontmost app: {frontmost_app_name() or 'unknown'} (input only sent while the game is frontmost)"
 
 
 def run_all() -> list[tuple[str, bool, str]]:
