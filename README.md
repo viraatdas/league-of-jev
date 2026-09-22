@@ -8,9 +8,17 @@ icons for cooldowns.
 
 | Head | Rate | Questions | Answer is used for |
 |---|---|---|---|
-| Strategy | 1/s, and at once on big HP changes | intent (8 modes), danger, should_recall, fight_favorable, aggression | lane mode, recalls, how far forward to stand |
-| Tactics | back to back, ~7/s while units are on screen | action from a filtered menu (farm, push, q_minions, poke_q, tornado, eq_champion, gapclose, auto_champion, ult, wind_wall, back_off) plus a dash-target head | the next move, executed within one 30 Hz actor tick |
-| Build | every 20 s and on entering base | need_armor, need_magic_resist, need_tenacity, need_antiheal, need_defense_first, next_item over a shortlist from the full Data Dragon catalog | what to buy; code buys the item or its best affordable components |
+| Strategy | 1/s, and at once on big HP changes or a level-up | intent (farm, trade, all_in, retreat, recall, push_tower, group, defend, go_to), destination (19 map places), level_up (legal abilities only), danger, should_recall, fight_favorable, aggression | lane mode, map travel, skill order, recalls, how far forward to stand |
+| Tactics | back to back, ~6-7/s while units are on screen | action, target, where, distance, menu_fits | the next move, executed within one actor tick |
+| Build | every 20 s and on entering base | need_armor, need_magic_resist, need_tenacity, need_antiheal, need_defense_first, next_item over a shortlist from the full Data Dragon catalog (plus Control Wards, trinket swap, elixirs) | what to buy; code buys the item or its best affordable components |
+
+**Tactical action space** (`jev/actions.py`, kits in `jev/kits.py`), filtered each step to what is possible:
+
+- Champion moves. Yasuo: Q / Q3 tornado (aimed), W wind wall, E (through a chosen unit), E then Q, beyblade (E, Q, Flash), R. Thresh: Q hook, Q2 fly, fly then flay pull, flash hook, W lantern, E flay (any direction), E pull, E push, R box.
+- Summoner spells from the game API: Flash, Ignite, Exhaust, Heal, Barrier, Ghost, Cleanse, Smite.
+- Items: every active the inventory has (targeted ones get a target), potions, trinket and Control Wards.
+- Universal: move, attack, attack-move, stop, hold; standing modes farm / push / stay with the carry / back off.
+- Heads: `target` (enemy champions, the six most relevant enemy minions, allied champions), `where` (at the target, on myself, up or down the lane, eight compass directions), `distance` (short, medium, full range). The executor masks each head by what the chosen move accepts and takes Jev's most likely valid answer.
 
 The tactical head follows OpenAI Five's action layout (arXiv 1912.06680, Appendix F): a primary
 action from a list filtered to what is possible now, plus target parameters read only when the
@@ -88,7 +96,10 @@ single event, so you can grab the mouse back at any time.
 - `jev/riot_api.py` Live Client Data poller and fixture recorder
 - `jev/state.py` compact JSON state Jev is asked about
 - `jev/brain.py` the strategy question pack and the `Decision` it returns
-- `jev/tactics.py` the tactical head: action filters, state, back-to-back Jev thread
+- `jev/actions.py` the full tactical action space: moves, summoners, items, target / where / distance heads, executor
+- `jev/kits.py` champion kits (Yasuo, Thresh): abilities, combos, standing modes, reflexes, item profile
+- `jev/places.py` named map places for the strategy head's destination answer
+- `jev/tactics.py` the tactical head: menu, state, back-to-back Jev thread
 - `jev/items.py` the build head: Data Dragon catalog, need questions, shortlist, recipe-aware purchases
 - `jev/capture.py` ScreenCaptureKit stream of the whole display (game view, minimap, HUD in one frame), mss fallback
 - `jev/vision.py` health bars (units and HP) and HUD icons (cooldowns) from each frame, ~5 ms

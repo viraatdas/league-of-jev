@@ -352,6 +352,8 @@ class Player:
         and (when `standing`) the kit's standing behaviour. Returns False when nothing was done
         this tick (macro movement takes over)."""
         view, mi, kit = self.view, self.micro, self.kit
+        if mi is not None and mi.run_due(now):
+            return True  # a combo step fired this tick
         if view is None or mi is None or now - view.ts > 0.3:
             return False
         minions = self.min_tracker.update(view.enemies("minion"), now)

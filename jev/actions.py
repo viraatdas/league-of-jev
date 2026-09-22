@@ -66,6 +66,19 @@ class Ctx:
     aspd: float
     ally_units: list[Unit] = field(default_factory=list)
     lane_progress: float = 0.5
+    summoners: list[str | None] = field(default_factory=list)
+
+    def flash_slot(self) -> int | None:
+        """1 or 2 when Flash is equipped and ready, else None."""
+        for i, (name, hud) in enumerate(zip(self.summoners, "DF")):
+            if name == "flash" and self.sc.ready.get(hud):
+                return i + 1
+        return None
+
+    def flash_toward(self, x: float, y: float) -> None:
+        slot = self.flash_slot()
+        if slot is not None:
+            self.mi.ctl.cast(self.mi.kb.summoner(slot), *self.mi._pt(x, y), self.mi.kb.quick(f"evtCastAvatarSpell{slot}"))
 
 
 # -- geometry ----------------------------------------------------------------------------

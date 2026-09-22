@@ -293,6 +293,14 @@ def shortlist(catalog: Catalog, owned: list[str], needs: dict[str, float], game_
     for c in profile.core:
         if c not in TIER2_BOOTS:
             add(catalog.get(c))
+    # Consumables and trinket swaps are part of the build decision too.
+    if game_min > 3 and not any("control ward" in o for o in owned_l):
+        add(catalog.get("Control Ward"))
+    if profile.support and game_min > 6 and "oracle lens" not in owned_l:
+        add(catalog.get("Oracle Lens"))
+    finished = sum(1 for o in owned if (catalog.get(o) and catalog.get(o).price >= 2200))
+    if game_min > 25 or finished >= 5:
+        add(catalog.get("Elixir of Iron" if profile.support else "Elixir of Wrath"))
 
     def score(it: Item) -> float:
         tags = set(it.tags)

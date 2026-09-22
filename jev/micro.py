@@ -163,6 +163,21 @@ class Micro:
         self.last_seq = 0
         self.orders = 0
         self.react_ms: collections.deque[tuple[str, float]] = collections.deque(maxlen=200)
+        self._later: list[tuple[float, object]] = []
+
+    def later(self, delay_s: float, fn) -> None:
+        """Queue a combo step to run `delay_s` from now (checked every actor tick)."""
+        self._later.append((time.time() + delay_s, fn))
+
+    def run_due(self, now: float) -> bool:
+        due = [f for t, f in self._later if t <= now]
+        self._later = [(t, f) for t, f in self._later if t > now]
+        for fn in due:
+            try:
+                fn()
+            except Exception:  # noqa: BLE001
+                pass
+        return bool(due)
 
     # -- helpers -------------------------------------------------------------------------
     def _pt(self, x: float, y: float) -> tuple[float, float]:

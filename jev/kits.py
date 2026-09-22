@@ -147,6 +147,18 @@ class Yasuo(Kit):
             return "E+Q"
         return "E"
 
+    def _beyblade(self, ctx: Ctx, spec: Spec, tgt, pt) -> str:
+        champ = ctx.sc.champ
+        ctx.mi.cast(3, tgt.unit.x, tgt.unit.y)
+        tgt.e_marked_until = ctx.now + 10.0
+        was_q3 = self.q.q3(ctx.now)
+        ctx.mi.later(FAST.eq_delay_s, lambda: ctx.mi.ctl.press(ctx.mi.kb.ability(1)))
+        ctx.mi.later(FAST.eq_delay_s + 0.06, lambda: ctx.flash_toward(champ.unit.x, champ.unit.y))
+        self.q.cast(True, ctx.now)
+        if was_q3:
+            self.tornado_at = ctx.now + 0.15
+        return "beyblade E+Q+Flash"
+
     def specs(self, ctx: Ctx) -> list[Spec]:
         sc, now = ctx.sc, ctx.now
         q3 = self.q.q3(now)
@@ -173,6 +185,10 @@ class Yasuo(Kit):
                 out.append(Spec("E_then_Q", "E through the chosen enemy unit and Q during the dash (circle Q: hits everything around me).",
                                 UNIT, who="enemy", range=VC.e_range, accept=not_marked,
                                 run=lambda c, s, t, p: self._e(c, s, t, p, then_q=True)))
+        if sc.ready.get("E") and sc.ready.get("Q") and ctx.flash_slot() and sc.champ is not None:
+            out.append(Spec("beyblade", "E through the chosen enemy unit, Q during the dash, and Flash onto the enemy champion "
+                            "during the Q: the circle Q (a knock-up with the tornado) lands on them from out of range.",
+                            UNIT, who="enemy", range=VC.e_range, accept=not_marked, run=self._beyblade))
         if sc.r_lit and sc.champ is not None:
             out.append(Spec("R", "R: Last Breath onto the airborne enemy champion: big damage while they are knocked up.",
                             UNIT, who="enemy_champion", range=VC.r_range,
@@ -226,6 +242,26 @@ class Thresh(Kit):
         self.hook_at = ctx.now
         return "Q hook"
 
+    def _flash_hook(self, ctx: Ctx, spec: Spec, tgt, pt) -> str:
+        ctx.mi.cast(1, tgt.unit.x, tgt.unit.y)
+        self.hook_at = ctx.now
+        ctx.mi.later(0.12, lambda: ctx.flash_toward(tgt.unit.x, tgt.unit.y))
+        return "flash hook"
+
+    def _fly_flay(self, ctx: Ctx, spec: Spec, tgt, pt) -> str:
+        ctx.mi.ctl.press(ctx.mi.kb.ability(1))
+        champ = ctx.sc.champ
+
+        def pull() -> None:
+            # After the fly Thresh sits beside the target: cast E away from them to sweep them back.
+            mx, my = ctx.sc.me_xy
+            dx, dy = champ.unit.x - mx, champ.unit.y - my
+            n = math.hypot(dx, dy) or 1.0
+            ctx.mi.cast(3, mx - dx / n * 150, my - dy / n * 150)
+
+        ctx.mi.later(0.45, pull)
+        return "Q2 fly + flay pull"
+
     def _flay(self, ctx: Ctx, tgt, pull: bool) -> str:
         mx, my = ctx.sc.me_xy
         dx, dy = tgt.unit.x - mx, tgt.unit.y - my
@@ -244,9 +280,16 @@ class Thresh(Kit):
         if self.hooked(sc, now):
             out.append(Spec("Q2_fly", "Q again: fly to the hooked enemy and engage (only if my carry can follow).", NONE,
                             run=lambda c, s, t, p: (c.mi.ctl.press(c.mi.kb.ability(1)), "Q2 fly")[1]))
+            if sc.ready.get("E") and sc.champ is not None:
+                out.append(Spec("fly_then_pull", "Q again to fly to the hooked enemy, then E behind me on landing to drag them "
+                                "back toward my carry.", NONE, run=self._fly_flay))
         elif sc.ready.get("Q"):
             out.append(Spec("Q", "Q: throw the hook along the chosen line: the first enemy hit is stunned and pulled toward me.",
                             POINT, who="enemy", range=self.HOOK_RANGE, run=self._hook))
+            if ctx.flash_slot() and sc.champ is not None:
+                out.append(Spec("flash_hook", "Throw the hook at the chosen enemy champion and Flash toward them during the wind-up, "
+                                "so the hook starts closer and they cannot walk out of it.",
+                                UNIT, who="enemy_champion", range=self.HOOK_RANGE + 400, run=self._flash_hook))
         if sc.ready.get("W"):
             out.append(Spec("W", "W: throw the lantern to the chosen spot: an ally near it is shielded and can click it to come to me.",
                             POINT, who="ally_champion", range=self.LANTERN_RANGE,
