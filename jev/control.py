@@ -58,9 +58,29 @@ def frontmost_app_name() -> str:
         return ""
 
 
+def _front_window_pid() -> int | None:
+    """PID owning the frontmost normal window, from the window server (works in any process)."""
+    try:
+        from Quartz import CGWindowListCopyWindowInfo, kCGNullWindowID, kCGWindowListOptionOnScreenOnly
+
+        for w in CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID):
+            if w.get("kCGWindowLayer") != 0:
+                continue
+            b = w.get("kCGWindowBounds", {})
+            if b.get("Width", 0) < 200 or b.get("Height", 0) < 200:
+                continue
+            return int(w.get("kCGWindowOwnerPID"))
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
 def game_is_frontmost() -> bool:
     name = frontmost_app_name().lower()
-    return GAME_BUNDLE_HINT in name or "league of legends (tm) client" in name
+    if name:
+        return GAME_BUNDLE_HINT in name or "league of legends (tm) client" in name
+    pid = game_pid()
+    return pid is not None and _front_window_pid() == pid
 
 
 def game_pid() -> int | None:
@@ -76,17 +96,31 @@ def game_pid() -> int | None:
 
 
 def activate_game() -> bool:
-    """Bring the game process (not the lobby client) to the front."""
+    """Bring the game process (not the lobby client) to the front. Tries AppKit activation,
+    then System Events (needs the Accessibility permission the controller already requires)."""
     try:
         from AppKit import NSApplicationActivateIgnoringOtherApps, NSWorkspace
 
         for app in NSWorkspace.sharedWorkspace().runningApplications():
             bid = str(app.bundleIdentifier() or "").lower()
             if GAME_BUNDLE_HINT in bid:
-                return bool(app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps))
+                app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
+                break
+    except Exception:  # noqa: BLE001
+        pass
+    time.sleep(0.3)
+    if game_is_frontmost():
+        return True
+    try:
+        import subprocess
+
+        script = ('tell application "System Events" to set frontmost of '
+                  '(first process whose bundle identifier is "com.riotgames.LeagueofLegends.GameClient") to true')
+        subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=5)
     except Exception:  # noqa: BLE001
         return False
-    return False
+    time.sleep(0.3)
+    return game_is_frontmost()
 
 
 class Controller:
