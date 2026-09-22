@@ -151,9 +151,12 @@ class LCU:
             for group in sess.get("actions", []):
                 for a in group:
                     if a.get("actorCellId") == cell and a.get("type") == "pick" and not a.get("completed"):
-                        c1, _ = self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": champion_id})
-                        c2, b2 = self.req("POST", f"/lol-champ-select/v1/session/actions/{a['id']}/complete")
-                        return f"pick patch {c1}, complete {c2} {b2 if c2 >= 400 else ''}"
+                        c1, b1 = self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": champion_id, "completed": True})
+                        if c1 >= 400:
+                            c1b, _ = self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": champion_id})
+                            c2, b2 = self.req("POST", f"/lol-champ-select/v1/session/actions/{a['id']}/complete")
+                            return f"lock via patch failed {c1} {b1}; hover {c1b}, complete {c2} {b2 if c2 >= 400 else ''}"
+                        return f"locked via patch completed=true ({c1})"
             time.sleep(1)
         return "no pick action found"
 

@@ -1,0 +1,15 @@
+23:11:16 t=0:00 L1 hp=100% gold=500 0/0/0 cs=0 | traveling lane=0% dmg=0 | intent=farm | jev=- | act=move fwd blocked=0
+23:11:17 t=0:01 L1 hp=100% gold=500 0/0/0 cs=0 | traveling lane=3% dmg=0 | intent=farm | jev=- | act=move fwd blocked=0
+23:11:18 t=0:02 L1 hp=100% gold=500 0/0/0 cs=0 | traveling lane=7% dmg=0 | intent=farm | jev=farm (p=0.99) danger=0.0 recall=0.18 fight=0.17 aggr=0.2 item=Doran's Blade [501 ms, 1310 tok] | act=move fwd blocked=0
+23:11:19 t=0:03 L1 hp=100% gold=500 0/0/0 cs=0 | traveling lane=11% dmg=0 | intent=farm | jev=farm (p=0.99) danger=0.0 recall=0.18 fight=0.19 aggr=0.2 item=Doran's Blade [168 ms, 1310 tok] | act=move fwd blocked=0
+23:11:20 t=0:04 L1 hp=100% gold=500 0/0/0 cs=0 | traveling lane=15% dmg=0 | intent=farm | jev=farm (p=0.99) danger=0.0 recall=0.19 fight=0.19 aggr=0.2 item=Doran's Blade [218 ms, 1310 tok] | act=move fwd blocked=0
+23:11:21 t=0:05 L1 hp=100% gold=500 0/0/0 cs=0 | traveling lane=19% dmg=0 | intent=farm | jev=farm (p=0.98) danger=0.0 recall=0.21 fight=0.18 aggr=0.2 item=Doran's Blade [148 ms, 1310 tok] | act=move fwd blocked=0
+23:11:22 t=0:06 L1 hp=100% gold=500 0/0/0 cs=0 | traveling lane=22% dmg=0 | intent=farm | jev=farm (p=0.99) danger=0.0 recall=0.18 fight=0.20 aggr=0.2 item=Doran's Blade [309 ms, 1310 tok] | act=move fwd blocked=0
+23:11:23 t=0:07 L1 hp=100% gold=500 0/0/0 cs=0 | traveling lane=26% dmg=0 | intent=farm | jev=farm (p=0.99) danger=0.0 recall=0.17 fight=0.18 aggr=0.2 item=Doran's Blade [225 ms, 1310 tok] | act=move fwd blocked=0
+23:11:24 t=0:08 L1 hp=100% gold=500 0/0/0 cs=0 | traveling lane=30% dmg=0 | intent=farm | jev=farm (p=0.99) danger=0.0 recall=0.19 fight=0.18 aggr=0.1 item=Doran's Blade [402 ms, 1310 tok] | act=move fwd blocked=0
+23:11:25 t=0:09 L1 hp=100% gold=500 0/0/0 cs=0 | traveling lane=34% dmg=0 | intent=farm | jev=farm (p=0.99) danger=0.0 recall=0.20 fight=0.18 aggr=0.2 item=Doran's Blade [165 ms, 1310 tok] | act=move fwd blocked=0
+23:11:26 t=0:10 L1 hp=100% gold=500 0/0/0 cs=0 | traveling lane=38% dmg=0 | intent=farm | jev=farm (p=0.96) danger=0.0 recall=0.24 fight=0.18 aggr=0.2 item=Doran's Blade [280 ms, 1310 tok] | act=move fwd blocked=0
+23:11:27 t=0:11 L1 hp=100% gold=500 0/0/0 cs=0 | traveling lane=42% dmg=0 | intent=farm | jev=farm (p=0.96) danger=0.0 recall=0.31 fight=0.21 aggr=0.1 item=Doran's Blade [144 ms, 1310 tok] | act=move fwd blocked=0
+23:11:28 t=0:12 L1 hp=100% gold=500 0/0/0 cs=0 | lane lane=46% dmg=0 | intent=farm | jev=farm (p=0.95) danger=0.0 recall=0.35 fight=0.21 aggr=0.2 item=Doran's Blade [184 ms, 1310 tok] | act=attack-move fwd blocked=0
+23:11:29 t=0:13 L1 hp=100% gold=500 0/0/0 cs=0 | lane lane=50% dmg=0 | intent=farm | jev=farm (p=0.98) danger=0.0 recall=0.26 fight=0.22 aggr=0.1 item=Doran's Blade [161 ms, 1311 tok] | act=attack-move fwd blocked=0
+23:11:30 t=0:14 L1 hp=100% gold=500 0/0/0 cs=0 | lane lane=53% dmg=0 | intent=farm | jev=farm (p=0.98) danger=0.0 recall=0.30 fight=0.22 aggr=0.2 item=Doran's Blade [230 ms, 1311 tok] | act=attack-move hold blocked=0
