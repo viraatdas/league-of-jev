@@ -43,17 +43,20 @@ data["activePlayer"]["championStats"]["currentHealth"] = 500.0
 # Recall when safe
 p.decision = fake("recall", danger=0.5, recall=0.9)
 data["activePlayer"]["championStats"]["currentHealth"] = 500.0
-for i in range(200, 260):
+recalls = []
+_orig_recall = p.mech.start_recall
+p.mech.start_recall = lambda t: (recalls.append(t), _orig_recall(t))
+for i in range(200, 300):
     perc = p._tick(data, now + i * 0.2)
 print("recall:", "intent", p.intent, "phase", p.phase, "lane%", p.mech.nav.pct, "last", p.mech.last_action)
 assert p.phase in ("base", "lane")
-assert any("recalling" in a or "key(b)" in a or "click_left(1181,1020)" in a for a in list(p.log_lines)) or p.phase == "base", list(p.log_lines)
+assert recalls, "recall never started"
 # Death resets
 data["allPlayers"][0]["isDead"] = True
-perc = p._tick(data, now + 261 * 0.2)
+perc = p._tick(data, now + 301 * 0.2)
 print("dead:", p.intent, p.phase, "lane%", p.mech.nav.pct)
 data["allPlayers"][0]["isDead"] = False
-perc = p._tick(data, now + 262 * 0.2)
+perc = p._tick(data, now + 302 * 0.2)
 print("respawn:", p.intent, p.phase, "last", p.mech.last_action)
 print("actions tail:", list(p.log_lines))
 print("LOOP OK")

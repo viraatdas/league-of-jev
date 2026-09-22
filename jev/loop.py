@@ -15,6 +15,7 @@ from jev import config, keybinds
 from jev.brain import Brain, Decision
 from jev.control import Controller, activate_game
 from jev.mechanics import Mechanics
+from jev.items import BuildPlan, ShopBrain, enemy_team
 from jev.micro import Micro, UnitTracker, build_scene
 from jev.minimap import MinimapReader, MinimapState, dist, lane_progress, lane_wave
 from jev.riot_api import FixtureRecorder, RiotLiveClient
@@ -136,6 +137,14 @@ class Player:
         self.api_ms = 0.0
         self._api_dead = False
         self._last_table = 0.0
+        # Itemization head: Data Dragon catalog + Jev need/next_item questions.
+        try:
+            self.shop_brain: ShopBrain | None = ShopBrain()
+        except Exception as e:  # noqa: BLE001  no network and no cache: fall back to Doran's Blade only
+            self.shop_brain = None
+            self.log_lines.append(f"item catalog unavailable: {e}")
+        self.build: BuildPlan | None = None
+        self._build_wake = threading.Event()
 
     def _log_action(self, msg: str) -> None:
         self.log_lines.append(msg)
@@ -155,6 +164,31 @@ class Player:
                     self.log_lines.append(f"brain error: {e}")
             self._wake.wait(timeout=max(0.05, period - (time.time() - t0)))
             self._wake.clear()
+
+    def _build_loop(self) -> None:
+        """Re-plan the build every 20 s, and right away when the tick asks (entering base, death)."""
+        while not self._stop.is_set():
+            data = self.data
+            if data and self.shop_brain is not None and not self.paused:
+                try:
+                    self.build = self.shop_brain.decide(data, self.side)
+                    self.log_lines.append(self.build.summary())
+                except Exception as e:  # noqa: BLE001
+                    self.log_lines.append(f"build error: {e}")
+            self._build_wake.wait(timeout=20.0)
+            self._build_wake.clear()
+
+    def _shopping_state(self, data: dict) -> dict | None:
+        b = self.build
+        if b is None or self.shop_brain is None:
+            return None
+        cat = self.shop_brain.catalog
+        return {
+            "building_toward": b.target,
+            "can_buy_now": [{"item": n, "price": cat.get(n).price if cat.get(n) else None} for n in b.buy_now],
+            "gold": round(float(data.get("activePlayer", {}).get("currentGold", 0.0))),
+            "enemy_needs": b.needs,
+        }
 
     def _perceive_loop(self) -> None:
         """One full-screen grab per frame (the fixed capture cost dominates), sliced for the
@@ -199,6 +233,16 @@ class Player:
                 self.data = d
             time.sleep(max(0.0, 0.1 - (time.time() - t0)))
 
+    def _full_state(self, data: dict, perception: Perception) -> dict:
+        st = build_state(data, perception, self.role)
+        if self.shop_brain is not None:
+            st["enemy_lineup"] = [{k: e[k] for k in ("champion", "class", "damage", "level", "kda")}
+                                  for e in enemy_team(data, self.shop_brain.catalog, self.side)]
+        shopping = self._shopping_state(data)
+        if shopping:
+            st["shopping"] = shopping
+        return st
+
     def fast_summary(self) -> list[str]:
         """Overlay lines for the fast path."""
         out = []
@@ -214,6 +258,11 @@ class Player:
             rdy = "".join(k for k in "QWER" if sc.ready.get(k))
             out.append(f"screen: {len(sc.minions)} minions ({len(sc.killable_auto)} killable), {sc.allies} ally, {ch}, ready {rdy or '-'}"
                        + (" Q3" if self.micro and self.micro.q.q3(time.time()) else ""))
+        b = self.build
+        if b is not None:
+            needs = " ".join(f"{k.replace('need_', '')[:7]} {v:.2f}" for k, v in b.needs.items())
+            out.append(f"build -> {b.target} p={b.confidence:.2f} | buy now: {', '.join(b.buy_now) or '-'}")
+            out.append(f"  needs: {needs}")
         out.append(f"APM {self.ctl.apm()}   vision {self.perceive_fps:.0f} fps   api {self.api_ms:.0f} ms   micro: {self.micro.last_action if self.micro else '-'}")
         return out
 
@@ -327,6 +376,7 @@ class Player:
             self._base_shop_done = True
         threading.Thread(target=self._brain_loop, daemon=True).start()
         threading.Thread(target=self._api_loop, daemon=True).start()
+        threading.Thread(target=self._build_loop, daemon=True).start()
         if not self.dry_run:
             threading.Thread(target=self._perceive_loop, daemon=True).start()
             if self.tactic_hz > 0:
@@ -359,7 +409,7 @@ class Player:
                         if self.mech:
                             self.mech._last_move = 0.0
                     perception = self._tick(data, t0)
-                    self.state = build_state(data, perception, self.role)
+                    self.state = self._full_state(data, perception)
                     if t0 - self._last_table > 0.25:
                         self._last_table = t0
                         live.update(self._table(perception))
@@ -450,6 +500,7 @@ class Player:
         if me.get("isDead"):
             if self.phase != "dead":
                 m.cancel_recall()
+                self._build_wake.set()
             self.phase = "dead"
             m.nav.reset_to_base()
             self.intent = "dead"
@@ -467,11 +518,16 @@ class Player:
         # Shop once per visit to base: at game start, after respawn, after a recall.
         if self.phase == "base" and not self._base_shop_done:
             gold = float(ap.get("currentGold", 0))
-            if self.decision is None and now - self.guards.left_base_at < 3.0 and gold >= 450:
-                return p  # give Jev a moment to name the item
-            if gold >= 450:
-                self._shop_if_possible()
+            if not hasattr(self, "_base_since"):
+                self._base_since = now
+            fresh = self.build is not None and now - self.build.ts < 6.0
+            if self.shop_brain is not None and not fresh and now - self._base_since < 3.0:
+                self._build_wake.set()
+                return p  # give the build head a moment to re-plan with the current gold
+            if gold >= 50:
+                self._shop_if_possible(gold)
             self._base_shop_done = True
+            del self._base_since
 
         state = self.state or build_state(data, p, self.role)
         self.intent = choose_intent(self.decision, state, p, now, self.guards)
@@ -485,6 +541,7 @@ class Player:
             elif m.recall_done(now):
                 m.cancel_recall()
                 m.nav.reset_to_base()
+                self._build_wake.set()
                 self.phase = "base"
                 self._base_shop_done = False
                 self.intent = "farm"
@@ -570,11 +627,27 @@ class Player:
         me = find_me(d) or {}
         return [i.get("displayName", "") for i in me.get("items", [])]
 
-    def _shop_if_possible(self) -> None:
-        d = self.decision
-        item = d.next_item if d and d.next_item else "Doran's Blade"
-        if self.mech:
+    def _shop_if_possible(self, gold: float) -> None:
+        """Buy toward the build plan's target: the item if the gold covers what is left of its
+        recipe, else its most valuable affordable components. Re-planned against current gold."""
+        if self.mech is None:
+            return
+        names: list[str] = []
+        if self.build is not None and self.shop_brain is not None:
+            cat = self.shop_brain.catalog
+            target = cat.get(self.build.target)
+            if target is not None:
+                names = [b.name for b in cat.purchases(target, self._items_now(), gold)]
+            spent = sum(cat.get(n).price for n in names if cat.get(n))
+            game_min = float((self.data or {}).get("gameData", {}).get("gameTime", 0.0)) / 60
+            potions = sum(1 for i in self._items_now() if "potion" in i.lower())
+            if game_min < 12 and potions < 2 and gold - spent >= 50:
+                names.append("Health Potion")
+        if not names:
+            names = ["Doran's Blade"] if gold >= 450 else []
+        for item in names:
             if self.mech.shop(item, self._items_now):
                 self.log_lines.append(f"shop: bought {item}")
             else:
                 self.log_lines.append(f"shop: could not buy {item}")
+                break

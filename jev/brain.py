@@ -81,9 +81,9 @@ def candidates_with_prices(owned: list[str], gold: float) -> list[dict]:
 
 
 def question_pack(state: dict) -> dict:
-    me = state.get("me", {})
-    priced = candidates_with_prices(me.get("items", []), float(me.get("gold", 0)))
-    candidates = [c["item"] for c in priced]
+    """Strategic questions. Itemization is its own head (items.ShopBrain); its current plan
+    arrives as state["shopping"] so the recall question can weigh what a trip home would buy."""
+    shopping = state.get("shopping") or {"can_buy_now": [], "note": "no build plan yet"}
     return {
         "intent": Choice(
             instructions=(
@@ -103,11 +103,12 @@ def question_pack(state: dict) -> dict:
         ),
         "should_recall": Noul(
             instructions={
-                "shop_candidates": priced,
+                "shopping": shopping,
                 "question": (
-                    "Should `me` recall to base now? Recalling is right when `me.gold` affords a "
-                    "`shop_candidates` item that is a real upgrade, or `me.hp_percent` is low, or "
-                    "`lane_opponent` is dead. Staying is right when nothing useful is affordable and HP is fine."
+                    "Should `me` recall to base now? Recalling is right when `shopping.can_buy_now` holds a real "
+                    "upgrade (a finished item or a strong component toward `shopping.building_toward`), or "
+                    "`me.hp_percent` is low, or `lane_opponent` is dead. Staying is right when nothing useful "
+                    "can be bought yet and HP is fine."
                 ),
             },
             criteria={"true": "Recalling now is clearly right", "false": "Stay in lane"},
@@ -126,16 +127,6 @@ def question_pack(state: dict) -> dict:
                 "Aggressive: look for kills and pressure the opponent",
             ],
         ),
-        "next_item": Choice(
-            instructions={
-                "candidates": priced,
-                "question": (
-                    "Which of the `candidates` should `me` buy next? Prefer the strongest item that is "
-                    "`affordable_now`; pick a cheap one only if nothing better is affordable."
-                ),
-            },
-            criteria={c: None for c in candidates},
-        ),
     }
 
 
@@ -151,7 +142,6 @@ class Brain:
         res = self.client.system_one(state, question_pack(state))
         dt = (time.perf_counter() - t0) * 1000
         intent = res.choices["intent"]
-        item = res.choices["next_item"]
         usage = getattr(res, "usage", None)
         return Decision(
             intent=intent.choice,
@@ -161,8 +151,8 @@ class Brain:
             should_recall=float(res.nouls["should_recall"].noul),
             fight_favorable=float(res.nouls["fight_favorable"].noul),
             aggression=float(res.scores["aggression"].score),
-            next_item=item.choice,
-            next_item_confidence=float(item.confidence),
+            next_item=None,
+            next_item_confidence=0.0,
             latency_ms=dt,
             model=str(getattr(res, "model", "?")),
             input_tokens=int(getattr(usage, "input_tokens", 0) or 0),

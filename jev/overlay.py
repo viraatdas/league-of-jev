@@ -103,7 +103,6 @@ def format_snapshot(state: dict, decision, intent: str, mm_summary: str, last_ac
             bar = "#" * int(round(pr * 24))
             lines.append(f"  {name:<10} {pr:4.2f} {bar}")
         lines.append(f"danger {decision.danger:.1f}/3   recall {decision.should_recall:.2f}   fight {decision.fight_favorable:.2f}   aggr {decision.aggression:.1f}/2")
-        lines.append(f"next item: {decision.next_item} (p={decision.next_item_confidence:.2f})")
     nearby = state.get("nearby", {}) if state else {}
     lines.append(f"{nearby.get('where_i_am', '')} | {nearby.get('minion_wave', '')} | {nearby.get('closest_enemy_champion', '')}")
     lines.append(f"minimap {mm_summary}")

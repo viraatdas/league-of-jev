@@ -375,9 +375,9 @@ class Mechanics:
         ok = False
         low = item.lower()
         card = None
-        if low.startswith("doran") and self.geo.starter_card:
+        if low == "doran's blade" and self.geo.starter_card:
             card = self.geo.starter_card
-        elif ("boots" in low or "greaves" in low) and self.geo.boots_card:
+        elif low == "boots" and self.geo.boots_card:
             card = self.geo.boots_card
         if card and self.geo.purchase_button:
             # Double-click on a tile buys it; the PURCHASE click is a harmless fallback.
