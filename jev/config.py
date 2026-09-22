@@ -16,6 +16,7 @@ LANE_CENTER = 0.50
 OWN_TOWER = 0.42
 ENEMY_TOWER = 0.60
 MAX_ADVANCE = 0.48          # default farming limit; Jev's aggression moves it between 0.45 and 0.52
+HARD_LIMIT = 0.545          # enemy tower range edge is ~0.56; never farm past this
 PUSH_ADVANCE = 0.54         # push_tower may go this far (minions tank the tower)
 DIAGONAL_UNITS = 19660.0    # fountain to fountain
 
@@ -60,7 +61,8 @@ class Timing:
     max_reckon_speed: float = 400.0
     seek_after_s: float = 10.0      # no minion contact this long -> creep forward
     seek_step: float = 0.01         # per farm tick while seeking (about 5 Hz)
-    seek_max: float = 0.07          # never seek past MAX_ADVANCE + this
+    seek_max: float = 0.07          # patrol forward this far past the limit
+    seek_back: float = 0.06         # then back this far toward the own tower
     resync_s: float = 14.0          # mid-game start: walk to own tower this long first
 
 

@@ -169,14 +169,22 @@ class Mechanics:
         if not hasattr(self, "_last_contact"):
             self._last_contact = now
             self._seek = 0.0
+            self._seek_dir = 1
         if contact:
             self._last_contact = now
-            self._seek = 0.0
         elif now - self._last_contact > self.timing.seek_after_s:
-            self._seek = min(getattr(self, "_seek", 0.0) + self.timing.seek_step, self.timing.seek_max)
-        limit = config.MAX_ADVANCE + (aggression - 1.0) * 0.035 + getattr(self, "_seek", 0.0)
-        if self.nav.progress < limit:
+            # Patrol: creep forward to the cap, then back toward the own tower, until minions are felt.
+            self._seek += self._seek_dir * self.timing.seek_step
+            if self._seek >= self.timing.seek_max:
+                self._seek_dir = -1
+            elif self._seek <= -self.timing.seek_back:
+                self._seek_dir = 1
+        limit = config.MAX_ADVANCE + (aggression - 1.0) * 0.035 + self._seek
+        limit = min(limit, config.HARD_LIMIT)
+        if self.nav.progress < limit - 0.005:
             self.walk(1, move_speed, now, attack=True)
+        elif self.nav.progress > limit + 0.02:
+            self.walk(-1, move_speed, now, attack=True, px=self.geo.attack_move_px)
         else:
             self.hold(now)
             if now - self._last_move >= self.timing.move_reissue_s:
