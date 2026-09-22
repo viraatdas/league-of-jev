@@ -166,10 +166,13 @@ class Mechanics:
         """aggression is Jev's 0..2 score: passive stays nearer the own tower, aggressive holds
         closer to the enemy side of the wave. Without vision the wave is found by feel: minion
         chip damage means contact, so hold; no contact for a while means creep forward a step."""
+        if not hasattr(self, "_last_contact"):
+            self._last_contact = now
+            self._seek = 0.0
         if contact:
             self._last_contact = now
             self._seek = 0.0
-        elif now - getattr(self, "_last_contact", now) > self.timing.seek_after_s:
+        elif now - self._last_contact > self.timing.seek_after_s:
             self._seek = min(getattr(self, "_seek", 0.0) + self.timing.seek_step, self.timing.seek_max)
         limit = config.MAX_ADVANCE + (aggression - 1.0) * 0.035 + getattr(self, "_seek", 0.0)
         if self.nav.progress < limit:

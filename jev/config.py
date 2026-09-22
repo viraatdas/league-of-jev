@@ -60,7 +60,7 @@ class Timing:
     max_reckon_speed: float = 400.0
     seek_after_s: float = 10.0      # no minion contact this long -> creep forward
     seek_step: float = 0.01         # per farm tick while seeking (about 5 Hz)
-    seek_max: float = 0.05          # never seek past MAX_ADVANCE + this
+    seek_max: float = 0.07          # never seek past MAX_ADVANCE + this
     resync_s: float = 14.0          # mid-game start: walk to own tower this long first
 
 
