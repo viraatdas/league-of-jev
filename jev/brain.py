@@ -25,6 +25,12 @@ YASUO_BUILD = [
     "Guardian Angel",
 ]
 YASUO_EARLY = ["Doran's Blade", "Health Potion", "Noonquiver", "Boots"]
+# Approximate prices; check against the current patch.
+ITEM_PRICES = {
+    "Doran's Blade": 450, "Health Potion": 50, "Noonquiver": 1300, "Boots": 300,
+    "Berserker's Greaves": 1100, "Immortal Shieldbow": 3000, "Infinity Edge": 3450,
+    "Bloodthirster": 3400, "Mortal Reminder": 3300, "Guardian Angel": 3200,
+}
 
 INTENTS: dict[str, str] = {
     "farm": "Stay with the minion wave and last-hit minions. The default when nothing else is clearly better.",
@@ -64,12 +70,20 @@ class Decision:
 
 def item_candidates(owned: list[str]) -> list[str]:
     owned_l = {o.lower() for o in owned}
+    if any("greaves" in o for o in owned_l):
+        owned_l.add("boots")
     remaining = [i for i in YASUO_EARLY + YASUO_BUILD if i.lower() not in owned_l]
     return remaining[:5] or ["Elixir of Wrath"]
 
 
+def candidates_with_prices(owned: list[str], gold: float) -> list[dict]:
+    return [{"item": c, "price": ITEM_PRICES.get(c), "affordable_now": ITEM_PRICES.get(c, 10**9) <= gold} for c in item_candidates(owned)]
+
+
 def question_pack(state: dict) -> dict:
-    candidates = item_candidates(state.get("me", {}).get("items", []))
+    me = state.get("me", {})
+    priced = candidates_with_prices(me.get("items", []), float(me.get("gold", 0)))
+    candidates = [c["item"] for c in priced]
     return {
         "intent": Choice(
             instructions=(
@@ -88,10 +102,14 @@ def question_pack(state: dict) -> dict:
             ],
         ),
         "should_recall": Noul(
-            instructions=(
-                "Should `me` recall to base now? Consider `me.gold` (enough for a useful item), "
-                "`me.hp_percent`, whether `lane_opponent` is alive, and `objectives` timers."
-            ),
+            instructions={
+                "shop_candidates": priced,
+                "question": (
+                    "Should `me` recall to base now? Recalling is right when `me.gold` affords a "
+                    "`shop_candidates` item that is a real upgrade, or `me.hp_percent` is low, or "
+                    "`lane_opponent` is dead. Staying is right when nothing useful is affordable and HP is fine."
+                ),
+            },
             criteria={"true": "Recalling now is clearly right", "false": "Stay in lane"},
         ),
         "fight_favorable": Noul(
@@ -110,10 +128,10 @@ def question_pack(state: dict) -> dict:
         ),
         "next_item": Choice(
             instructions={
-                "candidates": candidates,
+                "candidates": priced,
                 "question": (
-                    "Which of the `candidates` should `me` buy next, given `me.gold`, `me.items`, "
-                    "and `lane_opponent.items`?"
+                    "Which of the `candidates` should `me` buy next? Prefer the strongest item that is "
+                    "`affordable_now`; pick a cheap one only if nothing better is affordable."
                 ),
             },
             criteria={c: None for c in candidates},

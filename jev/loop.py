@@ -105,6 +105,7 @@ class Player:
         self._base_shop_done = False
         self.paused = False
         self._last_sig = (None, None, 0)
+        self._gold_hist: collections.deque[tuple[float, float, int]] = collections.deque()
 
     def _log_action(self, msg: str) -> None:
         self.log_lines.append(msg)
@@ -279,7 +280,8 @@ class Player:
             self.intent = "resync"
             return p
         if self.intent == "farm":
-            contact = 0.5 <= lost < config.TIMING.heavy_damage_pct or (p.seconds_since_damage is not None and p.seconds_since_damage < 6)
+            contact = self._income_contact(float(ap.get("currentGold", 0)), int(me.get("scores", {}).get("creepScore", 0)), now) \
+                or 0.5 <= lost < config.TIMING.heavy_damage_pct
             m.farm(move_speed, now, self.decision.aggression if self.decision else 1.0, contact)
         elif self.intent == "trade":
             m.trade(move_speed, now)
@@ -312,6 +314,19 @@ class Player:
         )
         with open(self.logfile, "a") as f:
             f.write(line)
+
+    def _income_contact(self, gold: float, cs: int, now: float) -> bool:
+        """True when gold came in faster than passive income over the last few seconds, or CS
+        moved: the champion is killing minions, so the wave is here."""
+        self._gold_hist.append((now, gold, cs))
+        while self._gold_hist and now - self._gold_hist[0][0] > 6.0:
+            self._gold_hist.popleft()
+        t0, g0, cs0 = self._gold_hist[0]
+        dt = now - t0
+        if dt < 3.0:
+            return False
+        passive = 2.1 * dt + 4.0
+        return (gold - g0) > passive + 12 or cs > cs0
 
     def _items_now(self) -> list[str]:
         d = self.riot.all_game_data() or {}
