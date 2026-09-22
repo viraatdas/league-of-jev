@@ -33,6 +33,8 @@ def choose_intent(d: Decision | None, state: dict, p: Perception, now: float, gu
     since_dmg = p.seconds_since_damage if p.seconds_since_damage is not None else 99.0
     if me["hp_percent"] < 15 and since_dmg < 4:
         guard.retreat_until = now + 4.0  # survival floor, shorter than Jev's own retreat calls
+    if p.hp_lost_recent_pct >= config.TIMING.heavy_damage_pct:
+        guard.retreat_until = now + 5.0  # tower-sized chunks: step out before the next shot
     if now < guard.retreat_until:
         return "retreat"
     if d is None:
@@ -265,7 +267,7 @@ class Player:
 
         p.position = "lane"
         if self.intent == "farm":
-            m.farm(move_speed, now)
+            m.farm(move_speed, now, self.decision.aggression if self.decision else 1.0)
         elif self.intent == "trade":
             m.trade(move_speed, now)
         elif self.intent == "push_tower":

@@ -15,8 +15,8 @@ RED_MID_T1 = (8955.0, 8510.0)
 LANE_CENTER = 0.50
 OWN_TOWER = 0.42
 ENEMY_TOWER = 0.60
-MAX_ADVANCE = 0.53          # never walk past this on your own
-PUSH_ADVANCE = 0.57         # push_tower may go this far (minions tank the tower)
+MAX_ADVANCE = 0.48          # default farming limit; Jev's aggression moves it between 0.45 and 0.52
+PUSH_ADVANCE = 0.54         # push_tower may go this far (minions tank the tower)
 DIAGONAL_UNITS = 19660.0    # fountain to fountain
 
 
@@ -25,7 +25,7 @@ class Geometry:
     """Where things are on screen. Calibrate with `jev snapshot` once the game runs."""
 
     # Where the locked camera puts the champion, in frame pixels. None = frame centre.
-    champion_px: tuple[int, int] | None = (832, 645)
+    champion_px: tuple[int, int] | None = (862, 490)
     # Optional minimap square (x, y, side) in frame pixels. None = use screen-relative clicks only.
     minimap: tuple[int, int, int] | None = (1350, 705, 372)
     # Optional shop search box (x, y) in frame pixels. None = shopping disabled.

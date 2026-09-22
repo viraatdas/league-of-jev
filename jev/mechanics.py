@@ -162,14 +162,18 @@ class Mechanics:
             return
         self.walk(1, move_speed, now)
 
-    def farm(self, move_speed: float, now: float) -> None:
-        if self.nav.progress < config.MAX_ADVANCE:
+    def farm(self, move_speed: float, now: float, aggression: float = 1.0) -> None:
+        """aggression is Jev's 0..2 score: passive stays nearer the own tower, aggressive holds
+        closer to the enemy side of the wave."""
+        limit = config.MAX_ADVANCE + (aggression - 1.0) * 0.035
+        if self.nav.progress < limit:
             self.walk(1, move_speed, now, attack=True)
         else:
             self.hold(now)
             if now - self._last_move >= self.timing.move_reissue_s:
                 self._last_move = now
-                x, y = self._ahead(self.geo.attack_move_px * 0.5, 1)
+                # Attack-move on the spot: fights whatever is in range without creeping forward.
+                x, y = self._ahead(20, 1)
                 self._snapped(lambda: self._attack_move(x, y))
                 self.last_action = "attack-move hold"
         self.blind_q(now)
