@@ -210,6 +210,32 @@ class Mechanics:
         self.last_action = f"minimap move to {int(target[0])},{int(target[1])}"
         return True
 
+    def go_map(self, target: tuple[float, float], now: float, attack: bool = False, every: float = 1.0) -> bool:
+        """Move (or attack-move) to any map point through the minimap; the game paths there."""
+        pt = self._minimap_point(*target)
+        if pt is None:
+            return False
+        if now - self._last_move < every:
+            return True
+        self._last_move = now
+        if attack:
+            self.ctl.move(*pt)
+            self.ctl.press(self.kb.attack_move)
+            self.ctl.click(*pt, "left")
+        else:
+            self.ctl.move_to(*pt)
+        self.last_action = f"{'attack-move' if attack else 'travel'} to {int(target[0])},{int(target[1])}"
+        return True
+
+    def level_ability(self, ab: str) -> None:
+        """Spend a skill point on `ab` (Q W E R): the level key when keys land, else the HUD chevron."""
+        idx = ABILITY_INDEX[ab]
+        if self.ctl.keys_ok():
+            self.ctl.press(self.kb.level(idx))
+        else:
+            self.ctl.click(*self._pt(self.geo.level_chevrons[idx - 1]), "left")
+        self.last_action = f"level {ab}"
+
     # -- behaviours ---------------------------------------------------------------------
     def go_lane(self, move_speed: float, now: float) -> None:
         if not self.go_progress(self.lane.own_tower, move_speed, now, attack=False):

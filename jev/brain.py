@@ -39,8 +39,9 @@ INTENTS: dict[str, str] = {
     "retreat": "Walk back toward your own tower immediately because staying is too dangerous.",
     "recall": "Move to a safe spot and recall to base to spend gold or heal.",
     "push_tower": "Push the wave into the enemy tower and attack the tower.",
-    "group": "Leave lane and join teammates for an objective or fight.",
+    "group": "Leave lane and join teammates at `destination` for an objective or fight.",
     "defend": "Fall back to protect your own tower or inhibitor that is under attack.",
+    "go_to": "Leave the lane and go to `destination`: another lane, an objective (dragon, baron), the river, a jungle buff, or a tower, to fight, help, take the objective, or ward.",
 }
 
 
@@ -66,6 +67,10 @@ class Decision:
     model: str
     input_tokens: int
     raw: Any = field(default=None, repr=False)
+    destination: str | None = None
+    destination_probs: dict[str, float] = field(default_factory=dict)
+    level_up: str | None = None
+    ts: float = 0.0
 
     def summary(self) -> str:
         return (
@@ -87,9 +92,40 @@ def candidates_with_prices(owned: list[str], gold: float) -> list[dict]:
     return [{"item": c, "price": ITEM_PRICES.get(c), "affordable_now": ITEM_PRICES.get(c, 10**9) <= gold} for c in item_candidates(owned)]
 
 
+def legal_level_ups(level: int, ranks: dict[str, int]) -> list[str]:
+    """Abilities that can take the next point: basics up to rank ceil(level/2) (max 5), the
+    ultimate at 6, 11 and 16."""
+    if level - sum(ranks.values()) <= 0:
+        return []
+    out = [a for a in ("Q", "W", "E") if ranks.get(a, 0) < min(5, (level + 1) // 2)]
+    if ranks.get("R", 0) < (level >= 6) + (level >= 11) + (level >= 16):
+        out.append("R")
+    return out
+
+
 def question_pack(state: dict, role_text: str = "a Yasuo laner in the mid lane", support: bool = False) -> dict:
     """Strategic questions. Itemization is its own head (items.ShopBrain); its current plan
-    arrives as state["shopping"] so the recall question can weigh what a trip home would buy."""
+    arrives as state["shopping"] so the recall question can weigh what a trip home would buy.
+    `destination` (read when the intent is go_to) and `level_up` (asked only with an unspent
+    point) widen the action space to the whole map and the skill order."""
+    pack = _core_pack(state, role_text, support)
+    places = state.get("map_places")
+    if places:
+        pack["destination"] = Choice(
+            instructions="If I leave my lane (intent go_to), where should I go?",
+            criteria=places,
+        )
+    me = state.get("me", {})
+    legal = legal_level_ups(int(me.get("level") or 1), dict(me.get("ability_levels") or {}))
+    if legal:
+        pack["level_up"] = Choice(
+            instructions=f"I have a skill point to spend. Which ability should I level up now, as {role_text}?",
+            criteria={a: f"Rank {int((me.get('ability_levels') or {}).get(a, 0)) + 1} of {a}" for a in legal},
+        )
+    return pack
+
+
+def _core_pack(state: dict, role_text: str, support: bool) -> dict:
     shopping = state.get("shopping") or {"can_buy_now": [], "note": "no build plan yet"}
     return {
         "intent": Choice(
@@ -146,10 +182,14 @@ class Brain:
 
     def decide(self, state: dict, role_text: str = "a Yasuo laner in the mid lane", support: bool = False) -> Decision:
         t0 = time.perf_counter()
-        res = self.client.system_one(state, question_pack(state, role_text, support))
+        qs = question_pack(state, role_text, support)
+        sent = {k: v for k, v in state.items() if k != "map_places"}  # already the destination criteria
+        res = self.client.system_one(sent, qs)
         dt = (time.perf_counter() - t0) * 1000
         intent = res.choices["intent"]
         usage = getattr(res, "usage", None)
+        dest = res.choices.get("destination") if hasattr(res.choices, "get") else None
+        lvl = res.choices.get("level_up") if hasattr(res.choices, "get") else None
         return Decision(
             intent=intent.choice,
             intent_confidence=float(intent.confidence),
@@ -164,6 +204,10 @@ class Brain:
             model=str(getattr(res, "model", "?")),
             input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
             raw=res,
+            destination=dest.choice if dest is not None else None,
+            destination_probs={k: round(float(v), 3) for k, v in dict(dest.probabilities).items()} if dest is not None else {},
+            level_up=lvl.choice if lvl is not None else None,
+            ts=time.time(),
         )
 
     def close(self) -> None:

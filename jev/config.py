@@ -91,6 +91,10 @@ class Vision:
     champ_body_offset: tuple[int, int] = (-10, 78)   # bar centre -> champion body
     hud_icons: tuple[tuple[int, int], ...] = ((673, 985), (737, 985), (799, 985), (861, 985), (925, 985), (972, 985))
     icon_half: int = 20
+    # Inventory slots 1-6 (API slot 0-5, top row then bottom row) and the trinket (API slot 6).
+    item_slots: tuple[tuple[int, int], ...] = ((1044, 978), (1090, 978), (1136, 978), (1044, 1022), (1090, 1022), (1136, 1022), (1181, 980))
+    item_half: int = 14
+    item_ready_lit: float = 0.08       # share of bright pixels above which an item active counts as ready (calibrate)
     icon_ready_lit: float = 0.2        # share of bright pixels above which an icon counts as ready
     px_per_unit: float = 0.46          # screen px per game unit at default zoom (minimap camera box)
     # Game ranges in units (current patch, approximate); edge-to-edge adds unit radius, so auto has slack.

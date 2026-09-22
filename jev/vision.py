@@ -37,6 +37,8 @@ class Hud:
     ready: dict[str, bool] = field(default_factory=dict)   # Q W E R D F -> lit
     lit: dict[str, float] = field(default_factory=dict)    # share of bright pixels per icon
     q_sig: tuple[float, float, float] = (0.0, 0.0, 0.0)    # Q icon mean H, S, V (tells Q3 apart)
+    items_ready: dict[int, bool] = field(default_factory=dict)  # API slot 0-6 -> icon lit (active off cooldown)
+    items_lit: dict[int, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -192,6 +194,15 @@ class VisionReader:
             hud.ready[name] = lit >= self.vc.icon_ready_lit
             if name == "Q":
                 hud.q_sig = (float(np.median(hsv[:, :, 0])), float(hsv[:, :, 1].mean()), float(hsv[:, :, 2].mean()))
+        r = self.vc.item_half
+        for slot, (cx, cy) in enumerate(self.vc.item_slots):
+            patch = frame[cy - r:cy + r, cx - r:cx + r]
+            if patch.size == 0:
+                continue
+            v = cv2.cvtColor(to_bgr(np.ascontiguousarray(patch)), cv2.COLOR_BGR2HSV)[:, :, 2]
+            lit = float((v > 150).mean())
+            hud.items_lit[slot] = lit
+            hud.items_ready[slot] = lit >= self.vc.item_ready_lit
         return hud
 
     def read(self, frame: np.ndarray) -> View:

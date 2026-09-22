@@ -23,4 +23,19 @@ x, y = p.lane.point(p.mech.nav.progress)
 print("phase", p.phase, "progress", round(p.mech.nav.progress, 3), "own tower", round(p.lane.own_tower, 3), "map point", (int(x), int(y)))
 assert p.phase == "lane" and y < 3000 and x > 5000, (x, y)  # on the bottom edge of the map, not the diagonal
 print("last", p.mech.last_action, "| skill order", p.kit.skill_order[:6])
+# go_to: Jev sends the support to mid; on arrival the lane switches and play continues there.
+import time as _t
+from jev.minimap import MinimapState
+from jev.places import places
+p.decision = Decision("go_to", 0.6, {"go_to": 0.6}, 0.8, 0.1, 0.5, 1.0, None, 0.0, 150, "jev-test", 1400,
+                      destination="mid_lane", ts=now)
+p.guards = type(p.guards)()
+t = now + 60
+p._tick(data, t)
+print("go_to while away:", p.intent, "|", p.mech.last_action)
+assert p.intent == "go_to" and "travel" in p.mech.last_action
+p.mm_state = MinimapState(self_pos=places("ORDER")["mid_lane"][0], ts=_t.time())
+p._tick(data, t + 2)
+print("arrived:", p.lane.name, "|", p.log_lines[-1])
+assert p.lane.name == "mid"
 print("LANES OK")

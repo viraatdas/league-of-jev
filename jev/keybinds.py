@@ -37,6 +37,12 @@ DEFAULT_EVENTS: dict[str, str] = {
     "evtUseItem5": "[6]",
     "evtUseItem6": "[7]",
     "evtUseItem7": "[b]",
+    "evtUseVisionItem": "[4]",
+    "evtPlayerHoldPosition": "[h]",
+    "evtSelfCastSpell1": "[Alt][q]",
+    "evtSelfCastSpell2": "[Alt][w]",
+    "evtSelfCastSpell3": "[Alt][e]",
+    "evtSelfCastSpell4": "[Alt][r]",
     "evtOpenShop": "[p]",
     "evtCameraLockToggle": "[y]",
     "evtCameraSnap": "[Space]",
@@ -134,6 +140,29 @@ class Keybinds:
         return self._ev("evtPlayerStopPosition")
 
     @property
+    def hold(self) -> Bind:
+        return self._ev("evtPlayerHoldPosition")
+
+    def item(self, slot: int) -> Bind:
+        """Inventory slot 1..6 (HUD order: top row 1-3, bottom row 4-6)."""
+        return self._ev(f"evtUseItem{slot}")
+
+    @property
+    def vision_item(self) -> Bind:
+        """The trinket (ward) slot."""
+        return self._ev("evtUseVisionItem")
+
+    def self_cast(self, i: int) -> Bind:
+        return self._ev(f"evtSelfCastSpell{i}")
+
+    def quick(self, event: str) -> bool | None:
+        """Quick-cast flag for any event (evtCastSpell1, evtCastAvatarSpell1, evtUseItem3, evtUseVisionItem)."""
+        for k in (f"{event}smart", f"{event}Smart"):
+            if k in self.quickcast:
+                return self.quickcast[k] >= 1
+        return None
+
+    @property
     def recall(self) -> Bind:
         return self._ev("evtUseItem7")
 
@@ -175,7 +204,7 @@ def _parse_input_ini(path: Path) -> tuple[dict[str, Bind], dict[str, int]]:
     quick: dict[str, int] = {}
     for section in cp.sections():
         for k, v in cp.items(section):
-            if section.lower() == "quickcast":
+            if section.lower() in ("quickcast", "quickbinds") or k.lower().endswith("smart"):
                 try:
                     quick[k] = int(float(v))
                 except ValueError:
@@ -195,7 +224,7 @@ def _parse_persisted(path: Path) -> tuple[dict[str, Bind], dict[str, int]]:
         for sec in f.get("sections", []):
             for s in sec.get("settings", []):
                 k, v = s.get("name", ""), s.get("value", "")
-                if sec.get("name", "").lower() == "quickcast":
+                if sec.get("name", "").lower() in ("quickcast", "quickbinds") or k.lower().endswith("smart"):
                     try:
                         quick[k] = int(float(v))
                     except ValueError:

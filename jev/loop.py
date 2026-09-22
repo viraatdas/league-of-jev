@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import collections
 import json
+import math
 import threading
 import time
 
@@ -16,7 +17,9 @@ from jev.brain import Brain, Decision
 from jev.control import Controller, activate_game
 from jev.mechanics import Mechanics
 from jev.decisions import DecisionLog
+from jev.brain import legal_level_ups
 from jev.items import BuildPlan, ShopBrain, enemy_team
+from jev import places as map_places
 from jev.kits import Kit, kit_for
 from jev.lanes import LANE_LETTER, Lane, lane_for
 from jev.micro import Micro, UnitTracker, build_scene
@@ -24,7 +27,8 @@ from jev.minimap import MinimapReader, MinimapState, dist, lane_progress, lane_w
 from jev.riot_api import FixtureRecorder, RiotLiveClient
 from jev.screen import Screen
 from jev.state import Perception, build_state, find_me
-from jev.tactics import TacticalBrain
+from jev import actions
+from jev.tactics import TacticalBrain, TacticInput, menu
 from jev.vision import View, VisionReader
 
 console = Console()
@@ -143,6 +147,8 @@ class Player:
         self.lane: Lane = Lane("mid", "ORDER")
         self.dlog = DecisionLog(decision_log if not dry_run else None)
         self._wake_actor = threading.Event()   # set on every new frame and every new Jev answer
+        self._potion_at = 0.0
+        self._level_seen, self._level_changed_at = 0, 0.0
         self.save_frames_s = save_frames_s
         self.capture_backend = capture
         self.capture_fps = capture_fps
@@ -289,6 +295,17 @@ class Player:
         shopping = self._shopping_state(data)
         if shopping:
             st["shopping"] = shopping
+        mm = self.mm_state
+        me_pos = mm.pos if mm is not None else None
+        enemies = list(mm.enemy_champions) if mm is not None else []
+        allies = list(mm.ally_champions) if mm is not None else []
+        st["map_places"] = map_places.describe(self.side, me_pos, enemies, allies, st.get("objectives", {}))
+        st["map"] = {
+            "i_am_near": map_places.nearest(me_pos, self.side) if me_pos else "unknown",
+            "my_lane": self.lane.name,
+            "enemy_champions_seen_near": [map_places.nearest(e, self.side) for e in enemies],
+            "allied_champions_near": [map_places.nearest(a, self.side) for a in allies],
+        }
         return st
 
     def fast_summary(self) -> list[str]:
@@ -298,7 +315,10 @@ class Player:
         rate = self.tactics.rate() if self.tactics else 0.0
         if t is not None:
             probs = sorted(t.probabilities.items(), key=lambda kv: -kv[1])[:4]
-            out.append(f"tactic -> {t.action.upper()}{' (explore)' if t.explored else ''} p={t.confidence:.2f} fits={t.menu_fits:.2f} ({t.latency_ms:.0f} ms, {rate:.1f}/s)")
+            ex = t.extra
+            tail = " ".join(f"{k}={v if not isinstance(v, float) else round(v, 1)}" for k, v in ex.items() if v is not None)
+            out.append(f"tactic -> {t.action.upper()}{' (explore)' if t.explored else ''} p={t.confidence:.2f} fits={t.menu_fits:.2f} "
+                       f"({t.latency_ms:.0f} ms, {rate:.1f}/s, {len(t.menu)} moves) {tail}")
             out.append("  " + "  ".join(f"{k} {v:.2f}" for k, v in probs))
         sc = self.scene
         if sc is not None:
@@ -306,6 +326,10 @@ class Player:
             rdy = "".join(k for k in "QWER" if sc.ready.get(k))
             out.append(f"screen: {len(sc.minions)} minions ({len(sc.killable_auto)} killable), {sc.allies} ally, {ch}, ready {rdy or '-'}"
                        + (" Q3" if self.micro and self.micro.q.q3(time.time()) else ""))
+        dd = self.decision
+        if dd is not None and (dd.destination or dd.level_up):
+            top = sorted(dd.destination_probs.items(), key=lambda kv: -kv[1])[:2]
+            out.append(f"map: {' '.join(f'{k} {v:.2f}' for k, v in top)}" + (f"   level-up pick: {dd.level_up}" if dd.level_up else ""))
         b = self.build
         if b is not None:
             needs = " ".join(f"{k.replace('need_', '')[:7]} {v:.2f}" for k, v in b.needs.items())
@@ -323,9 +347,10 @@ class Player:
         out.append(f"micro: {self.micro.last_action if self.micro else '-'}")
         return out
 
-    def _micro_step(self, data: dict, ap: dict, stats: dict, now: float) -> bool:
+    def _micro_step(self, data: dict, ap: dict, stats: dict, now: float, standing: bool = True) -> bool:
         """Screen-level play while units are on screen: Jev's tactical choice, the kit's reflexes,
-        and the kit's standing behaviour. Returns False when nothing is on screen (macro moves)."""
+        and (when `standing`) the kit's standing behaviour. Returns False when nothing was done
+        this tick (macro movement takes over)."""
         view, mi, kit = self.view, self.micro, self.kit
         if view is None or mi is None or now - view.ts > 0.3:
             return False
@@ -351,8 +376,17 @@ class Player:
             "danger": round(d.danger, 1) if d else 0.0,
             "fight_favorable": round(d.fight_favorable, 2) if d else 0.5,
         }
+        me_p = find_me(data) or {}
+        ctx = actions.Ctx(mi=mi, sc=sc, kit=kit, lane=self.lane, now=now, aspd=aspd,
+                          ally_units=view.allies("champion"), lane_progress=self.mech.nav.progress if self.mech else 0.5)
+        inp = TacticInput(
+            ctx=ctx, api=self.state, plan=plan, ts=view.ts,
+            summoners=actions.summoner_names(me_p), items=list(me_p.get("items") or []),
+            items_ready=dict(view.hud.items_ready), hp_pct=float((self.state.get("me") or {}).get("hp_percent") or 100),
+            potion_used_at=self._potion_at, opp_name=((self.state.get("lane_opponent") or {}).get("champion") or "enemy"),
+        )
         if self.tactics is not None:
-            self.tactics.publish(sc, kit, mi, self.state, plan, view.ts)
+            self.tactics.publish(inp)
         if not mi._can_order(now):
             return True
         if kit.reflex(mi, sc, now, plan):
@@ -361,20 +395,56 @@ class Player:
         t = self.tactics.tactic if self.tactics else None
         if t is not None and t.seq > mi.last_seq and t.age(now) < config.FAST.tactic_stale_s:
             mi.last_seq = t.seq
+            spec = {s.name: s for s in menu(inp)}.get(t.action)  # still possible right now?
             executed = False
-            if t.action in ("farm", "push", "back_off", "hold_with_carry"):
-                mi.mode = t.action
-            elif kit.execute(mi, t.action, sc, now, aspd, t.extra):
-                executed = True
-                mi.reacted("jev", t.state_ts)
+            if spec is not None:
+                what = actions.execute(ctx, spec, t.cands, t.target_probs, t.where_probs, t.distance)
+                executed = bool(what) and spec.mode is None
+                if executed:
+                    mi.reacted("jev", t.state_ts)
+                    if spec.name.startswith("potion"):
+                        self._potion_at = now
             self.dlog.record(t, executed, self._metrics(), str(self.state.get("game", {}).get("time")))
             if executed:
                 return True
+        if not standing:
+            return False
         before = mi.orders
         ok = kit.continuous(mi, sc, now, aspd, mi.mode, self.intent == "push_tower")
         if mi.orders > before and mi.last_action.startswith("last hit"):
             mi.reacted("lasthit", view.ts)
         return ok
+
+    def _go_to(self, data: dict, ap: dict, stats: dict, now: float) -> None:
+        """Travel to Jev's destination through the minimap, answering fights on the way with
+        one-shot tactical moves. On arrival: a lane becomes the new lane to play; anywhere else
+        the champion holds there, attack-moving onto it (objectives) between tactical moves."""
+        m, d = self.mech, self.decision
+        if m is None or d is None or not d.destination:
+            return
+        spots = map_places.places(self.side)
+        if d.destination not in spots:
+            return
+        pt = spots[d.destination][0]
+        pos = self.mm_state.pos if self.mm_state is not None else None
+        arrived = pos is not None and math.dist(pos, pt) < 900
+        if arrived and d.destination.endswith("_lane"):
+            name = d.destination.split("_")[0]
+            if name != self.lane.name:
+                self._switch_lane(name)
+            self._micro_step(data, ap, stats, now) or m.go_map(pt, now, attack=True, every=1.5)
+            return
+        if self._micro_step(data, ap, stats, now, standing=arrived):
+            return
+        m.go_map(pt, now, attack=arrived, every=1.5 if arrived else 1.0)
+
+    def _switch_lane(self, name: str) -> None:
+        self.lane = Lane(name, self.side)
+        if self.mech is not None:
+            self.mech.lane = self.lane
+            self.mech.nav.lane_units = self.lane.L
+        self.dead_enemy_mid_towers = set()
+        self.log_lines.append(f"lane -> {name}")
 
     def _metrics(self) -> dict:
         """Outcome signals for the decision log."""
@@ -577,11 +647,22 @@ class Player:
                 except (IndexError, ValueError):
                     pass
 
-        # Level-ups never need Jev.
+        # Level-ups: Jev's level_up answer when it arrived after this level was reached (the brain
+        # is woken on every level change), otherwise the kit's order after a short wait.
         levels = {k: ap.get("abilities", {}).get(k, {}).get("abilityLevel", 0) for k in ("Q", "W", "E", "R")}
-        if sum(levels.values()) < int(ap.get("level", 1)) and now - self.guards.last_level_t > 1.0:
-            self.guards.last_level_t = now
-            m.level_up(levels)
+        level = int(ap.get("level", 1))
+        if level != self._level_seen:
+            self._level_seen, self._level_changed_at = level, now
+        if sum(levels.values()) < level and now - self.guards.last_level_t > 1.0:
+            d = self.decision
+            legal = legal_level_ups(level, levels)
+            if d is not None and d.level_up in legal and d.ts >= self._level_changed_at:
+                self.guards.last_level_t = now
+                m.level_ability(d.level_up)
+                self.log_lines.append(f"level {d.level_up} (Jev)")
+            elif now - self._level_changed_at > 1.5:
+                self.guards.last_level_t = now
+                m.level_up(levels)
 
         if me.get("isDead"):
             if self.phase != "dead":
@@ -646,6 +727,9 @@ class Player:
         if now < self.guards.resync_until and (self.mm_state is None or self.mm_state.pos is None):
             m.retreat(move_speed, now)  # walking to own tower to re-base position
             self.intent = "resync"
+            return p
+        if self.intent in ("go_to", "group") and self.decision is not None and self.decision.destination:
+            self._go_to(data, ap, cs, now)
             return p
         if self.intent in ("farm", "trade", "push_tower", "defend") and self._micro_step(data, ap, cs, now):
             return p

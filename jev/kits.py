@@ -11,9 +11,8 @@ import math
 import time
 from typing import Any
 
-from typesafe_sdk import Choice
-
 from jev import config
+from jev.actions import NONE, POINT, UNIT, Ctx, Spec
 from jev.items import ItemProfile
 from jev.micro import Micro, Scene
 
@@ -24,12 +23,14 @@ YASUO_ID, THRESH_ID = 157, 412
 
 
 class Kit:
+    """Base kit. specs(ctx) lists the champion's own moves (abilities, combos, standing modes);
+    the universal moves, summoner spells and items are added by the tactical head."""
+
     name = "?"
     champ_id = 0
     default_role = "MIDDLE"
     skill_order: list[str] = []
     items: ItemProfile
-    actions: dict[str, str] = {}
 
     def __init__(self, role: str = "") -> None:
         self.role = (role or self.default_role).upper()
@@ -42,21 +43,11 @@ class Kit:
         what = "support" if self.support else "laner"
         return f"a {self.name} {what} in the {lane_name} lane"
 
-    # -- tactical head -------------------------------------------------------------------
-    def available(self, sc: Scene, mi: Micro, now: float) -> list[str]:
+    def specs(self, ctx: Ctx) -> list[Spec]:
         raise NotImplementedError
 
     def me_state(self, sc: Scene, mi: Micro, now: float) -> dict:
         return {}
-
-    def heads(self, sc: Scene, acts: list[str]) -> dict[str, Choice]:
-        return {}
-
-    def read_heads(self, res: Any, heads: dict[str, Choice]) -> dict[str, Any]:
-        return {}
-
-    def execute(self, mi: Micro, option: str, sc: Scene, now: float, aspd: float, extra: dict) -> bool:
-        raise NotImplementedError
 
     def reflex(self, mi: Micro, sc: Scene, now: float, plan: dict) -> bool:
         return False
@@ -66,12 +57,18 @@ class Kit:
         if mode == "back_off" and sc.champ is not None:
             mi.back_off(sc, now)
             return True
+        if mode == "hold":
+            return True
         if self.support and mode != "push":
             return mi.support_step(sc, now, aspd)
         return mi.farm_step(sc, now, aspd, push=(mode == "push" or pushing))
 
     def ready_words(self, sc: Scene, key: str) -> str:
         return "ready" if sc.ready.get(key) else "not ready"
+
+    @staticmethod
+    def modes(*names_texts: tuple[str, str]) -> list[Spec]:
+        return [Spec(n, t, NONE, mode=n) for n, t in names_texts]
 
 
 # ---------------------------------------------------------------------------------------
@@ -124,49 +121,63 @@ class Yasuo(Kit):
         crit_bonus=True,
         note="Yasuo doubles his crit chance",
     )
-    actions = {
-        "farm": "Keep farming: last-hit minions that are about to die, otherwise hold just behind the wave.",
-        "push": "Shove the wave: attack minions freely, ignore last-hit timing.",
-        "q_minions": "Q into the minions: last-hits what Q can kill and builds Q stacks toward the tornado.",
-        "poke_q": "Q the enemy champion: a quick poke that also builds a Q stack.",
-        "tornado": "Throw the Q3 tornado at the enemy champion: knocks them up and enables R.",
-        "eq_champion": "E through the enemy champion and Q during the dash (circle Q): an all-in opener.",
-        "gapclose": "E through a minion toward the enemy champion (Q during the dash if ready) to get in range.",
-        "auto_champion": "Auto-attack the enemy champion.",
-        "ult": "R (Last Breath) on the airborne enemy champion: big damage, only possible while they are knocked up.",
-        "wind_wall": "W wind wall toward the enemy champion to block their projectiles and skillshots.",
-        "back_off": "Walk back toward my tower, away from the enemy champion.",
-    }
 
     def __init__(self, role: str = "") -> None:
         super().__init__(role)
         self.q = QStacks()
         self.tornado_at = 0.0
 
-    def available(self, sc: Scene, mi: Micro, now: float) -> list[str]:
+    # -- executors ---------------------------------------------------------------------
+    def _q(self, ctx: Ctx, spec: Spec, tgt, pt) -> str:
+        was_q3 = self.q.q3(ctx.now)
+        hit = _line_hits(ctx.sc, pt[0], pt[1], VC.q3_range if was_q3 else VC.q_range)
+        ctx.mi.cast(1, *pt)
+        self.q.cast(hit, ctx.now)
+        if was_q3:
+            self.tornado_at = ctx.now
+        return "Q3 tornado" if was_q3 else "Q"
+
+    def _e(self, ctx: Ctx, spec: Spec, tgt, pt, then_q: bool = False) -> str:
+        ctx.mi.cast(3, tgt.unit.x, tgt.unit.y)
+        tgt.e_marked_until = ctx.now + 10.0
+        if then_q:
+            time.sleep(FAST.eq_delay_s)
+            ctx.mi.ctl.press(ctx.mi.kb.ability(1))  # Q during the dash: circular Q around Yasuo
+            self.q.cast(True, ctx.now)
+            return "E+Q"
+        return "E"
+
+    def specs(self, ctx: Ctx) -> list[Spec]:
+        sc, now = ctx.sc, ctx.now
         q3 = self.q.q3(now)
-        acts = ["farm", "back_off"]
-        if sc.minions:
-            acts.append("push")
+        out = self.modes(
+            ("farm", "Keep farming: last-hit minions about to die, otherwise hold just behind the wave."),
+            ("push", "Shove the wave: attack minions freely, ignore last-hit timing."),
+            ("back_off", "Walk back toward my tower, away from the enemy champion."),
+        )
+        not_marked = lambda k, u: getattr(u, "e_marked_until", 0.0) <= now  # E cannot reuse a unit for a while
+        if sc.ready.get("Q"):
+            if q3:
+                out.append(Spec("Q", "Q3: throw the tornado along the chosen line: knocks up every enemy hit and enables R.",
+                                POINT, who="enemy", range=VC.q3_range, run=self._q))
+            else:
+                out.append(Spec("Q", "Q: stab along the chosen line: damages every enemy hit and builds a stack toward the tornado.",
+                                POINT, who="enemy", range=VC.q_range, run=self._q))
+        if sc.ready.get("W"):
+            out.append(Spec("W", "W: raise a wind wall in the chosen direction: it blocks enemy projectiles.", POINT, range=400,
+                            run=lambda c, s, t, p: (c.mi.cast(2, *p), "W wind wall")[1]))
+        if sc.ready.get("E") and (sc.minions or sc.champ is not None):
+            out.append(Spec("E", "E: dash through the chosen enemy unit (not one dashed through in the last few seconds).",
+                            UNIT, who="enemy", range=VC.e_range, accept=not_marked, run=self._e))
             if sc.ready.get("Q"):
-                acts.append("q_minions")
-        c, d = sc.champ, sc.champ_dist
-        if c is not None and d is not None:
-            if sc.ready.get("Q") and not q3 and d <= VC.q_range:
-                acts.append("poke_q")
-            if sc.ready.get("Q") and q3 and d <= VC.q3_range:
-                acts.append("tornado")
-            if sc.ready.get("E") and d <= VC.e_range and c.e_marked_until < now:
-                acts.append("eq_champion")
-            if sc.ready.get("E") and sc.dash_toward is not None:
-                acts.append("gapclose")
-            if d <= VC.auto_range + 150:
-                acts.append("auto_champion")
-            if sc.r_lit and d <= VC.r_range:
-                acts.append("ult")
-            if sc.ready.get("W") and d <= 1100:
-                acts.append("wind_wall")
-        return acts
+                out.append(Spec("E_then_Q", "E through the chosen enemy unit and Q during the dash (circle Q: hits everything around me).",
+                                UNIT, who="enemy", range=VC.e_range, accept=not_marked,
+                                run=lambda c, s, t, p: self._e(c, s, t, p, then_q=True)))
+        if sc.r_lit and sc.champ is not None:
+            out.append(Spec("R", "R: Last Breath onto the airborne enemy champion: big damage while they are knocked up.",
+                            UNIT, who="enemy_champion", range=VC.r_range,
+                            run=lambda c, s, t, p: (c.mi.cast(4, t.unit.x, t.unit.y), "R Last Breath")[1]))
+        return out
 
     def me_state(self, sc: Scene, mi: Micro, now: float) -> dict:
         q3 = self.q.q3(now)
@@ -174,75 +185,7 @@ class Yasuo(Kit):
             "Q": ("Q3 tornado ready" if q3 else "ready") if sc.ready.get("Q") else "on cooldown",
             "W": self.ready_words(sc, "W"), "E": self.ready_words(sc, "E"),
             "R": "castable (enemy airborne)" if sc.r_lit else "not castable",
-            "flash": self.ready_words(sc, "D"),
         }
-
-    def heads(self, sc: Scene, acts: list[str]) -> dict[str, Choice]:
-        if "gapclose" in acts and len(sc.dash_options) >= 2:
-            return {"dash_target": Choice(
-                instructions="If Yasuo dashes through a minion to reach the enemy champion, which minion?",
-                criteria={f"minion_{tr.id}": (f"{int(tr.unit.hp * 100)}% HP, {int(sc.dist(tr))} units from me, "
-                                              f"lands {int(g)} units closer to the enemy champion")
-                          for tr, g in sc.dash_options},
-            )}
-        return {}
-
-    def read_heads(self, res: Any, heads: dict[str, Choice]) -> dict[str, Any]:
-        if "dash_target" not in heads:
-            return {}
-        try:
-            return {"dash_target": int(str(res.choices["dash_target"].choice).split("_")[1])}
-        except (KeyError, IndexError, ValueError):
-            return {}
-
-    def _q(self, mi: Micro, sc: Scene, x: float, y: float, now: float, what: str) -> None:
-        was_q3 = self.q.q3(now)
-        hit = _line_hits(sc, x, y, VC.q3_range if was_q3 else VC.q_range)
-        mi.cast(1, x, y)
-        self.q.cast(hit, now)
-        if was_q3:
-            self.tornado_at = now
-        mi._ordered(now, what)
-
-    def _e(self, mi: Micro, tr, now: float, what: str, then_q: bool) -> None:
-        mi.cast(3, tr.unit.x, tr.unit.y)
-        tr.e_marked_until = now + 10.0
-        if then_q:
-            time.sleep(FAST.eq_delay_s)
-            mi.ctl.press(mi.kb.ability(1))  # Q during the dash: circular Q around Yasuo
-            self.q.cast(True, now)
-            what += "+Q"
-        mi._ordered(now, what)
-
-    def execute(self, mi: Micro, option: str, sc: Scene, now: float, aspd: float, extra: dict) -> bool:
-        champ = sc.champ
-        dash = extra.get("dash_target")
-        if option == "gapclose" and dash is not None:
-            chosen = next((o[0] for o in sc.dash_options if o[0].id == dash), None)
-            if chosen is not None:
-                sc.dash_toward = chosen
-        if option == "ult" and champ is not None and sc.r_lit:
-            mi.cast(4, champ.unit.x, champ.unit.y)
-            mi._ordered(now, "R: Last Breath")
-        elif option == "tornado" and champ is not None and sc.ready.get("Q"):
-            self._q(mi, sc, champ.unit.x, champ.unit.y, now, "Q3 tornado at champion")
-        elif option == "poke_q" and champ is not None and sc.ready.get("Q"):
-            self._q(mi, sc, champ.unit.x, champ.unit.y, now, "Q champion")
-        elif option == "q_minions" and sc.minions and sc.ready.get("Q"):
-            tgt = sc.killable_q[0] if sc.killable_q else min(sc.minions, key=sc.dist)
-            self._q(mi, sc, tgt.unit.x, tgt.unit.y, now, "Q minions")
-        elif option == "eq_champion" and champ is not None and sc.ready.get("E"):
-            self._e(mi, champ, now, "E champion", then_q=bool(sc.ready.get("Q")))
-        elif option == "gapclose" and sc.dash_toward is not None and sc.ready.get("E"):
-            self._e(mi, sc.dash_toward, now, "E minion toward champion", then_q=bool(sc.ready.get("Q")))
-        elif option == "wind_wall" and champ is not None and sc.ready.get("W"):
-            mi.cast(2, champ.unit.x, champ.unit.y)
-            mi._ordered(now, "W wind wall toward champion")
-        elif option == "auto_champion" and champ is not None and mi.attack_ready(now, aspd):
-            mi.attack(champ, now, "auto champion")
-        else:
-            return False
-        return True
 
     def reflex(self, mi: Micro, sc: Scene, now: float, plan: dict) -> bool:
         """R the moment our own tornado lifts the target, if the fight read is favourable."""
@@ -268,19 +211,7 @@ class Thresh(Kit):
         support=True,
         note="Thresh is a tank support who protects his carry",
     )
-    HOOK_RANGE, FLAY_RANGE, BOX_RADIUS, LANTERN_RANGE, AUTO_RANGE = 1050.0, 450.0, 420.0, 950.0, 480.0
-    actions = {
-        "hold_with_carry": "Stay beside my carry, zone the enemy, and do not take last hits.",
-        "push": "Help shove the wave: attack minions.",
-        "hook": "Q Death Sentence at the enemy champion: a long skillshot that stuns and pulls them if it lands.",
-        "follow_hook": "Q again to fly to the hooked enemy champion and engage (only right if my carry can follow).",
-        "flay_pull": "E Flay backward: sweep the enemy champion toward me and my carry (engage).",
-        "flay_push": "E Flay toward the enemy champion: knock them away from me (peel, disengage).",
-        "lantern_to_carry": "W Dark Passage on my carry: shield them, or let them click the lantern to reach me.",
-        "box": "R The Box: walls around me that slow and damage enemies who cross them.",
-        "auto_champion": "Auto-attack the enemy champion (poke).",
-        "back_off": "Walk back toward my tower, away from the enemy champion.",
-    }
+    HOOK_RANGE, FLAY_RANGE, LANTERN_RANGE = 1050.0, 450.0, 950.0
 
     def __init__(self, role: str = "") -> None:
         super().__init__(role)
@@ -290,66 +221,55 @@ class Thresh(Kit):
         # A landed hook re-lights Q (the recast) for about 1.5 s.
         return bool(sc.ready.get("Q")) and 0.25 < now - self.hook_at < 1.8
 
-    def available(self, sc: Scene, mi: Micro, now: float) -> list[str]:
-        acts = ["hold_with_carry", "back_off"]
-        if sc.minions:
-            acts.append("push")
-        c, d = sc.champ, sc.champ_dist
+    def _hook(self, ctx: Ctx, spec: Spec, tgt, pt) -> str:
+        ctx.mi.cast(1, *pt)
+        self.hook_at = ctx.now
+        return "Q hook"
+
+    def _flay(self, ctx: Ctx, tgt, pull: bool) -> str:
+        mx, my = ctx.sc.me_xy
+        dx, dy = tgt.unit.x - mx, tgt.unit.y - my
+        n = math.hypot(dx, dy) or 1.0
+        x, y = (mx - dx / n * 150, my - dy / n * 150) if pull else (tgt.unit.x, tgt.unit.y)
+        ctx.mi.cast(3, x, y)
+        return "flay pull" if pull else "flay push"
+
+    def specs(self, ctx: Ctx) -> list[Spec]:
+        sc, now = ctx.sc, ctx.now
+        out = self.modes(
+            ("hold_with_carry", "Stay beside my carry, zone the enemy, and leave last hits to the carry."),
+            ("push", "Help shove the wave: attack minions."),
+            ("back_off", "Walk back toward my tower, away from the enemy champion."),
+        )
         if self.hooked(sc, now):
-            acts.append("follow_hook")
-        if c is not None and d is not None:
-            if sc.ready.get("Q") and not self.hooked(sc, now) and d <= self.HOOK_RANGE:
-                acts.append("hook")
-            if sc.ready.get("E") and d <= self.FLAY_RANGE:
-                acts += ["flay_pull", "flay_push"]
-            if sc.ready.get("R") and d <= self.BOX_RADIUS:
-                acts.append("box")
-            if d <= self.AUTO_RANGE:
-                acts.append("auto_champion")
-        if sc.ready.get("W") and sc.ally_champs:
-            acts.append("lantern_to_carry")
-        return acts
+            out.append(Spec("Q2_fly", "Q again: fly to the hooked enemy and engage (only if my carry can follow).", NONE,
+                            run=lambda c, s, t, p: (c.mi.ctl.press(c.mi.kb.ability(1)), "Q2 fly")[1]))
+        elif sc.ready.get("Q"):
+            out.append(Spec("Q", "Q: throw the hook along the chosen line: the first enemy hit is stunned and pulled toward me.",
+                            POINT, who="enemy", range=self.HOOK_RANGE, run=self._hook))
+        if sc.ready.get("W"):
+            out.append(Spec("W", "W: throw the lantern to the chosen spot: an ally near it is shielded and can click it to come to me.",
+                            POINT, who="ally_champion", range=self.LANTERN_RANGE,
+                            run=lambda c, s, t, p: (c.mi.cast(2, *p), "W lantern")[1]))
+        if sc.ready.get("E"):
+            out.append(Spec("E", "E: sweep the chain in the chosen direction; enemies hit are knocked the way it sweeps.",
+                            POINT, range=self.FLAY_RANGE, run=lambda c, s, t, p: (c.mi.cast(3, *p), "E flay")[1]))
+            if sc.champ is not None:
+                out.append(Spec("E_pull", "E behind me: pull the chosen enemy champion toward me and my carry (engage).",
+                                UNIT, who="enemy_champion", range=self.FLAY_RANGE, run=lambda c, s, t, p: self._flay(c, t, True)))
+                out.append(Spec("E_push", "E at them: knock the chosen enemy champion away from me (peel, disengage).",
+                                UNIT, who="enemy_champion", range=self.FLAY_RANGE, run=lambda c, s, t, p: self._flay(c, t, False)))
+        if sc.ready.get("R"):
+            out.append(Spec("R", "R: The Box: walls around me that slow and damage enemies who cross them.", NONE,
+                            run=lambda c, s, t, p: (c.mi.ctl.press(c.mi.kb.ability(4)), "R box")[1]))
+        return out
 
     def me_state(self, sc: Scene, mi: Micro, now: float) -> dict:
         return {
             "Q_hook": ("hook landed, can fly to target" if self.hooked(sc, now) else self.ready_words(sc, "Q")),
             "W_lantern": self.ready_words(sc, "W"), "E_flay": self.ready_words(sc, "E"),
-            "R_box": self.ready_words(sc, "R"), "flash": self.ready_words(sc, "D"),
-            "carry_on_screen": bool(sc.ally_champs),
-            "carry_hp_percent": int(min(sc.ally_champs, key=lambda u: math.hypot(u.x - sc.me_xy[0], u.y - sc.me_xy[1])).hp * 100) if sc.ally_champs else None,
+            "R_box": self.ready_words(sc, "R"),
         }
-
-    def execute(self, mi: Micro, option: str, sc: Scene, now: float, aspd: float, extra: dict) -> bool:
-        champ = sc.champ
-        mx, my = sc.me_xy
-        if option == "hook" and champ is not None and sc.ready.get("Q"):
-            mi.cast(1, champ.unit.x, champ.unit.y)
-            self.hook_at = now
-            mi._ordered(now, "Q hook at champion")
-        elif option == "follow_hook" and self.hooked(sc, now):
-            mi.ctl.press(mi.kb.ability(1))
-            mi._ordered(now, "Q2 fly to hooked target")
-        elif option in ("flay_pull", "flay_push") and champ is not None and sc.ready.get("E"):
-            dx, dy = champ.unit.x - mx, champ.unit.y - my
-            n = math.hypot(dx, dy) or 1.0
-            if option == "flay_pull":
-                x, y = mx - dx / n * 150, my - dy / n * 150   # cast behind: the sweep pulls them in
-            else:
-                x, y = champ.unit.x, champ.unit.y            # cast at them: knocks them away
-            mi.cast(3, x, y)
-            mi._ordered(now, option.replace("_", " "))
-        elif option == "lantern_to_carry" and sc.ally_champs and sc.ready.get("W"):
-            carry = min(sc.ally_champs, key=lambda u: math.hypot(u.x - mx, u.y - my))
-            mi.cast(2, carry.x, carry.y)
-            mi._ordered(now, "W lantern to carry")
-        elif option == "box" and champ is not None and sc.ready.get("R"):
-            mi.cast(4, mx, my)
-            mi._ordered(now, "R box")
-        elif option == "auto_champion" and champ is not None and mi.attack_ready(now, aspd):
-            mi.attack(champ, now, "auto champion")
-        else:
-            return False
-        return True
 
     def continuous(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, pushing: bool) -> bool:
         if mode == "hold_with_carry":

@@ -1,13 +1,9 @@
 """Jev's tactical head: the fast decision, asked back-to-back (~7 per second) while in lane.
 
-Shaped like OpenAI Five's action space (arXiv 1912.06680, Appendix F): a primary action chosen
-from a list filtered to what is possible right now (the champion kit supplies the list and the
-filters), plus target heads read only when the chosen action needs them. Jev answers all
-questions of a pack in parallel, so each targeted spell gets its own target question.
-
-A `menu_fits` question rides along in the same call: Jev's probability that one of the listed
-moves is actually good here. Low values mark states where the menu is missing something; the
-decision log keeps them for review so the menu can grow where it matters.
+The action space is jev/actions.py: every move the champion has (from the kit), the universal
+moves, both summoner spells and every usable item, plus target / where / distance heads, all in
+one parallel call. A `menu_fits` question rides along: Jev's probability that one of the listed
+moves is genuinely good here; low values mark gaps for `jev review`.
 """
 from __future__ import annotations
 
@@ -18,40 +14,55 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from dotenv import load_dotenv
-from typesafe_sdk import Choice, Noul, RetryPolicy, TypeSafeClient
+from typesafe_sdk import Noul, RetryPolicy, TypeSafeClient
 
-from jev import config
-from jev.micro import Scene
+from jev import actions
+from jev.actions import Ctx, Spec
 
 load_dotenv()
-VC = config.VISION
 
 
-def _dist_label(d: float | None) -> str:
-    return "not visible" if d is None else f"{int(round(d / 25.0) * 25)} units"
+@dataclass
+class TacticInput:
+    ctx: Ctx
+    api: dict
+    plan: dict
+    ts: float
+    summoners: list[str | None] = field(default_factory=list)
+    items: list[dict] = field(default_factory=list)
+    items_ready: dict[int, bool] = field(default_factory=dict)
+    hp_pct: float = 100.0
+    potion_used_at: float = 0.0
+    opp_name: str = "enemy"
 
 
-def tactical_state(sc: Scene, kit, mi, now: float, api: dict, plan: dict) -> dict:
-    me = api.get("me", {})
-    opp = api.get("lane_opponent") or {}
-    champ = None
-    if sc.champ is not None:
-        champ = {
-            "champion": opp.get("champion", "enemy"),
-            "level": opp.get("level"),
-            "hp_percent": int(sc.champ.unit.hp * 100),
-            "distance": _dist_label(sc.champ_dist),
-            "airborne_now": sc.r_lit if kit.name == "Yasuo" else None,
-        }
+def menu(inp: TacticInput) -> list[Spec]:
+    ctx = inp.ctx
+    specs = ctx.kit.specs(ctx) + actions.universal(ctx) + actions.summoner_specs(ctx, inp.summoners)
+    specs += actions.item_specs(ctx, inp.items, inp.items_ready, inp.hp_pct, inp.potion_used_at)
+    seen, out = set(), []
+    for s in specs:
+        if s.name not in seen:
+            seen.add(s.name)
+            out.append(s)
+    return out
+
+
+def tactical_state(inp: TacticInput, cands: dict) -> dict:
+    ctx = inp.ctx
+    sc, kit = ctx.sc, ctx.kit
+    me = inp.api.get("me", {})
+    fx, fy = ctx.lane.screen_dir(ctx.lane_progress) if ctx.lane is not None else ctx.mi.fwd
     return {
-        "plan_from_strategy": plan,
+        "plan_from_strategy": inp.plan,
         "me": {"champion": kit.name, "role": "support" if kit.support else "laner",
-               "level": me.get("level"), "hp_percent": me.get("hp_percent"), **kit.me_state(sc, mi, now)},
-        "enemy_champion": champ,
+               "level": me.get("level"), "hp_percent": me.get("hp_percent"), **kit.me_state(sc, ctx.mi, ctx.now),
+               "summoner_spells": {n: ("ready" if sc.ready.get(k) else "not ready") for n, k in zip(inp.summoners, "DF") if n}},
+        "visible_units": {l: actions.describe(ctx, l, k, u, inp.opp_name) for l, (k, u) in cands.items()},
+        "enemy_tower_is": actions.compass(fx, fy),
+        "my_tower_is": actions.compass(-fx, -fy),
         "enemy_minions_on_screen": len(sc.minions),
-        "minions_killable_by_auto_now": len(sc.killable_auto),
         "ally_minions_on_screen": sc.allies,
-        "ally_champions_on_screen": len(sc.ally_champs),
     }
 
 
@@ -64,30 +75,39 @@ class Tactic:
     state_ts: float
     latency_ms: float
     tokens: int = 0
-    extra: dict = field(default_factory=dict)
+    target_probs: dict[str, float] = field(default_factory=dict)
+    where_probs: dict[str, float] = field(default_factory=dict)
+    distance: float | None = None
+    cands: dict = field(default_factory=dict, repr=False)
     menu: list[str] = field(default_factory=list)
     menu_fits: float = 1.0
     state: dict = field(default_factory=dict, repr=False)
     explored: bool = False
     raw: Any = field(default=None, repr=False)
 
+    @property
+    def extra(self) -> dict:
+        top = lambda d: max(d, key=d.get) if d else None
+        return {"target": top(self.target_probs), "where": top(self.where_probs), "distance": self.distance}
+
     def age(self, now: float) -> float:
         return now - self.state_ts
 
 
-class TacticalBrain:
-    """Runs back-to-back Jev calls on the freshest scene. The loop publishes (scene, kit, micro,
-    api_state, plan, frame_ts) with publish(); the latest answer is in .tactic.
+def _probs(ans) -> dict[str, float]:
+    return {k: round(float(v), 3) for k, v in dict(ans.probabilities).items()}
 
-    explore: probability of executing a sample from Jev's distribution instead of its top
-    choice (bot games only), so moves Jev rates second-best still get tried and logged."""
+
+class TacticalBrain:
+    """Back-to-back Jev calls on the freshest input. explore: share of picks sampled from Jev's
+    action distribution instead of its top choice (bot games), so second-best moves get tried."""
 
     def __init__(self, max_hz: float = 8.0, explore: float = 0.0) -> None:
         self.client = TypeSafeClient(retry=RetryPolicy(max_retries=0, timeout=1.0))
         self.max_hz = max_hz
         self.explore = explore
         self.tactic: Tactic | None = None
-        self._input: tuple | None = None
+        self._input: TacticInput | None = None
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._seq = 0
@@ -97,9 +117,9 @@ class TacticalBrain:
         self.last_error = ""
         self.on_answer = lambda: None
 
-    def publish(self, sc: Scene, kit, mi, api: dict, plan: dict, ts: float) -> None:
+    def publish(self, inp: TacticInput) -> None:
         with self._lock:
-            self._input = (sc, kit, mi, api, plan, ts)
+            self._input = inp
 
     def rate(self) -> float:
         now = time.time()
@@ -109,28 +129,19 @@ class TacticalBrain:
     def stop(self) -> None:
         self._stop.set()
 
-    def ask(self, sc: Scene, kit, mi, api: dict, plan: dict, ts: float) -> Tactic | None:
+    def ask(self, inp: TacticInput) -> Tactic | None:
         t0 = time.time()
-        acts = kit.available(sc, mi, ts)
-        if len(acts) <= 2 and not sc.minions and sc.champ is None:
+        ctx = inp.ctx
+        if not ctx.sc.minions and ctx.sc.champ is None and not ctx.ally_units:
             return None
-        state = tactical_state(sc, kit, mi, ts, api, plan)
-        questions: dict[str, Any] = {
-            "action": Choice(
-                instructions=(f"You are {kit.role_text(plan.get('lane', 'mid'))}. Pick the single best move for "
-                              "the next half second, following `plan_from_strategy` unless the situation clearly "
-                              "calls for something else."),
-                criteria={a: kit.actions[a] for a in acts},
-            ),
-            "menu_fits": Noul(instructions=(
-                "Is at least one of these moves genuinely good right now? Say false if the right play here is "
-                "something none of them covers: " + ", ".join(acts))),
-        }
-        heads = kit.heads(sc, acts)
-        questions.update(heads)
-        res = self.client.system_one(state, questions)
+        specs = menu(inp)
+        cands = actions.candidates(ctx)
+        qs = actions.questions(ctx, specs, cands, ctx.kit.role_text(inp.plan.get("lane", "mid")), inp.opp_name)
+        qs["menu_fits"] = Noul(instructions=("Is at least one listed move genuinely good right now? Say false if the right "
+                                             "play is something none of them covers."))
+        res = self.client.system_one(tactical_state(inp, cands), qs)
         ch = res.choices["action"]
-        probs = {k: round(float(v), 3) for k, v in dict(ch.probabilities).items()}
+        probs = _probs(ch)
         action, explored = ch.choice, False
         if self.explore and random.random() < self.explore and len(probs) > 1:
             action = random.choices(list(probs), weights=[max(p, 0.02) for p in probs.values()])[0]
@@ -139,9 +150,13 @@ class TacticalBrain:
         self._seq += 1
         return Tactic(
             seq=self._seq, action=action, confidence=float(ch.confidence), probabilities=probs,
-            state_ts=ts, latency_ms=(time.time() - t0) * 1000,
-            tokens=int(getattr(usage, "input_tokens", 0) or 0), extra=kit.read_heads(res, heads),
-            menu=acts, menu_fits=float(res.nouls["menu_fits"].noul), state=state, explored=explored, raw=res,
+            state_ts=inp.ts, latency_ms=(time.time() - t0) * 1000,
+            tokens=int(getattr(usage, "input_tokens", 0) or 0),
+            target_probs=_probs(res.choices["target"]) if "target" in qs else {},
+            where_probs=_probs(res.choices["where"]) if "where" in qs else {},
+            distance=float(res.scores["distance"].score) if "distance" in qs else None,
+            cands=cands, menu=[s.name for s in specs], menu_fits=float(res.nouls["menu_fits"].noul),
+            state=tactical_state(inp, cands), explored=explored, raw=res,
         )
 
     def run(self) -> None:
@@ -154,7 +169,7 @@ class TacticalBrain:
                 time.sleep(0.01)
                 continue
             try:
-                t = self.ask(*inp)
+                t = self.ask(inp)
                 if t is None:
                     time.sleep(0.05)
                     continue
