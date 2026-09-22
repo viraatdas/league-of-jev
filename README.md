@@ -39,9 +39,15 @@ and `doctor` says so.
 ## Play
 
 ```
-uv run jev play --dry-run   # prints the clicks and keys it would send
-uv run jev play             # sends them
+uv run jev lcu practice && uv run jev lcu start && uv run jev lcu pick   # Practice Tool lobby, lock Yasuo
+uv run jev play --dry-run                                                # prints the clicks and keys it would send
+uv run jev play --logfile logs/play.log                                  # sends them; one status line per second
 ```
+
+The game only accepts input while it is the active window (verified through the game API:
+clicks and keys sent while another app is active do nothing, including events posted to
+the game's process). `play` therefore keeps the game window in front, re-activating it if
+it slips behind, and pauses if it cannot. Leave the machine to it while it plays.
 
 Start a Practice Tool or custom game, lock the camera, then run `play`. It waits for the game
 API, walks to lane, farms, fires Q, retreats on damage, recalls when Jev says so, levels
