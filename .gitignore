@@ -5,7 +5,7 @@ RUDDER.md
 RUDDER_SHARED.md
 .env
 node_modules/
-fixtures/*.json
+fixtures/
 .venv/
 __pycache__/
 *.pyc
