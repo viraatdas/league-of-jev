@@ -224,8 +224,6 @@ class Player:
             m.nav.reset_to_base()
             self.intent = "dead"
             self._base_shop_done = False
-        self.paused = False
-        self._last_sig = (None, None, 0)
             return p
         if self.phase == "dead":
             self.phase = "base"
@@ -253,8 +251,6 @@ class Player:
                 m.nav.reset_to_base()
                 self.phase = "base"
                 self._base_shop_done = False
-        self.paused = False
-        self._last_sig = (None, None, 0)
                 self.intent = "farm"
             else:
                 return p
