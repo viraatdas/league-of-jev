@@ -89,11 +89,12 @@ def play(
     overlay: bool = typer.Option(True, help="Show the on-screen panel with Jev's decision and probabilities"),
     forever: bool = typer.Option(False, help="After a game ends, wait for the next one"),
     overlay_corner: str = typer.Option("tr", help="Overlay corner: tl, tr, bl, br"),
+    tactic_hz: float = typer.Option(8.0, help="Max tactical Jev calls per second while in lane (0 = off)"),
 ) -> None:
-    """Play the current game as Yasuo with Jev driving intent."""
+    """Play the current game as Yasuo with Jev driving strategy (1/s) and tactics (~7/s)."""
     from jev.loop import Player
 
-    player = Player(dry_run=dry_run, logfile=logfile, keep_front=keep_front, forever=forever)
+    player = Player(dry_run=dry_run, logfile=logfile, keep_front=keep_front, forever=forever, tactic_hz=tactic_hz)
     if not overlay:
         player.run()
         return
@@ -101,7 +102,8 @@ def play(
 
     def snapshot() -> str:
         return format_snapshot(player.state, player.decision, player.intent, player._mm_summary(),
-                               player.mech.last_action if player.mech else "", player.ctl.keys_ok())
+                               player.mech.last_action if player.mech else "", player.ctl.keys_ok(),
+                               extra=player.fast_summary())
 
     run_with_overlay(player.run, snapshot, corner=overlay_corner)
 

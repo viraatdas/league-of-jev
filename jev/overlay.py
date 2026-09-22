@@ -43,7 +43,7 @@ class _Timer(NSObject):
 class Overlay:
     """corner: tl, tr, bl, br. Default top-right, under the game's score/clock row."""
 
-    def __init__(self, snapshot: Callable[[], str], corner: str = "tr", w: int = 470, h: int = 250, margin: int = 12) -> None:
+    def __init__(self, snapshot: Callable[[], str], corner: str = "tr", w: int = 500, h: int = 300, margin: int = 12) -> None:
         self.snapshot = snapshot
         app = NSApplication.sharedApplication()
         app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
@@ -90,7 +90,7 @@ def run_with_overlay(worker: Callable[[], None], snapshot: Callable[[], str], co
     Overlay(snapshot, corner=corner).run_forever()
 
 
-def format_snapshot(state: dict, decision, intent: str, mm_summary: str, last_action: str, keys_ok: bool) -> str:
+def format_snapshot(state: dict, decision, intent: str, mm_summary: str, last_action: str, keys_ok: bool, extra: list[str] | None = None) -> str:
     me = state.get("me", {}) if state else {}
     lines = []
     lines.append(f"JEV  t={state.get('game', {}).get('time') if state else '-'}  {me.get('champion', '')} L{me.get('level', '')}  HP {me.get('hp_percent', '')}%  gold {me.get('gold', '')}  cs {me.get('cs', '')}  {me.get('kda', '')}")
@@ -99,7 +99,7 @@ def format_snapshot(state: dict, decision, intent: str, mm_summary: str, last_ac
     else:
         probs = sorted(decision.intent_probabilities.items(), key=lambda kv: -kv[1])
         lines.append(f"intent -> {intent.upper()}   (jev: {decision.intent} p={decision.intent_confidence:.2f}, {decision.latency_ms:.0f} ms)")
-        for name, pr in probs[:6]:
+        for name, pr in probs[:4]:
             bar = "#" * int(round(pr * 24))
             lines.append(f"  {name:<10} {pr:4.2f} {bar}")
         lines.append(f"danger {decision.danger:.1f}/3   recall {decision.should_recall:.2f}   fight {decision.fight_favorable:.2f}   aggr {decision.aggression:.1f}/2")
@@ -107,5 +107,6 @@ def format_snapshot(state: dict, decision, intent: str, mm_summary: str, last_ac
     nearby = state.get("nearby", {}) if state else {}
     lines.append(f"{nearby.get('where_i_am', '')} | {nearby.get('minion_wave', '')} | {nearby.get('closest_enemy_champion', '')}")
     lines.append(f"minimap {mm_summary}")
+    lines.extend(extra or [])
     lines.append(f"act: {last_action}   input: {'live' if keys_ok else 'paused (game not active)'}")
     return "\n".join(lines)

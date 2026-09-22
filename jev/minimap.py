@@ -3,6 +3,7 @@ connected components only, a few milliseconds per read. This is the one place th
 at the screen, and it looks only at the minimap square."""
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 
@@ -48,6 +49,7 @@ class MinimapReader:
         # Persistence: pixels that stay red/blue for ~20 s are icons, not units.
         self._red_p = np.zeros((self.side, self.side), dtype=np.float32)
         self._blue_p = np.zeros((self.side, self.side), dtype=np.float32)
+        self._last_t = 0.0
 
     # -- coordinates --------------------------------------------------------------------
     def px_to_map(self, px: float, py: float) -> tuple[float, float]:
@@ -83,8 +85,12 @@ class MinimapReader:
         white = ((s <= 45) & (v >= 215)).astype(np.uint8) * 255
         red &= self.static
         blue &= self.static
-        self._red_p = 0.98 * self._red_p + 0.02 * (red > 0)
-        self._blue_p = 0.98 * self._blue_p + 0.02 * (blue > 0)
+        # Time-based decay (10 s time constant) so the filter is the same at any frame rate.
+        now = time.time()
+        a = 1.0 - math.exp(-min(1.0, now - self._last_t) / 10.0) if self._last_t else 0.02
+        self._last_t = now
+        self._red_p = (1 - a) * self._red_p + a * (red > 0)
+        self._blue_p = (1 - a) * self._blue_p + a * (blue > 0)
         red[self._red_p > 0.85] = 0
         blue[self._blue_p > 0.85] = 0
         st = MinimapState(ts=time.time())

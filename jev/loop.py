@@ -15,10 +15,13 @@ from jev import config, keybinds
 from jev.brain import Brain, Decision
 from jev.control import Controller, activate_game
 from jev.mechanics import Mechanics
+from jev.micro import Micro, UnitTracker, build_scene
 from jev.minimap import MinimapReader, MinimapState, dist, lane_progress, lane_wave
 from jev.riot_api import FixtureRecorder, RiotLiveClient
 from jev.screen import Screen
 from jev.state import Perception, build_state, find_me
+from jev.tactics import TacticalBrain
+from jev.vision import View, VisionReader
 
 console = Console()
 
@@ -87,7 +90,7 @@ class HpTracker:
 
 
 class Player:
-    def __init__(self, dry_run: bool = False, quick_cast: bool | None = None, role: str = "MIDDLE", logfile=None, keep_front: bool = True, forever: bool = False) -> None:
+    def __init__(self, dry_run: bool = False, quick_cast: bool | None = None, role: str = "MIDDLE", logfile=None, keep_front: bool = True, forever: bool = False, tactic_hz: float = 8.0) -> None:
         self.dry_run = dry_run
         self.forever = forever
         self.keep_front = keep_front
@@ -119,6 +122,20 @@ class Player:
         self.mm_state: MinimapState | None = None
         self.side = "ORDER"
         self.dead_enemy_mid_towers: set[int] = set()
+        # Fast path: perception thread (screen), API thread, tactical Jev thread, 30 Hz actor.
+        self.vision: VisionReader | None = VisionReader() if (config.GEOMETRY.minimap and not dry_run) else None
+        self.view: View | None = None
+        self.perceive_fps = 0.0
+        self.min_tracker = UnitTracker()
+        self.champ_tracker = UnitTracker(max_jump_px=90)
+        self.tactic_hz = tactic_hz
+        self.tactics: TacticalBrain | None = None
+        self.micro: Micro | None = None
+        self.scene = None
+        self.data: dict | None = None
+        self.api_ms = 0.0
+        self._api_dead = False
+        self._last_table = 0.0
 
     def _log_action(self, msg: str) -> None:
         self.log_lines.append(msg)
@@ -138,6 +155,110 @@ class Player:
                     self.log_lines.append(f"brain error: {e}")
             self._wake.wait(timeout=max(0.05, period - (time.time() - t0)))
             self._wake.clear()
+
+    def _perceive_loop(self) -> None:
+        """One full-screen grab per frame (the fixed capture cost dominates), sliced for the
+        minimap and read for health bars and HUD icons. Runs as fast as capture allows."""
+        import mss
+        import numpy as np
+
+        sct = mss.mss()
+        mon = sct.monitors[1]
+        x0, y0, side = config.GEOMETRY.minimap
+        n, t_rate = 0, time.time()
+        while not self._stop.is_set():
+            if self.paused:
+                time.sleep(0.1)
+                continue
+            try:
+                frame = np.array(sct.grab(mon))[:, :, :3]
+                if self.mm is not None:
+                    self.mm_state = self.mm.read(np.ascontiguousarray(frame[y0:y0 + side, x0:x0 + side]))
+                if self.vision is not None:
+                    self.view = self.vision.read(frame)
+            except Exception as e:  # noqa: BLE001
+                self.log_lines.append(f"perception error: {e}")
+                time.sleep(0.2)
+            n += 1
+            if time.time() - t_rate >= 2.0:
+                self.perceive_fps = n / (time.time() - t_rate)
+                n, t_rate = 0, time.time()
+
+    def _api_loop(self) -> None:
+        fails = 0
+        while not self._stop.is_set():
+            t0 = time.time()
+            d = self.riot.all_game_data()
+            self.api_ms = (time.time() - t0) * 1000
+            if d is None:
+                fails += 1
+                if fails >= 4:
+                    self._api_dead = True
+            else:
+                fails = 0
+                self.data = d
+            time.sleep(max(0.0, 0.1 - (time.time() - t0)))
+
+    def fast_summary(self) -> list[str]:
+        """Overlay lines for the fast path."""
+        out = []
+        t = self.tactics.tactic if self.tactics else None
+        rate = self.tactics.rate() if self.tactics else 0.0
+        if t is not None:
+            probs = sorted(t.probabilities.items(), key=lambda kv: -kv[1])[:4]
+            out.append(f"tactic -> {t.action.upper()} p={t.confidence:.2f} ({t.latency_ms:.0f} ms, {rate:.1f}/s)")
+            out.append("  " + "  ".join(f"{k} {v:.2f}" for k, v in probs))
+        sc = self.scene
+        if sc is not None:
+            ch = f"champ {int(sc.champ.unit.hp * 100)}% @{int(sc.champ_dist or 0)}u" if sc.champ else "no champ"
+            rdy = "".join(k for k in "QWER" if sc.ready.get(k))
+            out.append(f"screen: {len(sc.minions)} minions ({len(sc.killable_auto)} killable), {sc.allies} ally, {ch}, ready {rdy or '-'}"
+                       + (" Q3" if self.micro and self.micro.q.q3(time.time()) else ""))
+        out.append(f"APM {self.ctl.apm()}   vision {self.perceive_fps:.0f} fps   api {self.api_ms:.0f} ms   micro: {self.micro.last_action if self.micro else '-'}")
+        return out
+
+    def _micro_step(self, data: dict, ap: dict, stats: dict, now: float) -> bool:
+        """Screen-level play while units are on screen: Jev's tactical choice, reflexes, and
+        last-hit farming. Returns False when there is nothing on screen (macro moves instead)."""
+        view, mi = self.view, self.micro
+        if view is None or mi is None or now - view.ts > 0.3:
+            return False
+        minions = self.min_tracker.update(view.enemies("minion"), now)
+        champs = self.champ_tracker.update(view.enemies("champion"), now)
+        if not minions and not champs:
+            self.scene = None
+            return False
+        ad = float(stats.get("attackDamage", 60.0))
+        aspd = float(stats.get("attackSpeed", 0.7))
+        q_rank = int(ap.get("abilities", {}).get("Q", {}).get("abilityLevel", 0))
+        game_s = float((data.get("gameData") or {}).get("gameTime", 0.0))
+        sc = build_scene(view, minions, champs, ad, q_rank, game_s, now, config.GEOMETRY.champion_px)
+        self.scene = sc
+        q3 = mi.q.q3(now)
+        d = self.decision
+        plan = {
+            "intent": self.intent,
+            "aggression_0_to_2": round(d.aggression, 1) if d else 1.0,
+            "danger": round(d.danger, 1) if d else 0.0,
+            "fight_favorable": round(d.fight_favorable, 2) if d else 0.5,
+        }
+        if self.tactics is not None:
+            self.tactics.publish(sc, q3, self.state, plan, view.ts)
+        if not mi._can_order(now):
+            return True
+        if mi.reflexes(sc, now, d is None or d.fight_favorable >= 0.45):
+            return True
+        t = self.tactics.tactic if self.tactics else None
+        if t is not None and t.seq > mi.last_seq and t.age(now) < config.FAST.tactic_stale_s:
+            mi.last_seq = t.seq
+            if t.action in ("farm", "push", "back_off"):
+                mi.mode = t.action
+            elif mi.execute(t.action, sc, now, aspd, t.dash_target):
+                return True
+        if mi.mode == "back_off" and sc.champ is not None:
+            mi.back_off(sc, now)
+            return True
+        return mi.farm_step(sc, now, aspd, push=(mi.mode == "push" or self.intent == "push_tower"))
 
     # -- render -------------------------------------------------------------------------
     def _table(self, perception: Perception) -> Table:
@@ -174,6 +295,10 @@ class Player:
         self.hp = HpTracker(config.TIMING.damage_window_s)
         self.dead_enemy_mid_towers = set()
         self.mm_state = None
+        self.view = None
+        self.scene = None
+        self.min_tracker = UnitTracker()
+        self.champ_tracker = UnitTracker(max_jump_px=90)
         self._gold_hist.clear()
         self._stop = threading.Event()
         self.recorder = FixtureRecorder()
@@ -187,6 +312,9 @@ class Player:
         side = me.get("team", "ORDER")
         self.side = side
         self.mech = Mechanics(self.ctl, self.screen, self.kb, side)
+        self.micro = Micro(self.ctl, self.screen, self.kb, side)
+        self.data = data
+        self._api_dead = False
         console.print(f"game found, side {side}, champion {me.get('championName')}")
         self._camera_checked = False
         gt = float((data.get("gameData") or {}).get("gameTime", 0.0))
@@ -198,14 +326,20 @@ class Player:
             self.mech.resync_to_own_tower()
             self._base_shop_done = True
         threading.Thread(target=self._brain_loop, daemon=True).start()
-        tick = 1 / config.TIMING.tick_hz
+        threading.Thread(target=self._api_loop, daemon=True).start()
+        if not self.dry_run:
+            threading.Thread(target=self._perceive_loop, daemon=True).start()
+            if self.tactic_hz > 0:
+                self.tactics = TacticalBrain(max_hz=self.tactic_hz)
+                threading.Thread(target=self.tactics.run, daemon=True).start()
+        tick = 1 / (config.FAST.act_hz if not self.dry_run else config.TIMING.tick_hz)
         perception = Perception()
         try:
             with Live(self._table(perception), refresh_per_second=4, console=console) as live:
                 while True:
                     t0 = time.time()
-                    data = self.riot.all_game_data()
-                    if data is None:
+                    data = self.data if not self.dry_run else self.riot.all_game_data()
+                    if data is None or self._api_dead:
                         break
                     if not self.dry_run and not self.ctl.keys_ok():
                         if self.keep_front and t0 - self._last_activate > 3.0:
@@ -226,11 +360,15 @@ class Player:
                             self.mech._last_move = 0.0
                     perception = self._tick(data, t0)
                     self.state = build_state(data, perception, self.role)
-                    live.update(self._table(perception))
+                    if t0 - self._last_table > 0.25:
+                        self._last_table = t0
+                        live.update(self._table(perception))
                     self._logline(perception, t0)
                     time.sleep(max(0.0, tick - (time.time() - t0)))
         finally:
             self._stop.set()
+            if self.tactics is not None:
+                self.tactics.stop()
         console.print("game over")
 
     def _tick(self, data: dict, now: float) -> Perception:
@@ -257,12 +395,8 @@ class Player:
         )
         wave = None
         if self.mm is not None:
-            try:
-                mm = self.mm.read()
-            except Exception:  # noqa: BLE001
-                mm = None
-            self.mm_state = mm
-            if mm is not None and mm.pos is not None:
+            mm = self.mm_state  # read by the perception thread
+            if mm is not None and mm.pos is not None and now - mm.ts < 1.0:
                 prog, lat = lane_progress(mm.pos, self.side)
                 m.nav.progress = prog
                 m.nav._last_t = now
@@ -370,6 +504,8 @@ class Player:
             m.retreat(move_speed, now)  # walking to own tower to re-base position
             self.intent = "resync"
             return p
+        if self.intent in ("farm", "trade", "push_tower", "defend") and self._micro_step(data, ap, cs, now):
+            return p
         if self.intent == "farm":
             contact = self._income_contact(float(ap.get("currentGold", 0)), int(me.get("scores", {}).get("creepScore", 0)), now) \
                 or 0.5 <= lost < config.TIMING.heavy_damage_pct
@@ -403,7 +539,8 @@ class Player:
             f"L{me.get('level')} hp={me.get('hp_percent')}% gold={me.get('gold')} {me.get('kda')} cs={me.get('cs')} "
             f"| {p.position} lane={p.lane_progress_pct}% dmg={p.hp_lost_recent_pct:.0f} | intent={self.intent} "
             f"| jev={self.decision.summary() if self.decision else '-'} | act={self.mech.last_action if self.mech else ''} "
-            f"keys={'y' if self.ctl.keys_ok() else 'n'} | mm={self._mm_summary()} | {self.log_lines[-1] if self.log_lines else ''}\n"
+            f"keys={'y' if self.ctl.keys_ok() else 'n'} | mm={self._mm_summary()} | {' / '.join(self.fast_summary())} "
+            f"| qsig={tuple(round(v) for v in self.view.hud.q_sig) if self.view else '-'} | {self.log_lines[-1] if self.log_lines else ''}\n"
         )
         with open(self.logfile, "a") as f:
             f.write(line)
