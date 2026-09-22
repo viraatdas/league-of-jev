@@ -94,12 +94,14 @@ def play(
     role: str = typer.Option("", help="Role override: MIDDLE | UTILITY | TOP | BOTTOM (default: assigned position)"),
     explore: float = typer.Option(0.0, help="Share of tactical picks sampled from Jev's distribution instead of its top choice (bot games)"),
     decision_log: str = typer.Option("logs/decisions.jsonl", help="Tactical decisions with outcomes, for `jev review`"),
+    save_frames: float = typer.Option(0.0, help="Save a raw frame to snapshots/live every N seconds (calibration)"),
 ) -> None:
     """Play the current game with Jev driving strategy (1/s), tactics (~7/s) and the build."""
     from jev.loop import Player
 
     player = Player(dry_run=dry_run, logfile=logfile, keep_front=keep_front, forever=forever, tactic_hz=tactic_hz,
-                    champion=champion or None, role=role, explore=explore, decision_log=decision_log)
+                    champion=champion or None, role=role, explore=explore, decision_log=decision_log,
+                    save_frames_s=save_frames)
     if not overlay:
         player.run()
         return

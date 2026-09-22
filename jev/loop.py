@@ -96,7 +96,7 @@ class HpTracker:
 class Player:
     def __init__(self, dry_run: bool = False, quick_cast: bool | None = None, role: str = "", logfile=None, keep_front: bool = True,
                  forever: bool = False, tactic_hz: float = 8.0, champion: str | None = None, explore: float = 0.0,
-                 decision_log: str | None = "logs/decisions.jsonl") -> None:
+                 decision_log: str | None = "logs/decisions.jsonl", save_frames_s: float = 0.0) -> None:
         self.dry_run = dry_run
         self.forever = forever
         self.keep_front = keep_front
@@ -142,6 +142,7 @@ class Player:
         self.lane: Lane = Lane("mid", "ORDER")
         self.dlog = DecisionLog(decision_log if not dry_run else None)
         self._wake_actor = threading.Event()   # set on every new frame and every new Jev answer
+        self.save_frames_s = save_frames_s
         self._last_logged_seq = 0
         self.tactics: TacticalBrain | None = None
         self.micro: Micro | None = None
@@ -227,6 +228,14 @@ class Player:
                     v.ts = t_cap
                     self.view = v
                 self._wake_actor.set()
+                if self.save_frames_s and t_cap - getattr(self, "_last_saved", 0.0) >= self.save_frames_s:
+                    import cv2
+                    from pathlib import Path
+
+                    self._last_saved = t_cap
+                    d = Path("snapshots/live")
+                    d.mkdir(parents=True, exist_ok=True)
+                    cv2.imwrite(str(d / f"{time.strftime('%H%M%S')}.png"), frame)
             except Exception as e:  # noqa: BLE001
                 self.log_lines.append(f"perception error: {e}")
                 time.sleep(0.2)
