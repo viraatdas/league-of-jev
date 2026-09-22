@@ -76,6 +76,21 @@ put ads in the overlay.
 - Riot Live Client Data API: https://developer.riotgames.com/docs/lol
 - Riot third-party application policy: https://support.riotgames.com/en-us/riot/events/third-party-applications
 
+## Live findings (2026-09-22, Practice Tool)
+
+- The game accepts input only while it is the active window. Clicks and keys sent while
+  another app is active do nothing, including events posted to the game's process
+  (verified through the game API). `play` keeps the window in front and pauses otherwise.
+- Modifier keys must be sent as real key-down/up events around the key; a bare flag on the
+  key event is ignored. Level-ups are Shift+Q/W/E/R on this account (read from input.ini).
+- Locked camera puts Yasuo at (862, 490) in the 1728x1117 window; minimap square is
+  (1350, 705, 372); shop search box (676, 242); starter card (676, 400); PURCHASE (1167, 582).
+- Practice Tool lobbies cannot take bots; enemy champions need a custom game (queue 3100).
+- Jev round trip is 100-250 ms at ~1,330 input tokens per tick.
+- First full run: starter bought, abilities leveled, CS 0 -> 20 in three minutes once the
+  aim anchor was corrected, recalls on Jev's call, two early deaths to the tower before the
+  advance limit and hold-without-creep fixes.
+
 ## Next
 
 1. Game finishes patching, user logs in, starts Practice Tool as Yasuo, locks the camera.
