@@ -86,20 +86,38 @@ def play(
     dry_run: bool = typer.Option(False, help="Log actions instead of sending input"),
     logfile: Path | None = typer.Option(None, help="Append one status line per second here"),
     keep_front: bool = typer.Option(True, help="Re-activate the game window whenever it is not in front"),
+    overlay: bool = typer.Option(True, help="Show the on-screen panel with Jev's decision and probabilities"),
+    forever: bool = typer.Option(False, help="After a game ends, wait for the next one"),
 ) -> None:
     """Play the current game as Yasuo with Jev driving intent."""
     from jev.loop import Player
 
-    Player(dry_run=dry_run, logfile=logfile, keep_front=keep_front).run()
+    player = Player(dry_run=dry_run, logfile=logfile, keep_front=keep_front, forever=forever)
+    if not overlay:
+        player.run()
+        return
+    from jev.overlay import format_snapshot, run_with_overlay
+
+    def snapshot() -> str:
+        return format_snapshot(player.state, player.decision, player.intent, player._mm_summary(),
+                               player.mech.last_action if player.mech else "", player.ctl.keys_ok())
+
+    run_with_overlay(player.run, snapshot)
 
 
 @app.command()
-def lcu(action: str = typer.Argument("status", help="status | practice | custom | bots | start | pick")) -> None:
-    """Drive the League client: create a Practice Tool lobby, add bots, start, pick Yasuo."""
+def lcu(action: str = typer.Argument("status", help="status | practice | custom | bots | start | pick | normal | queues")) -> None:
+    """Drive the League client: lobbies, queue, ready check, champ select."""
     from jev.lcu import LCU, YASUO
 
     c = LCU()
-    if action == "status":
+    if action == "normal":
+        for line in c.play_normal(YASUO):
+            console.print(line, markup=False)
+    elif action == "queues":
+        for q in c.available_queues():
+            console.print(q, markup=False)
+    elif action == "status":
         console.print(f"lockfile {c.lockfile}")
         console.print(f"phase: {c.gameflow()}")
         console.print(c.summoner())

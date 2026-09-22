@@ -160,5 +160,93 @@ class LCU:
             time.sleep(1)
         return "no pick action found"
 
+    # -- matchmade games -----------------------------------------------------------------
+    def available_queues(self) -> list[str]:
+        code, qs = self.req("GET", "/lol-game-queues/v1/queues")
+        out = []
+        if code == 200:
+            for q in qs:
+                if q.get("queueAvailability") == "Available" and q.get("mapId") == 11:
+                    out.append(f"{q.get('id')} {q.get('category')} {q.get('gameMode')} {q.get('name')} {q.get('description', '')[:40]}")
+        return out
+
+    def normal_queue_id(self) -> int | None:
+        code, qs = self.req("GET", "/lol-game-queues/v1/queues")
+        if code != 200:
+            return None
+        avail = [q for q in qs if q.get("queueAvailability") == "Available" and q.get("mapId") == 11 and q.get("category") == "PvP"]
+        for want in ("draft", "normal", "blind", "quickplay", "swiftplay"):
+            for q in avail:
+                if want in str(q.get("name", "")).lower() and "ranked" not in str(q.get("name", "")).lower():
+                    return int(q["id"])
+        return None
+
+    def play_normal(self, champion_id: int, fallbacks: tuple[int, ...] = (777, 86), timeout_s: float = 900.0):
+        """Create a normal lobby, prefer mid, queue, accept the ready check, ban and pick, and
+        yield progress lines until the game is in progress."""
+        qid = self.normal_queue_id()
+        if qid is None:
+            yield "no available normal queue found"
+            return
+        self.delete_lobby()
+        time.sleep(1)
+        code, body = self.req("POST", "/lol-lobby/v2/lobby", {"queueId": qid})
+        yield f"lobby queue {qid}: {code} {body.get('gameConfig', {}).get('queueId') if code < 400 else body}"
+        if code >= 400:
+            return
+        code, body = self.req("PUT", "/lol-lobby/v2/lobby/members/localMember/position-preferences", {"firstPreference": "MIDDLE", "secondPreference": "TOP"})
+        yield f"positions mid/top: {code}"
+        code, body = self.req("POST", "/lol-lobby/v2/lobby/matchmaking/search")
+        yield f"search: {code} {body if code >= 400 else ''}"
+        t0 = time.time()
+        picked = False
+        last = ""
+        while time.time() - t0 < timeout_s:
+            phase = self.gameflow()
+            if phase != last:
+                yield f"{int(time.time() - t0)}s phase {phase}"
+                last = phase
+            if phase == "ReadyCheck":
+                code, rc = self.req("GET", "/lol-matchmaking/v1/ready-check")
+                if code == 200 and rc.get("state") == "InProgress" and rc.get("playerResponse") != "Accepted":
+                    c2, _ = self.req("POST", "/lol-matchmaking/v1/ready-check/accept")
+                    yield f"accepted ready check: {c2}"
+            elif phase == "ChampSelect":
+                code, sess = self.req("GET", "/lol-champ-select/v1/session")
+                if code == 200:
+                    cell = sess.get("localPlayerCellId")
+                    bans = {a.get("championId") for g in sess.get("actions", []) for a in g if a.get("type") == "ban" and a.get("completed")}
+                    taken = {p.get("championId") for p in sess.get("myTeam", []) + sess.get("theirTeam", []) if p.get("cellId") != cell}
+                    for group in sess.get("actions", []):
+                        for a in group:
+                            if a.get("actorCellId") != cell or a.get("completed") or not a.get("isInProgress"):
+                                continue
+                            if a.get("type") == "ban":
+                                c1, _ = self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": 238, "completed": True})
+                                yield f"banned Zed: {c1}"
+                            elif a.get("type") == "pick" and not picked:
+                                for cid in (champion_id,) + fallbacks:
+                                    if cid in bans or cid in taken:
+                                        continue
+                                    c1, b1 = self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": cid, "completed": True})
+                                    yield f"pick {cid}: {c1} {b1 if c1 >= 400 else ''}"
+                                    if c1 < 400:
+                                        picked = True
+                                        break
+                    # Hover intent early so teammates see it.
+                    if not picked:
+                        for group in sess.get("actions", []):
+                            for a in group:
+                                if a.get("actorCellId") == cell and a.get("type") == "pick" and not a.get("completed") and a.get("championId", 0) == 0:
+                                    self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": champion_id})
+            elif phase in ("InProgress", "GameStart"):
+                yield "game starting"
+                return
+            elif phase in ("None", "Lobby") and time.time() - t0 > 20 and last in ("ChampSelect",):
+                yield "champ select ended without a game (dodge?)"
+                return
+            time.sleep(1.5)
+        yield "timed out waiting for a game"
+
     def close(self) -> None:
         self.http.close()

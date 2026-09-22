@@ -11,6 +11,15 @@ MID_CENTER = (7400.0, 7400.0)
 BLUE_MID_T1 = (5846.0, 6396.0)
 RED_MID_T1 = (8955.0, 8510.0)
 
+# Structures (map units, approximate). Used to mask their minimap icons and for tower safety.
+BLUE_TOWERS = [(981, 10441), (1512, 6699), (1169, 4287), (5846, 6396), (5048, 4812), (3651, 3696),
+               (10504, 1029), (6919, 1483), (4281, 1253), (2177, 1807), (1748, 2270)]
+RED_TOWERS = [(4318, 13875), (7943, 13411), (10481, 13650), (8955, 8510), (9767, 10113), (11134, 11207),
+              (13866, 4505), (13327, 8226), (13624, 10572), (12611, 13084), (13052, 12612)]
+BLUE_STRUCTURES = BLUE_TOWERS + [(1171, 3571), (3203, 3208), (3452, 1236), (1551, 1659)]
+RED_STRUCTURES = RED_TOWERS + [(11261, 13676), (11598, 11667), (13604, 11316), (13270, 13230)]
+TOWER_RANGE = 775.0 + 150.0   # tower range plus a margin
+
 # Progress along the mid-lane diagonal, 0 = own fountain, 1 = enemy fountain.
 LANE_CENTER = 0.50
 OWN_TOWER = 0.42

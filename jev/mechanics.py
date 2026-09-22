@@ -14,6 +14,7 @@ from jev.config import Geometry, Timing
 from jev.control import Controller
 from jev.keybinds import Keybinds
 from jev.screen import Screen
+from jev.minimap import Wave
 
 YASUO_SKILL_ORDER = ["Q", "E", "Q", "W", "Q", "R", "Q", "E", "Q", "E", "R", "E", "E", "W", "W", "R", "W", "W"]
 ABILITY_INDEX = {"Q": 1, "W": 2, "E": 3, "R": 4}
@@ -174,13 +175,22 @@ class Mechanics:
         self._move_dir = 0
         self.nav.moved(0, 0.0, now)
 
+    aim_dir: tuple[float, float] | None = None  # screen-space unit vector toward the nearest enemy unit
+
     def blind_q(self, now: float) -> None:
         if now - self._last_q < self.timing.q_period_s:
             return
         self._last_q = now
-        x, y = self._ahead(self.geo.q_cast_px, 1)
+        if self.aim_dir is not None:
+            cx, cy = self._center()
+            x = min(max(cx + self.aim_dir[0] * self.geo.q_cast_px, 8), self.screen.px_w - 8)
+            y = min(max(cy + self.aim_dir[1] * self.geo.q_cast_px, 8), self.screen.px_h * 0.80)
+            x, y = self.screen.to_points(x, y)
+            self.last_action = "Q at target"
+        else:
+            x, y = self._ahead(self.geo.q_cast_px, 1)
+            self.last_action = "Q up the lane"
         self._snapped(lambda: self._cast(1, x, y))
-        self.last_action = "Q up the lane"
 
     def go_to_map(self, target, now: float) -> bool:
         """Right-click the minimap if calibrated. Returns False if no minimap geometry."""
@@ -199,7 +209,7 @@ class Mechanics:
         if not self.go_progress(config.OWN_TOWER, move_speed, now, attack=False):
             self.walk(1, move_speed, now)
 
-    def farm(self, move_speed: float, now: float, aggression: float = 1.0, contact: bool = False) -> None:
+    def farm(self, move_speed: float, now: float, aggression: float = 1.0, contact: bool = False, wave: Wave | None = None) -> None:
         """aggression is Jev's 0..2 score: passive stays nearer the own tower, aggressive holds
         closer to the enemy side of the wave. Without vision the wave is found by feel: minion
         chip damage means contact, so hold; no contact for a while means patrol along the lane."""
@@ -215,7 +225,15 @@ class Mechanics:
                 self._seek_dir = -1
             elif self._seek <= -self.timing.seek_back:
                 self._seek_dir = 1
-        limit = config.MAX_ADVANCE + (aggression - 1.0) * 0.035 + self._seek
+        if wave is not None and wave.enemy_front is not None:
+            # Stand at the enemy minion front, a touch back; aggression leans in.
+            limit = wave.enemy_front - 0.008 + (aggression - 1.0) * 0.01
+            self._seek = 0.0
+        elif wave is not None and wave.ally_front is not None:
+            limit = wave.ally_front - 0.01
+            self._seek = 0.0
+        else:
+            limit = config.MAX_ADVANCE + (aggression - 1.0) * 0.035 + self._seek
         limit = max(config.OWN_TOWER, min(limit, config.HARD_LIMIT))
         if abs(self.nav.progress - limit) > 0.01:
             if not self.go_progress(limit, move_speed, now, attack=True):

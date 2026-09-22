@@ -24,6 +24,13 @@ class Perception:
     hp_lost_recent_pct: float = 0.0       # HP% lost in the last few seconds
     seconds_since_damage: float | None = None
     recalling: bool = False
+    # From the minimap reader (None/0 when not available)
+    enemy_champions_on_minimap: int = 0
+    nearest_enemy_champion_units: float | None = None
+    enemy_minions_in_lane: int = 0
+    ally_minions_in_lane: int = 0
+    wave_position: str | None = None
+    near_enemy_tower: bool = False
 
     def to_state(self) -> dict[str, Any]:
         if self.hp_lost_recent_pct >= 12:
@@ -44,7 +51,28 @@ class Perception:
                 where = "near my own mid tower"
             else:
                 where = "walking from base to lane"
-        return {"where_i_am": where, "damage": damage, "recalling": self.recalling}
+        d = self.nearest_enemy_champion_units
+        if d is None:
+            closest = "no enemy champion visible"
+        elif d < 700:
+            closest = "an enemy champion is right next to me"
+        elif d < 1500:
+            closest = "an enemy champion is close"
+        elif d < 3000:
+            closest = "an enemy champion is approaching"
+        else:
+            closest = "enemy champions visible only far away"
+        return {
+            "where_i_am": where,
+            "damage": damage,
+            "recalling": self.recalling,
+            "enemy_champions_visible_on_map": self.enemy_champions_on_minimap,
+            "closest_enemy_champion": closest,
+            "enemy_minions_in_my_lane": self.enemy_minions_in_lane,
+            "ally_minions_in_my_lane": self.ally_minions_in_lane,
+            "minion_wave": self.wave_position or "not visible",
+            "inside_enemy_tower_range": self.near_enemy_tower,
+        }
 
 
 def _name(p: dict) -> str:

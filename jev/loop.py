@@ -15,6 +15,7 @@ from jev import config, keybinds
 from jev.brain import Brain, Decision
 from jev.control import Controller, activate_game
 from jev.mechanics import Mechanics
+from jev.minimap import MinimapReader, MinimapState, dist, lane_progress, lane_wave
 from jev.riot_api import FixtureRecorder, RiotLiveClient
 from jev.screen import Screen
 from jev.state import Perception, build_state, find_me
@@ -35,6 +36,10 @@ def choose_intent(d: Decision | None, state: dict, p: Perception, now: float, gu
         guard.retreat_until = now + 4.0  # survival floor, shorter than Jev's own retreat calls
     if p.hp_lost_recent_pct >= config.TIMING.heavy_damage_pct:
         guard.retreat_until = now + 5.0  # tower-sized chunks: step out before the next shot
+    if p.near_enemy_tower and d is not None and d.intent != "push_tower":
+        guard.retreat_until = now + 3.0
+    if p.nearest_enemy_champion_units is not None and p.nearest_enemy_champion_units < 600 and me["hp_percent"] < 30:
+        guard.retreat_until = now + 5.0
     if now < guard.retreat_until:
         return "retreat"
     if d is None:
@@ -79,8 +84,9 @@ class HpTracker:
 
 
 class Player:
-    def __init__(self, dry_run: bool = False, quick_cast: bool | None = None, role: str = "MIDDLE", logfile=None, keep_front: bool = True) -> None:
+    def __init__(self, dry_run: bool = False, quick_cast: bool | None = None, role: str = "MIDDLE", logfile=None, keep_front: bool = True, forever: bool = False) -> None:
         self.dry_run = dry_run
+        self.forever = forever
         self.keep_front = keep_front
         self._last_activate = 0.0
         self.logfile = logfile
@@ -106,6 +112,10 @@ class Player:
         self.paused = False
         self._last_sig = (None, None, 0)
         self._gold_hist: collections.deque[tuple[float, float, int]] = collections.deque()
+        self.mm: MinimapReader | None = MinimapReader(self.screen) if config.GEOMETRY.minimap else None
+        self.mm_state: MinimapState | None = None
+        self.side = "ORDER"
+        self.dead_enemy_mid_towers: set[int] = set()
 
     def _log_action(self, msg: str) -> None:
         self.log_lines.append(msg)
@@ -145,12 +155,34 @@ class Player:
     # -- main -----------------------------------------------------------------------------
     def run(self) -> None:
         console.print(f"keybinds: {self.kb.describe()}", markup=False)
-        console.print("waiting for a game (start a Practice Tool or custom game and lock the camera)...")
+        while True:
+            self._run_one_game()
+            if not self.forever:
+                return
+            self._reset_for_next_game()
+
+    def _reset_for_next_game(self) -> None:
+        self.decision = None
+        self.state = {}
+        self.phase = "base"
+        self.intent = "farm"
+        self._base_shop_done = False
+        self.guards = Guards()
+        self.hp = HpTracker(config.TIMING.damage_window_s)
+        self.dead_enemy_mid_towers = set()
+        self.mm_state = None
+        self._gold_hist.clear()
+        self._stop = threading.Event()
+        self.recorder = FixtureRecorder()
+
+    def _run_one_game(self) -> None:
+        console.print("waiting for a game...")
         while not self.riot.is_game_running():
             time.sleep(1)
         data = self.riot.all_game_data() or {}
         me = find_me(data) or {}
         side = me.get("team", "ORDER")
+        self.side = side
         self.mech = Mechanics(self.ctl, self.screen, self.kb, side)
         console.print(f"game found, side {side}, champion {me.get('championName')}")
         gt = float((data.get("gameData") or {}).get("gameTime", 0.0))
@@ -195,8 +227,6 @@ class Player:
                     time.sleep(max(0.0, tick - (time.time() - t0)))
         finally:
             self._stop.set()
-            self.brain.close()
-            self.riot.close()
         console.print("game over")
 
     def _tick(self, data: dict, now: float) -> Perception:
@@ -221,6 +251,57 @@ class Player:
             seconds_since_damage=self.hp.since_damage(now),
             recalling=m.recall_started is not None,
         )
+        wave = None
+        if self.mm is not None:
+            try:
+                mm = self.mm.read()
+            except Exception:  # noqa: BLE001
+                mm = None
+            self.mm_state = mm
+            if mm is not None and mm.pos is not None:
+                prog, lat = lane_progress(mm.pos, self.side)
+                m.nav.progress = prog
+                m.nav._last_t = now
+                p.lane_progress_pct = m.nav.pct
+                wave = lane_wave(mm, self.side)
+                p.enemy_champions_on_minimap = len(mm.enemy_champions)
+                p.enemy_minions_in_lane, p.ally_minions_in_lane = wave.enemy_count, wave.ally_count
+                if mm.enemy_champions:
+                    p.nearest_enemy_champion_units = min(dist(mm.pos, e) for e in mm.enemy_champions)
+                if wave.enemy_front is not None:
+                    f = wave.enemy_front
+                    p.wave_position = ("under my tower" if f < 0.44 else "on my side of the lane" if f < 0.49
+                                       else "at the middle" if f < 0.52 else "on their side" if f < 0.56 else "under their tower")
+                # Tower safety: enemy mid towers still standing.
+                enemy_towers = config.RED_TOWERS if self.side == "ORDER" else config.BLUE_TOWERS
+                mid_ids = {3: 5, 4: 4, 5: 3}  # index in list -> mid outer/inner/inhib tower number
+                for i, t in enumerate(enemy_towers):
+                    if i in mid_ids and mid_ids[i] in self.dead_enemy_mid_towers:
+                        continue
+                    if dist(mm.pos, t) < config.TOWER_RANGE:
+                        p.near_enemy_tower = True
+                        break
+                # Q aim: nearest enemy champion, else nearest enemy minion, within reach.
+                targets = mm.enemy_champions or mm.enemy_minions
+                if targets:
+                    tgt = min(targets, key=lambda e: dist(mm.pos, e))
+                    d = dist(mm.pos, tgt)
+                    if d < 900:
+                        dx, dy = tgt[0] - mm.pos[0], tgt[1] - mm.pos[1]
+                        m.aim_dir = (dx / d, -dy / d)
+                    else:
+                        m.aim_dir = None
+                else:
+                    m.aim_dir = None
+        # Track destroyed enemy mid towers from the event log.
+        enemy_tag = "T2" if self.side == "ORDER" else "T1"
+        for e in (data.get("events") or {}).get("Events", []):
+            tk = str(e.get("TurretKilled", ""))
+            if e.get("EventName") == "TurretKilled" and f"Turret_{enemy_tag}_C_" in tk:
+                try:
+                    self.dead_enemy_mid_towers.add(int(tk.split("_")[3]))
+                except (IndexError, ValueError):
+                    pass
 
         # Level-ups never need Jev.
         levels = {k: ap.get("abilities", {}).get(k, {}).get("abilityLevel", 0) for k in ("Q", "W", "E", "R")}
@@ -275,14 +356,14 @@ class Player:
             return p
 
         p.position = "lane"
-        if now < self.guards.resync_until:
+        if now < self.guards.resync_until and (self.mm_state is None or self.mm_state.pos is None):
             m.retreat(move_speed, now)  # walking to own tower to re-base position
             self.intent = "resync"
             return p
         if self.intent == "farm":
             contact = self._income_contact(float(ap.get("currentGold", 0)), int(me.get("scores", {}).get("creepScore", 0)), now) \
                 or 0.5 <= lost < config.TIMING.heavy_damage_pct
-            m.farm(move_speed, now, self.decision.aggression if self.decision else 1.0, contact)
+            m.farm(move_speed, now, self.decision.aggression if self.decision else 1.0, contact, wave)
         elif self.intent == "trade":
             m.trade(move_speed, now)
         elif self.intent == "push_tower":
@@ -310,10 +391,17 @@ class Player:
             f"L{me.get('level')} hp={me.get('hp_percent')}% gold={me.get('gold')} {me.get('kda')} cs={me.get('cs')} "
             f"| {p.position} lane={p.lane_progress_pct}% dmg={p.hp_lost_recent_pct:.0f} | intent={self.intent} "
             f"| jev={self.decision.summary() if self.decision else '-'} | act={self.mech.last_action if self.mech else ''} "
-            f"keys={'y' if self.ctl.keys_ok() else 'n'} | {self.log_lines[-1] if self.log_lines else ''}\n"
+            f"keys={'y' if self.ctl.keys_ok() else 'n'} | mm={self._mm_summary()} | {self.log_lines[-1] if self.log_lines else ''}\n"
         )
         with open(self.logfile, "a") as f:
             f.write(line)
+
+    def _mm_summary(self) -> str:
+        mm = self.mm_state
+        if mm is None:
+            return "-"
+        pos = f"{int(mm.pos[0])},{int(mm.pos[1])}" if mm.pos else "?"
+        return f"pos={pos} ec={len(mm.enemy_champions)} em={len(mm.enemy_minions)} am={len(mm.ally_minions)} {mm.ms:.0f}ms"
 
     def _income_contact(self, gold: float, cs: int, now: float) -> bool:
         """True when gold came in faster than passive income over the last few seconds, or CS
