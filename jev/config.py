@@ -48,7 +48,7 @@ class Geometry:
     recall_button: tuple[int, int] | None = (1181, 1020)   # HUD "B" recall icon
     boots_card: tuple[int, int] | None = (418, 765)        # first "commonly built" icon (boots)
     # HUD ability icons and the level-up chevrons above them, Q W E R
-    ability_icons: tuple[tuple[int, int], ...] = ((620, 985), (737, 985), (799, 985), (861, 985))
+    ability_icons: tuple[tuple[int, int], ...] = ((673, 985), (737, 985), (799, 985), (861, 985))
     level_chevrons: tuple[tuple[int, int], ...] = ((675, 935), (737, 935), (799, 935), (861, 935))
     move_click_px: int = 420        # how far ahead to click when walking
     attack_move_px: int = 260       # how far ahead to attack-move at the wave
@@ -76,5 +76,54 @@ class Timing:
     resync_s: float = 14.0          # mid-game start: walk to own tower this long first
 
 
+@dataclass
+class Vision:
+    """Health-bar and HUD reading, measured on the 1728x1117 windowed layout (snapshots/054108.png)."""
+
+    view: tuple[int, int, int, int] = (90, 70, 1728, 940)   # x0, y0, x1, y1 of the game view (no HUD, no sidebar)
+    hud_block: tuple[int, int, int, int] = (285, 895, 1225, 1117)  # ability bar and item panel
+    frame_dark_v: int = 60             # HSV value below this counts as the dark bar frame
+    minion_bar_w: int = 60             # fill width of a full minion bar
+    minion_bar_h: tuple[int, int] = (3, 6)
+    champ_bar_w: int = 106             # fill width of a full champion bar
+    champ_bar_h: tuple[int, int] = (9, 12)
+    minion_body_offset: tuple[int, int] = (0, 32)    # bar centre -> where to click the minion
+    champ_body_offset: tuple[int, int] = (-10, 78)   # bar centre -> champion body
+    hud_icons: tuple[tuple[int, int], ...] = ((673, 985), (737, 985), (799, 985), (861, 985), (925, 985), (972, 985))
+    icon_half: int = 20
+    icon_ready_lit: float = 0.2        # share of bright pixels above which an icon counts as ready
+    px_per_unit: float = 0.46          # screen px per game unit at default zoom (minimap camera box)
+    # Game ranges in units (current patch, approximate); edge-to-edge adds unit radius, so auto has slack.
+    auto_range: float = 240.0
+    q_range: float = 450.0
+    q3_range: float = 1050.0
+    e_range: float = 475.0
+    r_range: float = 1400.0
+    w_range: float = 400.0
+
+
+@dataclass
+class Fast:
+    """The fast loop: perception, Jev tactics and input rates."""
+
+    act_hz: float = 30.0               # actor loop rate
+    min_action_gap_s: float = 0.11     # at most ~545 orders a minute
+    hover_s: float = 0.004             # in-game click: cursor move -> button down
+    hold_s: float = 0.012              # button / key hold
+    mod_gap_s: float = 0.008           # modifier down -> key
+    tactic_stale_s: float = 0.45       # drop a Jev tactical answer older than this
+    eq_delay_s: float = 0.07           # E press -> Q press for the circular EQ
+    r_watch_s: float = 1.0             # after a tornado, watch this long for R to light up
+    windup_frac: float = 0.22          # share of an attack spent in wind-up; move only after it
+    lasthit_margin: float = 1.0        # predicted HP must be below damage * margin
+    lasthit_lead_s: float = 0.18       # predict minion HP this far ahead (input + wind-up)
+    melee_hp: tuple[float, float] = (477.0, 22.0)   # base, per 90 s (approximate)
+    caster_hp: tuple[float, float] = (296.0, 8.0)
+    q_base: tuple[float, ...] = (20.0, 45.0, 70.0, 95.0, 120.0)  # plus 105% AD (approximate)
+    q_ad: float = 1.05
+
+
 GEOMETRY = Geometry()
 TIMING = Timing()
+VISION = Vision()
+FAST = Fast()

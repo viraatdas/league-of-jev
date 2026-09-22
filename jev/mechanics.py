@@ -349,6 +349,10 @@ class Mechanics:
         return None
 
     def shop(self, item: str, items_now=None) -> bool:
+        with self.ctl.slow():
+            return self._shop(item, items_now)
+
+    def _shop(self, item: str, items_now=None) -> bool:
         """Buy `item`, verified through the API (items_now() returns the current item names).
         HUD shop button, then either a recommended card or the search box plus the first result
         tile; a double-click on a tile is what buys (verified live, Enter and PURCHASE do not).

@@ -6,6 +6,8 @@ Requires Accessibility permission for the terminal app that launches the process
 """
 from __future__ import annotations
 
+import collections
+import contextlib
 import time
 
 import Quartz
@@ -138,6 +140,42 @@ class Controller:
         self.to_pid = to_pid
         self.pid: int | None = game_pid() if to_pid else None
         self.blocked = 0
+        # Fast timings for in-game orders; slow() switches to UI-safe timings (shop, menus).
+        from jev import config
+        self.fast = config.FAST
+        self._ui = 0
+        self._orders: collections.deque[float] = collections.deque()
+
+    @contextlib.contextmanager
+    def slow(self):
+        """UI timings: the shop and menus need a hover before the press and a longer hold."""
+        self._ui += 1
+        try:
+            yield
+        finally:
+            self._ui -= 1
+
+    def _hover_s(self) -> float:
+        return 0.04 if self._ui else self.fast.hover_s
+
+    def _hold_s(self, ui_ms: int) -> float:
+        return ui_ms / 1000 if self._ui else self.fast.hold_s
+
+    def _count(self) -> None:
+        now = time.time()
+        self._orders.append(now)
+        while self._orders and now - self._orders[0] > 60:
+            self._orders.popleft()
+
+    def apm(self) -> int:
+        """Orders (mouse presses and key presses) in the last minute, scaled up if fewer than 60 s have passed."""
+        if not self._orders:
+            return 0
+        now = time.time()
+        while self._orders and now - self._orders[0] > 60:
+            self._orders.popleft()
+        span = max(5.0, min(60.0, now - self._orders[0]))
+        return int(len(self._orders) * 60 / span)
 
     def _allowed(self) -> bool:
         """Default: HID-tap events, only while the game is the active app. Verified through the
@@ -175,19 +213,21 @@ class Controller:
         self.log(f"click_{button}({x:.0f},{y:.0f})")
         if not self._allowed():
             return
-        time.sleep(0.04)  # let the UI register the hover before the press
+        time.sleep(self._hover_s())  # let the game register the cursor before the press
         if button == "left":
             down, up, btn = kCGEventLeftMouseDown, kCGEventLeftMouseUp, kCGMouseButtonLeft
         else:
             down, up, btn = kCGEventRightMouseDown, kCGEventRightMouseUp, kCGMouseButtonRight
         self._post(CGEventCreateMouseEvent(None, down, (x, y), btn))
-        time.sleep(hold_ms / 1000)
+        self._count()
+        time.sleep(self._hold_s(hold_ms))
         self._post(CGEventCreateMouseEvent(None, up, (x, y), btn))
 
     def double_click(self, x: float, y: float) -> None:
-        self.click(x, y, "left")
-        time.sleep(0.08)
-        self.click(x, y, "left")
+        with self.slow():
+            self.click(x, y, "left")
+            time.sleep(0.08)
+            self.click(x, y, "left")
 
     # -- keyboard --------------------------------------------------------------
     _MOD_CODES = (("ctrl", 59, kCGEventFlagMaskControl), ("shift", 56, kCGEventFlagMaskShift), ("alt", 58, kCGEventFlagMaskAlternate), ("cmd", 55, kCGEventFlagMaskCommand))
@@ -203,20 +243,22 @@ class Controller:
             return
         flags = 0
         active = [(m, c, f) for m, c, f in self._MOD_CODES if wanted[m]]
+        gap = 0.03 if self._ui else self.fast.mod_gap_s
         for _, mcode, mflag in active:
             self._post(CGEventCreateKeyboardEvent(None, mcode, True))
             flags |= mflag
-            time.sleep(0.03)
+            time.sleep(gap)
         down = CGEventCreateKeyboardEvent(None, code, True)
         up = CGEventCreateKeyboardEvent(None, code, False)
         if flags:
             CGEventSetFlags(down, flags)
             CGEventSetFlags(up, flags)
         self._post(down)
-        time.sleep(hold_ms / 1000)
+        self._count()
+        time.sleep(self._hold_s(hold_ms))
         self._post(up)
         for _, mcode, _ in reversed(active):
-            time.sleep(0.03)
+            time.sleep(gap)
             self._post(CGEventCreateKeyboardEvent(None, mcode, False))
 
     def hold(self, bind, down: bool) -> None:
@@ -271,20 +313,21 @@ class Controller:
         self.log(f"shift_click_right({x:.0f},{y:.0f})")
         if not self._allowed():
             return
-        time.sleep(0.04)
+        time.sleep(self._hover_s())
         down = CGEventCreateMouseEvent(None, kCGEventRightMouseDown, (x, y), kCGMouseButtonRight)
         up = CGEventCreateMouseEvent(None, kCGEventRightMouseUp, (x, y), kCGMouseButtonRight)
         CGEventSetFlags(down, kCGEventFlagMaskShift)
         CGEventSetFlags(up, kCGEventFlagMaskShift)
         self._post(down)
-        time.sleep(0.04)
+        self._count()
+        time.sleep(self._hold_s(40))
         self._post(up)
 
     def attack_move(self, bind, x: float, y: float) -> None:
         """Attack-move key then left click: attacks the nearest unit on the way."""
         self.move(x, y)
         self.press(bind)
-        time.sleep(0.02)
+        time.sleep(0.02 if self._ui else self.fast.hover_s)
         self.click(x, y, "left")
 
     def cast(self, bind, x: float, y: float, quick_cast: bool | None) -> None:
@@ -294,8 +337,14 @@ class Controller:
         quick cast on it is a harmless left click, with it off it confirms the cast.
         """
         self.move(x, y)
-        time.sleep(0.01)
+        time.sleep(self._hover_s())
         self.press(bind)
         if not quick_cast:
-            time.sleep(0.03)
+            time.sleep(self._hover_s())
             self.click(x, y, "left")
+
+    def tap(self, bind, x: float, y: float) -> None:
+        """Cursor to (x, y) and press a key: targeted spells with quick cast, or R on a target."""
+        self.move(x, y)
+        time.sleep(self._hover_s())
+        self.press(bind)
