@@ -17,3 +17,8 @@ Shared, agent-authored log of cross-cutting decisions the fleet must honor. The 
 - **Interfaces:** CLI: uv run jev doctor | keys | lcu practice|start|pick | play [--dry-run] [--logfile] [--keep-front]; modules jev/{riot_api,state,brain,keybinds,control,screen,mechanics,loop,lcu,config,doctor,cli}.py; tests/offline_loop_check.py; logs/play.log one line per second; fixtures/<session>/ recorded states.
 - **By:** worker · 2026-09-22T12:48:54.084Z
 
+## worker: Jev plays Yasuo standalone in a live Practice Tool
+- **Did:** Jev plays Yasuo standalone in a live Practice Tool game: `uv run jev play --logfile logs/play.log` keeps the game window in front, reads Riot's Live Client API at 5 Hz, asks Jev once a second plus event-driven re-asks (avg ~175 ms, ~1.7k tokens with priced item candidates), and drives the game with Quartz input. Verified via API across the session: starter and boots bought, Q/W/E/R leveled, level 9, creep score rising, three early deaths then none after the advance limit, no-creep hold, heavy-damage step-out and minimap-based lane positioning; Jev-called recalls executed. Lessons documented in PLAN.md: input only lands while the game is active; modifiers need real key presses; screen-relative walking drifts, minimap orders along the diagonal do not; wave contact judged by income. All pushed to origin/main.
+- **Interfaces:** CLI: uv run jev doctor | keys | lcu practice|start|pick | play [--dry-run] [--logfile] [--keep-front]; modules jev/{riot_api,state,brain,keybinds,control,screen,mechanics,loop,lcu,config,doctor,cli}.py; tests/offline_loop_check.py; logs/play.log; fixtures/<session>/ recorded states; geometry in jev/config.py.
+- **By:** worker · 2026-09-22T13:05:03.193Z
+

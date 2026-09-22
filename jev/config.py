@@ -34,6 +34,7 @@ class Geometry:
     starter_card: tuple[int, int] | None = (676, 400)      # "Doran's Blade Start" recommended card
     purchase_button: tuple[int, int] | None = (1167, 582)
     shop_close: tuple[int, int] | None = (1340, 183)
+    search_result: tuple[int, int] | None = (490, 320)     # first tile in the search RESULTS list
     shop_button: tuple[int, int] | None = (1181, 1063)     # HUD "P" shop icon
     recall_button: tuple[int, int] | None = (1181, 1020)   # HUD "B" recall icon
     boots_card: tuple[int, int] | None = (418, 765)        # first "commonly built" icon (boots)

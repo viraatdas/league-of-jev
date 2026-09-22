@@ -328,11 +328,15 @@ class Mechanics:
             self.ctl.click(*self._pt(self.geo.purchase_button), "left")
             ok = bought()
         if not ok and self.ctl.keys_ok() and self.geo.shop_search:
+            # Search, select the first result tile, then PURCHASE ITEM (Enter does not buy).
             self.ctl.click(*self._pt(self.geo.shop_search), "left")
             time.sleep(0.3)
             self.ctl.type_text(item)
-            time.sleep(0.6)
-            self.ctl.key("return")
+            time.sleep(0.8)
+            if self.geo.search_result and self.geo.purchase_button:
+                self.ctl.click(*self._pt(self.geo.search_result), "left")
+                time.sleep(0.4)
+                self.ctl.click(*self._pt(self.geo.purchase_button), "left")
             ok = bought()
         if self.geo.shop_close:
             self.ctl.click(*self._pt(self.geo.shop_close), "left")
