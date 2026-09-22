@@ -14,6 +14,7 @@ from jev.config import Geometry, Timing
 from jev.control import Controller
 from jev.keybinds import Keybinds
 from jev.screen import Screen
+from jev.lanes import Lane
 from jev.minimap import Wave
 
 YASUO_SKILL_ORDER = ["Q", "E", "Q", "W", "Q", "R", "Q", "E", "Q", "E", "R", "E", "E", "W", "W", "R", "W", "W"]
@@ -21,11 +22,12 @@ ABILITY_INDEX = {"Q": 1, "W": 2, "E": 3, "R": 4}
 
 
 class Navigator:
-    """Dead-reckoned progress along the mid diagonal."""
+    """Progress along the lane polyline: set from the minimap when it reads, dead reckoned between."""
 
-    def __init__(self) -> None:
+    def __init__(self, lane_units: float = config.DIAGONAL_UNITS) -> None:
         self.progress = 0.0
         self._last_t: float | None = None
+        self.lane_units = lane_units
 
     def reset_to_base(self) -> None:
         self.progress = 0.0
@@ -35,7 +37,7 @@ class Navigator:
         """direction +1 forward, -1 back, 0 standing. Call every tick while a move order is active."""
         if self._last_t is not None and direction:
             dt = max(0.0, min(now - self._last_t, 1.0))
-            self.progress += direction * move_speed * dt / config.DIAGONAL_UNITS
+            self.progress += direction * move_speed * dt / self.lane_units
             self.progress = max(0.0, min(1.0, self.progress))
         self._last_t = now
 
@@ -43,7 +45,7 @@ class Navigator:
         """A minimap order to `target` is being followed; integrate progress toward it."""
         if self._last_t is not None:
             dt = max(0.0, min(now - self._last_t, 1.0))
-            step = move_speed * dt / config.DIAGONAL_UNITS
+            step = move_speed * dt / self.lane_units
             if abs(target - self.progress) <= step:
                 self.progress = target
             else:
@@ -56,12 +58,13 @@ class Navigator:
 
 
 class Mechanics:
-    def __init__(self, ctl: Controller, screen: Screen, kb: Keybinds, side: str, geo: Geometry = config.GEOMETRY, timing: Timing = config.TIMING) -> None:
+    def __init__(self, ctl: Controller, screen: Screen, kb: Keybinds, side: str, geo: Geometry = config.GEOMETRY,
+                 timing: Timing = config.TIMING, lane: Lane | None = None, skill_order: list[str] | None = None) -> None:
         self.ctl, self.screen, self.kb, self.geo, self.timing = ctl, screen, kb, geo, timing
         self.side = side  # ORDER (blue, bottom-left) or CHAOS (red, top-right)
-        f = 1 / math.sqrt(2)
-        self.fwd = (f, -f) if side == "ORDER" else (-f, f)
-        self.nav = Navigator()
+        self.lane = lane or Lane("mid", side)
+        self.skill_order = skill_order or YASUO_SKILL_ORDER
+        self.nav = Navigator(self.lane.L)
         self._last_move = 0.0
         self._last_q = 0.0
         self._move_dir = 0
@@ -93,11 +96,14 @@ class Mechanics:
     def _own(self, blue_pt, red_pt):
         return blue_pt if self.side == "ORDER" else red_pt
 
+    @property
+    def fwd(self) -> tuple[float, float]:
+        """Screen direction up the lane at the current position."""
+        return self.lane.screen_dir(self.nav.progress)
+
     def _lane_point(self, progress: float) -> tuple[float, float]:
-        """Map point at `progress` along the mid diagonal from the own fountain to the enemy one."""
-        a = self._own(config.BLUE_FOUNTAIN, config.RED_FOUNTAIN)
-        b = self._own(config.RED_FOUNTAIN, config.BLUE_FOUNTAIN)
-        return a[0] + (b[0] - a[0]) * progress, a[1] + (b[1] - a[1]) * progress
+        """Map point at `progress` along the lane from the own fountain to the enemy one."""
+        return self.lane.point(progress)
 
     def go_progress(self, target: float, move_speed: float, now: float, attack: bool = False, force: bool = False) -> bool:
         """Order a move (or attack-move) to the lane point at `target` via the minimap. Returns
@@ -206,36 +212,40 @@ class Mechanics:
 
     # -- behaviours ---------------------------------------------------------------------
     def go_lane(self, move_speed: float, now: float) -> None:
-        if not self.go_progress(config.OWN_TOWER, move_speed, now, attack=False):
+        if not self.go_progress(self.lane.own_tower, move_speed, now, attack=False):
             self.walk(1, move_speed, now)
 
     def farm(self, move_speed: float, now: float, aggression: float = 1.0, contact: bool = False, wave: Wave | None = None) -> None:
         """aggression is Jev's 0..2 score: passive stays nearer the own tower, aggressive holds
         closer to the enemy side of the wave. Without vision the wave is found by feel: minion
         chip damage means contact, so hold; no contact for a while means patrol along the lane."""
+        ln, fr = self.lane, self.lane.frac
         if not hasattr(self, "_last_contact"):
             self._last_contact = now
             self._seek = 0.0
             self._seek_dir = 1
+            self._seek_t = now
+        # Patrol speed is per second (seek_step was tuned per tick at 5 Hz).
+        dt, self._seek_t = min(1.0, now - self._seek_t), now
         if contact:
             self._last_contact = now
         elif now - self._last_contact > self.timing.seek_after_s:
-            self._seek += self._seek_dir * self.timing.seek_step
+            self._seek += self._seek_dir * self.timing.seek_step * 5.0 * dt
             if self._seek >= self.timing.seek_max:
                 self._seek_dir = -1
             elif self._seek <= -self.timing.seek_back:
                 self._seek_dir = 1
         if wave is not None and wave.enemy_front is not None:
             # Stand at the enemy minion front, a touch back; aggression leans in.
-            limit = wave.enemy_front - 0.008 + (aggression - 1.0) * 0.01
+            limit = wave.enemy_front - fr(160) + (aggression - 1.0) * fr(200)
             self._seek = 0.0
         elif wave is not None and wave.ally_front is not None:
-            limit = wave.ally_front - 0.01
+            limit = wave.ally_front - fr(200)
             self._seek = 0.0
         else:
-            limit = config.MAX_ADVANCE + (aggression - 1.0) * 0.035 + self._seek
-        limit = max(config.OWN_TOWER, min(limit, config.HARD_LIMIT))
-        if abs(self.nav.progress - limit) > 0.01:
+            limit = ln.max_advance + (aggression - 1.0) * fr(690) + self._seek
+        limit = max(ln.own_tower, min(limit, ln.hard_limit))
+        if abs(self.nav.progress - limit) > fr(200):
             if not self.go_progress(limit, move_speed, now, attack=True):
                 self.walk(1 if limit > self.nav.progress else -1, move_speed, now, attack=True)
         else:
@@ -254,7 +264,8 @@ class Mechanics:
         self.walk(1, move_speed, now, attack=True, px=self.geo.attack_move_px)
 
     def push(self, move_speed: float, now: float) -> None:
-        target = config.PUSH_ADVANCE if self.nav.progress < config.PUSH_ADVANCE - 0.01 else self.nav.progress
+        pa = self.lane.push_advance
+        target = pa if self.nav.progress < pa - self.lane.frac(200) else self.nav.progress
         if not self.go_progress(target, move_speed, now, attack=True):
             self.walk(1, move_speed, now, attack=True)
         self.blind_q(now)
@@ -290,18 +301,18 @@ class Mechanics:
         """Mid-game start: assume nothing about position, walk to the own tower and re-base the
         dead reckoning there."""
         self._seek = 0.0
-        self.nav.progress = config.OWN_TOWER
+        self.nav.progress = self.lane.own_tower
 
     def retreat(self, move_speed: float, now: float) -> None:
-        target = config.OWN_TOWER - 0.02
+        target = self.lane.own_tower - self.lane.frac(400)
         if not self.go_progress(target, move_speed, now, attack=False):
             self.walk(-1, move_speed, now, px=self.geo.retreat_click_px)
-        if abs(self.nav.progress - target) <= 0.01:
+        if abs(self.nav.progress - target) <= self.lane.frac(200):
             self.last_action = "holding at own tower"
 
     def step_back(self, move_speed: float, now: float) -> None:
         """Out of tower range: a short step back down the lane, not a full retreat."""
-        target = max(config.OWN_TOWER, self.nav.progress - 0.06)
+        target = max(self.lane.own_tower, self.nav.progress - self.lane.frac(1180))
         if not self.go_progress(target, move_speed, now, attack=False, force=True):
             self.walk(-1, move_speed, now)
         self.last_action = "step back from tower"
@@ -312,7 +323,7 @@ class Mechanics:
 
     def group(self, move_speed: float, now: float) -> None:
         """v0: hold mid centre with the team; no cross-map travel yet."""
-        if not self.go_progress(config.LANE_CENTER, move_speed, now, attack=True):
+        if not self.go_progress(self.lane.center, move_speed, now, attack=True):
             self.hold(now)
 
     def start_recall(self, now: float) -> None:
@@ -336,7 +347,7 @@ class Mechanics:
     def level_up(self, ability_levels: dict[str, int]) -> str | None:
         """Click the HUD chevron (works in the background); the key is used only when it can land."""
         counts = {"Q": 0, "W": 0, "E": 0, "R": 0}
-        for ab in YASUO_SKILL_ORDER:
+        for ab in self.skill_order:
             counts[ab] += 1
             if ability_levels.get(ab, 0) < counts[ab]:
                 idx = ABILITY_INDEX[ab]

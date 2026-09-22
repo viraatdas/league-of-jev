@@ -96,6 +96,7 @@ class Scene:
     me_xy: tuple[float, float]
     minions: list[Track] = field(default_factory=list)       # enemy minions
     allies: int = 0
+    ally_champs: list[Unit] = field(default_factory=list)     # allied champions on screen (the carry, for a support)
     champ: Track | None = None                                # nearest enemy champion
     champ_dist: float | None = None
     killable_auto: list[Track] = field(default_factory=list)
@@ -111,7 +112,7 @@ class Scene:
 
 def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float, q_rank: int, game_s: float, now: float, fallback_xy) -> Scene:
     me_xy = (view.me.x, view.me.y) if view.me else fallback_xy
-    sc = Scene(me_xy=me_xy, minions=minions, allies=len(view.allies("minion")))
+    sc = Scene(me_xy=me_xy, minions=minions, allies=len(view.allies("minion")), ally_champs=view.allies("champion"))
     sc.ready = dict(view.hud.ready)
     sc.r_lit = bool(view.hud.ready.get("R"))
     if champs:
@@ -147,45 +148,21 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
     return sc
 
 
-class QStacks:
-    """Yasuo's Q stacks, counted from own casts: a Q that had a unit in its line counts as a
-    hit. Two stacks make the next Q the tornado; stacks expire after 6 s."""
-
-    def __init__(self) -> None:
-        self.stacks = 0
-        self.last_gain = 0.0
-
-    def q3(self, now: float) -> bool:
-        if self.stacks and now - self.last_gain > 6.0:
-            self.stacks = 0
-        return self.stacks >= 2
-
-    def cast(self, hit: bool, now: float) -> None:
-        if self.q3(now):
-            self.stacks = 0
-            return
-        if hit:
-            self.stacks += 1
-            self.last_gain = now
-
-
 class Micro:
     """Executes one tactical option at a time, plus reflexes, with an order-rate cap."""
 
     def __init__(self, ctl: Controller, screen: Screen, kb: Keybinds, side: str) -> None:
         self.ctl, self.screen, self.kb, self.side = ctl, screen, kb, side
         f = 1 / math.sqrt(2)
-        self.fwd = (f, -f) if side == "ORDER" else (-f, f)   # screen direction up the lane
-        self.q = QStacks()
+        self.fwd = (f, -f) if side == "ORDER" else (-f, f)   # screen direction up the lane; the loop updates it per lane
         self.last_order = 0.0
         self.last_attack = 0.0
         self.last_move = 0.0
-        self.last_q = 0.0
-        self.tornado_at = 0.0
         self.mode = "farm"
         self.last_action = ""
         self.last_seq = 0
         self.orders = 0
+        self.react_ms: collections.deque[tuple[str, float]] = collections.deque(maxlen=200)
 
     # -- helpers -------------------------------------------------------------------------
     def _pt(self, x: float, y: float) -> tuple[float, float]:
@@ -219,42 +196,19 @@ class Micro:
         self.last_move = now
         self._ordered(now, what)
 
-    def q_at(self, x: float, y: float, sc: Scene, now: float, what: str) -> None:
-        # Hit = some enemy unit lies near the Q line (within range, close to the aim ray).
-        mx, my = sc.me_xy
-        dx, dy = x - mx, y - my
-        n = math.hypot(dx, dy) or 1.0
-        rng = (VC.q3_range if self.q.q3(now) else VC.q_range) * VC.px_per_unit
-        hit = False
-        for tr in sc.minions + ([sc.champ] if sc.champ else []):
-            ux, uy = tr.unit.x - mx, tr.unit.y - my
-            along = (ux * dx + uy * dy) / n
-            across = abs(ux * dy - uy * dx) / n
-            if 0 < along <= rng and across < 45:
-                hit = True
-                break
-        was_q3 = self.q.q3(now)
-        self.ctl.cast(self.kb.ability(1), *self._pt(x, y), self.kb.quick_cast(1))
-        self.q.cast(hit, now)
-        if was_q3:
-            self.tornado_at = now
-        self.last_q = now
-        self._ordered(now, what)
+    def cast(self, idx: int, x: float, y: float) -> None:
+        """Ability `idx` (1-4) at a screen point, honouring the player's quick-cast setting."""
+        self.ctl.cast(self.kb.ability(idx), *self._pt(x, y), self.kb.quick_cast(idx))
 
-    def e_on(self, tr: Track, now: float, what: str, then_q: bool = False, sc: Scene | None = None) -> None:
-        self.ctl.cast(self.kb.ability(3), *self._pt(tr.unit.x, tr.unit.y), self.kb.quick_cast(3))
-        tr.e_marked_until = now + 10.0
-        if then_q and sc is not None:
-            time.sleep(FAST.eq_delay_s)
-            self.ctl.press(self.kb.ability(1))  # Q during the dash: circular Q around Yasuo
-            self.q.cast(True, now)
-            self.last_q = now
-            what += "+Q"
-        self._ordered(now, what)
+    def reacted(self, kind: str, since_ts: float) -> None:
+        """Record screen-to-input latency: `since_ts` is when the frame behind this order was read."""
+        self.react_ms.append((kind, (time.time() - since_ts) * 1000))
 
-    def ult(self, tr: Track, now: float) -> None:
-        self.ctl.cast(self.kb.ability(4), *self._pt(tr.unit.x, tr.unit.y), self.kb.quick_cast(4))
-        self._ordered(now, "R: Last Breath")
+    def latency(self, kind: str) -> tuple[float, float] | None:
+        xs = sorted(ms for k, ms in self.react_ms if k == kind)
+        if not xs:
+            return None
+        return xs[len(xs) // 2], xs[int(len(xs) * 0.9) - 1 if len(xs) > 1 else 0]
 
     # -- behaviours ------------------------------------------------------------------------
     def farm_step(self, sc: Scene, now: float, attack_speed: float, push: bool = False) -> bool:
@@ -283,44 +237,21 @@ class Micro:
         mx, my = sc.me_xy
         self.move_screen(mx - self.fwd[0] * 260, my - self.fwd[1] * 260, now, "back off", every=0.2)
 
-    def execute(self, option: str, sc: Scene, now: float, attack_speed: float, dash_target: int | None = None) -> bool:
-        """One-shot tactical option. Returns True once it issued its order. dash_target is Jev's
-        answer to the separate target question (a track id), read only for gapclose."""
-        champ = sc.champ
-        if option == "gapclose" and dash_target is not None:
-            chosen = next((o[0] for o in sc.dash_options if o[0].id == dash_target), None)
-            if chosen is not None:
-                sc.dash_toward = chosen
-        if option == "ult" and champ is not None and sc.r_lit:
-            self.ult(champ, now)
-        elif option == "tornado" and champ is not None and sc.ready.get("Q"):
-            self.q_at(champ.unit.x, champ.unit.y, sc, now, "Q3 tornado at champion")
-        elif option == "poke_q" and champ is not None and sc.ready.get("Q"):
-            self.q_at(champ.unit.x, champ.unit.y, sc, now, "Q champion")
-        elif option == "q_minions" and sc.minions and sc.ready.get("Q"):
-            tgt = sc.killable_q[0] if sc.killable_q else min(sc.minions, key=sc.dist)
-            self.q_at(tgt.unit.x, tgt.unit.y, sc, now, "Q minions")
-        elif option == "eq_champion" and champ is not None and sc.ready.get("E"):
-            self.e_on(champ, now, "E champion", then_q=bool(sc.ready.get("Q")), sc=sc)
-        elif option == "gapclose" and sc.dash_toward is not None and sc.ready.get("E"):
-            self.e_on(sc.dash_toward, now, "E minion toward champion", then_q=bool(sc.ready.get("Q")), sc=sc)
-        elif option == "wind_wall" and champ is not None and sc.ready.get("W"):
-            self.ctl.cast(self.kb.ability(2), *self._pt(champ.unit.x, champ.unit.y), self.kb.quick_cast(2))
-            self._ordered(now, "W wind wall toward champion")
-        elif option == "auto_champion" and champ is not None:
-            if self.attack_ready(now, attack_speed):
-                self.attack(champ, now, "auto champion")
-            else:
-                return False
-        else:
-            return False
-        return True
-
-    def reflexes(self, sc: Scene, now: float, fight_ok: bool) -> bool:
-        """Frame-level reactions that do not wait for Jev: R the moment our own tornado lifts
-        the target, when the strategic read says the fight is favourable."""
-        if sc.r_lit and sc.champ is not None and now - self.tornado_at < FAST.r_watch_s and fight_ok:
-            self.ult(sc.champ, now)
-            self.tornado_at = 0.0
+    def support_step(self, sc: Scene, now: float, attack_speed: float) -> bool:
+        """Support positioning: stay beside the carry, a little toward the enemy; never take last hits."""
+        if sc.ally_champs:
+            carry = min(sc.ally_champs, key=lambda u: math.hypot(u.x - sc.me_xy[0], u.y - sc.me_xy[1]))
+            side = (-self.fwd[1], self.fwd[0])
+            tx = carry.x + self.fwd[0] * 70 + side[0] * 60
+            ty = carry.y + self.fwd[1] * 70 + side[1] * 60
+            if math.hypot(tx - sc.me_xy[0], ty - sc.me_xy[1]) > 45:
+                self.move_screen(tx, ty, now, "support: beside the carry", every=0.3)
+            return True
+        if sc.minions:
+            front = min(sc.minions, key=sc.dist)
+            back = (VC.auto_range + 380) * VC.px_per_unit
+            tx, ty = front.unit.x - self.fwd[0] * back, front.unit.y - self.fwd[1] * back
+            if math.hypot(tx - sc.me_xy[0], ty - sc.me_xy[1]) > 45:
+                self.move_screen(tx, ty, now, "support: hold behind the wave", every=0.3)
             return True
         return False

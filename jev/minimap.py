@@ -153,10 +153,11 @@ class Wave:
     ally_count: int = 0
 
 
-def lane_wave(st: MinimapState, side: str, band: float = 1500.0) -> Wave:
+def lane_wave(st: MinimapState, lane, band: float = 1500.0) -> Wave:
+    """Minion fronts along `lane` (a lanes.Lane): minions within `band` units of the lane path."""
     w = Wave()
-    en = [lane_progress(p, side)[0] for p in st.enemy_minions if abs(lane_progress(p, side)[1]) < band]
-    al = [lane_progress(p, side)[0] for p in st.ally_minions if abs(lane_progress(p, side)[1]) < band]
+    en = [pr for pr, d in (lane.project(p) for p in st.enemy_minions) if d < band]
+    al = [pr for pr, d in (lane.project(p) for p in st.ally_minions) if d < band]
     w.enemy_count, w.ally_count = len(en), len(al)
     if en:
         w.enemy_front = min(en)
@@ -166,12 +167,7 @@ def lane_wave(st: MinimapState, side: str, band: float = 1500.0) -> Wave:
 
 
 def lane_progress(pos: tuple[float, float], side: str) -> tuple[float, float]:
-    """Project a map point onto the mid diagonal: (progress 0..1 from own fountain, lateral
-    distance in map units, positive toward the top side of the map)."""
-    a = config.BLUE_FOUNTAIN if side == "ORDER" else config.RED_FOUNTAIN
-    b = config.RED_FOUNTAIN if side == "ORDER" else config.BLUE_FOUNTAIN
-    dx, dy = b[0] - a[0], b[1] - a[1]
-    L2 = dx * dx + dy * dy
-    t = ((pos[0] - a[0]) * dx + (pos[1] - a[1]) * dy) / L2
-    lateral = ((pos[0] - a[0]) * -dy + (pos[1] - a[1]) * dx) / (L2 ** 0.5)
-    return max(0.0, min(1.0, t)), lateral
+    """Mid-lane progress (kept for callers that predate lanes.Lane)."""
+    from jev.lanes import Lane
+
+    return Lane("mid", side).project(pos)

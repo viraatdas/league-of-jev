@@ -1,73 +1,37 @@
 """Jev's tactical head: the fast decision, asked back-to-back (~7 per second) while in lane.
 
 Shaped like OpenAI Five's action space (arXiv 1912.06680, Appendix F): a primary action chosen
-from a filtered list of what is available right now, plus target parameters that are read only
-when the chosen action needs them. Jev answers all questions of a pack in parallel, so each
-targeted spell gets its own target question (Five conditioned one unit head on the action;
-parallel questions cannot, so the heads are split per spell instead).
+from a list filtered to what is possible right now (the champion kit supplies the list and the
+filters), plus target heads read only when the chosen action needs them. Jev answers all
+questions of a pack in parallel, so each targeted spell gets its own target question.
+
+A `menu_fits` question rides along in the same call: Jev's probability that one of the listed
+moves is actually good here. Low values mark states where the menu is missing something; the
+decision log keeps them for review so the menu can grow where it matters.
 """
 from __future__ import annotations
 
+import random
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from dotenv import load_dotenv
-from typesafe_sdk import Choice, RetryPolicy, TypeSafeClient
+from typesafe_sdk import Choice, Noul, RetryPolicy, TypeSafeClient
 
 from jev import config
-from jev.micro import Scene, Track
+from jev.micro import Scene
 
 load_dotenv()
 VC = config.VISION
-
-ACTIONS: dict[str, str] = {
-    "farm": "Keep farming: last-hit minions that are about to die, otherwise hold just behind the wave.",
-    "push": "Shove the wave: attack minions freely, ignore last-hit timing.",
-    "q_minions": "Q into the minions: last-hits what Q can kill and builds Q stacks toward the tornado.",
-    "poke_q": "Q the enemy champion: a quick poke that also builds a Q stack.",
-    "tornado": "Throw the Q3 tornado at the enemy champion: knocks them up and enables R.",
-    "eq_champion": "E through the enemy champion and Q during the dash (circle Q): an all-in opener.",
-    "gapclose": "E through a minion toward the enemy champion (Q during the dash if ready) to get in range.",
-    "auto_champion": "Auto-attack the enemy champion.",
-    "ult": "R (Last Breath) on the airborne enemy champion: big damage, only possible while they are knocked up.",
-    "wind_wall": "W wind wall toward the enemy champion to block their projectiles and skillshots.",
-    "back_off": "Walk back toward my tower, away from the enemy champion.",
-}
 
 
 def _dist_label(d: float | None) -> str:
     return "not visible" if d is None else f"{int(round(d / 25.0) * 25)} units"
 
 
-def available(sc: Scene, q3: bool) -> list[str]:
-    """Action filters: only what can be executed now (like Five's per-step availability mask)."""
-    acts = ["farm", "back_off"]
-    if sc.minions:
-        acts.append("push")
-        if sc.ready.get("Q"):
-            acts.append("q_minions")
-    c, d = sc.champ, sc.champ_dist
-    if c is not None and d is not None:
-        if sc.ready.get("Q") and not q3 and d <= VC.q_range:
-            acts.append("poke_q")
-        if sc.ready.get("Q") and q3 and d <= VC.q3_range:
-            acts.append("tornado")
-        if sc.ready.get("E") and d <= VC.e_range and c.e_marked_until < time.time():
-            acts.append("eq_champion")
-        if sc.ready.get("E") and sc.dash_toward is not None:
-            acts.append("gapclose")
-        if d <= VC.auto_range + 150:
-            acts.append("auto_champion")
-        if sc.r_lit and d <= VC.r_range:
-            acts.append("ult")
-        if sc.ready.get("W") and d <= 1100:
-            acts.append("wind_wall")
-    return acts
-
-
-def tactical_state(sc: Scene, q3: bool, api: dict, plan: dict) -> dict:
+def tactical_state(sc: Scene, kit, mi, now: float, api: dict, plan: dict) -> dict:
     me = api.get("me", {})
     opp = api.get("lane_opponent") or {}
     champ = None
@@ -77,26 +41,17 @@ def tactical_state(sc: Scene, q3: bool, api: dict, plan: dict) -> dict:
             "level": opp.get("level"),
             "hp_percent": int(sc.champ.unit.hp * 100),
             "distance": _dist_label(sc.champ_dist),
-            "airborne_now": sc.r_lit,
+            "airborne_now": sc.r_lit if kit.name == "Yasuo" else None,
         }
     return {
         "plan_from_strategy": plan,
-        "me": {
-            "champion": "Yasuo",
-            "level": me.get("level"),
-            "hp_percent": me.get("hp_percent"),
-            "Q": ("Q3 tornado ready" if q3 else "ready") if sc.ready.get("Q") else "on cooldown",
-            "W": "ready" if sc.ready.get("W") else "not ready",
-            "E": "ready" if sc.ready.get("E") else "not ready",
-            "R": "castable (enemy airborne)" if sc.r_lit else "not castable",
-            "flash": "ready" if sc.ready.get("D") else "not ready",
-        },
+        "me": {"champion": kit.name, "role": "support" if kit.support else "laner",
+               "level": me.get("level"), "hp_percent": me.get("hp_percent"), **kit.me_state(sc, mi, now)},
         "enemy_champion": champ,
         "enemy_minions_on_screen": len(sc.minions),
         "minions_killable_by_auto_now": len(sc.killable_auto),
-        "minions_killable_by_q_now": len(sc.killable_q),
         "ally_minions_on_screen": sc.allies,
-        "danger_from_strategy": plan.get("danger"),
+        "ally_champions_on_screen": len(sc.ally_champs),
     }
 
 
@@ -109,7 +64,11 @@ class Tactic:
     state_ts: float
     latency_ms: float
     tokens: int = 0
-    dash_target: int | None = None
+    extra: dict = field(default_factory=dict)
+    menu: list[str] = field(default_factory=list)
+    menu_fits: float = 1.0
+    state: dict = field(default_factory=dict, repr=False)
+    explored: bool = False
     raw: Any = field(default=None, repr=False)
 
     def age(self, now: float) -> float:
@@ -117,12 +76,16 @@ class Tactic:
 
 
 class TacticalBrain:
-    """Runs back-to-back Jev calls on the freshest scene. The main loop publishes (scene, q3,
-    api_state, plan) with publish(); the latest answer is in .tactic."""
+    """Runs back-to-back Jev calls on the freshest scene. The loop publishes (scene, kit, micro,
+    api_state, plan, frame_ts) with publish(); the latest answer is in .tactic.
 
-    def __init__(self, max_hz: float = 8.0) -> None:
+    explore: probability of executing a sample from Jev's distribution instead of its top
+    choice (bot games only), so moves Jev rates second-best still get tried and logged."""
+
+    def __init__(self, max_hz: float = 8.0, explore: float = 0.0) -> None:
         self.client = TypeSafeClient(retry=RetryPolicy(max_retries=0, timeout=1.0))
         self.max_hz = max_hz
+        self.explore = explore
         self.tactic: Tactic | None = None
         self._input: tuple | None = None
         self._lock = threading.Lock()
@@ -132,10 +95,11 @@ class TacticalBrain:
         self.errors = 0
         self._rate: list[float] = []
         self.last_error = ""
+        self.on_answer = lambda: None
 
-    def publish(self, sc: Scene, q3: bool, api: dict, plan: dict, ts: float) -> None:
+    def publish(self, sc: Scene, kit, mi, api: dict, plan: dict, ts: float) -> None:
         with self._lock:
-            self._input = (sc, q3, api, plan, ts)
+            self._input = (sc, kit, mi, api, plan, ts)
 
     def rate(self) -> float:
         now = time.time()
@@ -145,6 +109,41 @@ class TacticalBrain:
     def stop(self) -> None:
         self._stop.set()
 
+    def ask(self, sc: Scene, kit, mi, api: dict, plan: dict, ts: float) -> Tactic | None:
+        t0 = time.time()
+        acts = kit.available(sc, mi, ts)
+        if len(acts) <= 2 and not sc.minions and sc.champ is None:
+            return None
+        state = tactical_state(sc, kit, mi, ts, api, plan)
+        questions: dict[str, Any] = {
+            "action": Choice(
+                instructions=(f"You are {kit.role_text(plan.get('lane', 'mid'))}. Pick the single best move for "
+                              "the next half second, following `plan_from_strategy` unless the situation clearly "
+                              "calls for something else."),
+                criteria={a: kit.actions[a] for a in acts},
+            ),
+            "menu_fits": Noul(instructions=(
+                "Is at least one of these moves genuinely good right now? Say false if the right play here is "
+                "something none of them covers: " + ", ".join(acts))),
+        }
+        heads = kit.heads(sc, acts)
+        questions.update(heads)
+        res = self.client.system_one(state, questions)
+        ch = res.choices["action"]
+        probs = {k: round(float(v), 3) for k, v in dict(ch.probabilities).items()}
+        action, explored = ch.choice, False
+        if self.explore and random.random() < self.explore and len(probs) > 1:
+            action = random.choices(list(probs), weights=[max(p, 0.02) for p in probs.values()])[0]
+            explored = action != ch.choice
+        usage = getattr(res, "usage", None)
+        self._seq += 1
+        return Tactic(
+            seq=self._seq, action=action, confidence=float(ch.confidence), probabilities=probs,
+            state_ts=ts, latency_ms=(time.time() - t0) * 1000,
+            tokens=int(getattr(usage, "input_tokens", 0) or 0), extra=kit.read_heads(res, heads),
+            menu=acts, menu_fits=float(res.nouls["menu_fits"].noul), state=state, explored=explored, raw=res,
+        )
+
     def run(self) -> None:
         period = 1.0 / self.max_hz
         while not self._stop.is_set():
@@ -152,44 +151,15 @@ class TacticalBrain:
             with self._lock:
                 inp, self._input = self._input, None
             if inp is None:
-                time.sleep(0.03)
+                time.sleep(0.01)
                 continue
-            sc, q3, api, plan, ts = inp
-            acts = available(sc, q3)
-            if len(acts) <= 2 and not sc.minions and sc.champ is None:
-                time.sleep(0.05)
-                continue
-            questions = {"action": Choice(
-                instructions=("You are Yasuo in mid lane. Pick the single best move for the next "
-                              "half second, following `plan_from_strategy` unless the situation clearly "
-                              "calls for something else."),
-                criteria={a: ACTIONS[a] for a in acts},
-            )}
-            if "gapclose" in acts and len(sc.dash_options) >= 2:
-                # Target head, read only if the action is gapclose (Five's unit-selection parameter).
-                questions["dash_target"] = Choice(
-                    instructions="If Yasuo dashes through a minion to reach the enemy champion, which minion?",
-                    criteria={f"minion_{tr.id}": (f"{int(tr.unit.hp * 100)}% HP, {int(sc.dist(tr))} units from me, "
-                                                  f"lands {int(g)} units closer to the enemy champion")
-                              for tr, g in sc.dash_options},
-                )
             try:
-                res = self.client.system_one(tactical_state(sc, q3, api, plan), questions)
-                ch = res.choices["action"]
-                dash = None
-                if "dash_target" in questions:
-                    try:
-                        dash = int(str(res.choices["dash_target"].choice).split("_")[1])
-                    except (KeyError, IndexError, ValueError):
-                        dash = None
-                self._seq += 1
-                usage = getattr(res, "usage", None)
-                self.tactic = Tactic(
-                    seq=self._seq, action=ch.choice, confidence=float(ch.confidence),
-                    probabilities={k: round(float(v), 3) for k, v in dict(ch.probabilities).items()},
-                    state_ts=ts, latency_ms=(time.time() - t0) * 1000,
-                    tokens=int(getattr(usage, "input_tokens", 0) or 0), dash_target=dash, raw=res,
-                )
+                t = self.ask(*inp)
+                if t is None:
+                    time.sleep(0.05)
+                    continue
+                self.tactic = t
+                self.on_answer()
                 self.calls += 1
                 self._rate.append(time.time())
             except Exception as e:  # noqa: BLE001

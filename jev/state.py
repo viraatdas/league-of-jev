@@ -31,6 +31,7 @@ class Perception:
     ally_minions_in_lane: int = 0
     wave_position: str | None = None
     near_enemy_tower: bool = False
+    where_label: str | None = None        # lane-aware description set by the loop
 
     def to_state(self) -> dict[str, Any]:
         if self.hp_lost_recent_pct >= 12:
@@ -42,7 +43,9 @@ class Perception:
         else:
             damage = "not being attacked"
         where = self.position
-        if self.lane_progress_pct is not None and where in ("lane", "forward", "traveling"):
+        if self.where_label:
+            where = self.where_label
+        elif self.lane_progress_pct is not None and where in ("lane", "forward", "traveling"):
             if self.lane_progress_pct >= 56:
                 where = "pushed up near the enemy tower"
             elif self.lane_progress_pct >= 47:

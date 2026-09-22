@@ -16,6 +16,12 @@ LOCKFILE_CANDIDATES = [
     Path.home() / "Library/Application Support/Riot Games/League of Legends/lockfile",
 ]
 YASUO = 157
+THRESH = 412
+CHAMPIONS = {"yasuo": YASUO, "thresh": THRESH}
+# Assigned position -> champions to try in order. Each falls back to the other.
+PICKS_BY_POSITION = {"middle": [YASUO, THRESH], "utility": [THRESH, YASUO]}
+DEFAULT_PICKS = [YASUO, THRESH]
+BANS = [238, 91, 7]  # Zed, Talon, LeBlanc: first one not already banned or hovered
 
 
 def find_lockfile() -> Path | None:
@@ -181,9 +187,16 @@ class LCU:
                     return int(q["id"])
         return None
 
-    def play_normal(self, champion_id: int, fallbacks: tuple[int, ...] = (777, 86), timeout_s: float = 900.0):
-        """Create a normal lobby, prefer mid, queue, accept the ready check, ban and pick, and
-        yield progress lines until the game is in progress."""
+    def pickable(self) -> set[int]:
+        code, ids = self.req("GET", "/lol-champ-select/v1/pickable-champion-ids")
+        return set(ids) if code == 200 and isinstance(ids, list) else set()
+
+    def play_normal(self, picks: dict[str, list[int]] | None = None, timeout_s: float = 900.0,
+                    first: str = "MIDDLE", second: str = "UTILITY"):
+        """Create a normal lobby (mid first, support second), queue, accept the ready check, ban,
+        and pick by assigned position: mid -> Yasuo, support -> Thresh, each falling back to the
+        other if banned, taken, or not owned. Yields progress lines until the game starts."""
+        picks = picks or PICKS_BY_POSITION
         qid = self.normal_queue_id()
         if qid is None:
             yield "no available normal queue found"
@@ -194,12 +207,14 @@ class LCU:
         yield f"lobby queue {qid}: {code} {body.get('gameConfig', {}).get('queueId') if code < 400 else body}"
         if code >= 400:
             return
-        code, body = self.req("PUT", "/lol-lobby/v2/lobby/members/localMember/position-preferences", {"firstPreference": "MIDDLE", "secondPreference": "TOP"})
-        yield f"positions mid/top: {code}"
+        code, body = self.req("PUT", "/lol-lobby/v2/lobby/members/localMember/position-preferences",
+                              {"firstPreference": first, "secondPreference": second})
+        yield f"positions {first.lower()}/{second.lower()}: {code}"
         code, body = self.req("POST", "/lol-lobby/v2/lobby/matchmaking/search")
         yield f"search: {code} {body if code >= 400 else ''}"
         t0 = time.time()
         picked = False
+        tried: dict[int, int] = {}  # action id -> attempts (never hammer one action)
         last = ""
         while time.time() - t0 < timeout_s:
             phase = self.gameflow()
@@ -214,31 +229,10 @@ class LCU:
             elif phase == "ChampSelect":
                 code, sess = self.req("GET", "/lol-champ-select/v1/session")
                 if code == 200:
-                    cell = sess.get("localPlayerCellId")
-                    bans = {a.get("championId") for g in sess.get("actions", []) for a in g if a.get("type") == "ban" and a.get("completed")}
-                    taken = {p.get("championId") for p in sess.get("myTeam", []) + sess.get("theirTeam", []) if p.get("cellId") != cell}
-                    for group in sess.get("actions", []):
-                        for a in group:
-                            if a.get("actorCellId") != cell or a.get("completed") or not a.get("isInProgress"):
-                                continue
-                            if a.get("type") == "ban":
-                                c1, _ = self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": 238, "completed": True})
-                                yield f"banned Zed: {c1}"
-                            elif a.get("type") == "pick" and not picked:
-                                for cid in (champion_id,) + fallbacks:
-                                    if cid in bans or cid in taken:
-                                        continue
-                                    c1, b1 = self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": cid, "completed": True})
-                                    yield f"pick {cid}: {c1} {b1 if c1 >= 400 else ''}"
-                                    if c1 < 400:
-                                        picked = True
-                                        break
-                    # Hover intent early so teammates see it.
-                    if not picked:
-                        for group in sess.get("actions", []):
-                            for a in group:
-                                if a.get("actorCellId") == cell and a.get("type") == "pick" and not a.get("completed") and a.get("championId", 0) == 0:
-                                    self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": champion_id})
+                    for line in self._champ_select_step(sess, picks, tried):
+                        if line.startswith("picked"):
+                            picked = True
+                        yield line
             elif phase in ("InProgress", "GameStart"):
                 yield "game starting"
                 return
@@ -247,6 +241,44 @@ class LCU:
                 return
             time.sleep(1.5)
         yield "timed out waiting for a game"
+
+    def _champ_select_step(self, sess: dict, picks: dict[str, list[int]], tried: dict[int, int]):
+        cell = sess.get("localPlayerCellId")
+        me = next((p for p in sess.get("myTeam", []) if p.get("cellId") == cell), {})
+        position = str(me.get("assignedPosition") or "").lower()
+        order = picks.get(position, DEFAULT_PICKS)
+        bans = {a.get("championId") for g in sess.get("actions", []) for a in g if a.get("type") == "ban" and a.get("completed")}
+        taken = {p.get("championId") for p in sess.get("myTeam", []) + sess.get("theirTeam", []) if p.get("cellId") != cell}
+        hovered = {p.get("championPickIntent") for p in sess.get("myTeam", []) if p.get("cellId") != cell}
+        pickable = self.pickable()
+        options = [c for c in order if c not in bans and c not in taken and (not pickable or c in pickable)]
+        for group in sess.get("actions", []):
+            for a in group:
+                if a.get("actorCellId") != cell or a.get("completed") or not a.get("isInProgress"):
+                    continue
+                if tried.get(a["id"], 0) >= 3:
+                    continue
+                tried[a["id"]] = tried.get(a["id"], 0) + 1
+                if a.get("type") == "ban":
+                    ban = next((b for b in BANS if b not in bans and b not in hovered and b not in order), None)
+                    if ban is not None:
+                        c1, b1 = self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": ban, "completed": True})
+                        yield f"ban {ban}: {c1} {b1 if c1 >= 400 else ''}"
+                elif a.get("type") == "pick":
+                    for cid in options:
+                        c1, b1 = self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": cid, "completed": True})
+                        yield f"pick {cid} for {position or 'no position'}: {c1} {b1 if c1 >= 400 else ''}"
+                        if c1 < 400:
+                            yield f"picked {cid}"
+                            return
+                    if not options:
+                        yield f"none of {order} available for {position or 'no position'}"
+        # Hover the first option early so teammates see it.
+        for group in sess.get("actions", []):
+            for a in group:
+                if (a.get("actorCellId") == cell and a.get("type") == "pick" and not a.get("completed")
+                        and a.get("championId", 0) == 0 and options):
+                    self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": options[0]})
 
     def close(self) -> None:
         self.http.close()

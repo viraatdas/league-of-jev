@@ -29,11 +29,27 @@ load_dotenv()
 DDRAGON = "https://ddragon.leagueoflegends.com"
 CACHE = Path.home() / ".cache" / "league-of-jev" / "ddragon"
 
-# Yasuo's usual items: a prior that is always on the shortlist, not the only options.
-YASUO_CORE = ["Berserker's Greaves", "Immortal Shieldbow", "Infinity Edge", "Blade of The Ruined King",
-              "Death's Dance", "Guardian Angel"]
-STARTERS = ["Doran's Blade", "Health Potion"]
-TIER2_BOOTS = ["Berserker's Greaves", "Plated Steelcaps", "Mercury's Treads"]
+TIER2_BOOTS = ["Berserker's Greaves", "Plated Steelcaps", "Mercury's Treads", "Boots of Swiftness",
+               "Ionian Boots of Lucidity", "Sorcerer's Shoes"]
+
+
+@dataclass
+class ItemProfile:
+    """Per-champion prior: always-listed core items, starters, boots, and which catalog items fit."""
+
+    champion: str
+    core: list[str]
+    starters: list[str]
+    boots: list[str]
+    support: bool = False
+    crit_bonus: bool = False
+    note: str = ""
+
+
+YASUO_PROFILE = ItemProfile("Yasuo", ["Berserker's Greaves", "Immortal Shieldbow", "Infinity Edge", "Blade of The Ruined King",
+                                      "Death's Dance", "Guardian Angel"],
+                            ["Doran's Blade", "Health Potion"], ["Berserker's Greaves", "Plated Steelcaps", "Mercury's Treads"],
+                            crit_bonus=True, note="Yasuo doubles his crit chance")
 # Tags that make an item useful on an AD crit fighter; AP/mana/support/jungle items are left out.
 USEFUL = {"Damage", "CriticalStrike", "AttackSpeed", "LifeSteal", "OnHit", "Armor", "SpellBlock",
           "Tenacity", "Health", "ArmorPenetration"}
@@ -45,11 +61,11 @@ SUPPORT_ITEMS = {"Bandlepipes", "Zeke's Convergence", "Knight's Vow", "Locket of
 
 NEEDS: dict[str, dict[str, Any]] = {
     "need_armor": {
-        "q": "Should Yasuo's next item give armor? Yes when the enemy's damage is mostly physical "
+        "q": "Should {champ}'s next item give armor? Yes when the enemy's damage is mostly physical "
              "(AD assassins, marksmen, fighters) or a physical-damage enemy is fed.",
         "tags": {"Armor"}},
     "need_magic_resist": {
-        "q": "Should Yasuo's next item give magic resist? Yes when the enemy's damage is mostly magic "
+        "q": "Should {champ}'s next item give magic resist? Yes when the enemy's damage is mostly magic "
              "(mages, AP assassins) or a magic-damage enemy is fed.",
         "tags": {"SpellBlock", "MagicResist"}},
     "need_tenacity": {
@@ -61,8 +77,8 @@ NEEDS: dict[str, dict[str, Any]] = {
              "so Grievous Wounds (anti-heal) is worth buying?",
         "tags": set(), "text": "grievous"},
     "need_defense_first": {
-        "q": "Should Yasuo buy a defensive item before more damage? Yes when he keeps dying or the "
-             "enemies are fed and he cannot survive fights.",
+        "q": "Should {champ} buy a defensive item before more damage or utility? Yes when {champ} keeps "
+             "dying or the enemies are fed and fights cannot be survived.",
         "tags": {"Armor", "SpellBlock", "Health"}},
 }
 
@@ -153,24 +169,32 @@ class Catalog:
     def get(self, name: str) -> Item | None:
         return self.by_name.get(name.lower())
 
-    def completed(self, with_boots: bool = True) -> list[Item]:
-        """Finished items worth buying for Yasuo: no further upgrade (or tier-2 boots). Offensive
-        items qualify by tag; defensive ones need health plus armor or magic resist and no team
-        aura (support items). One entry per name."""
+    def completed(self, with_boots: bool = True, profile: ItemProfile = YASUO_PROFILE) -> list[Item]:
+        """Finished items that fit the champion: no further upgrade (or tier-2 boots). For a
+        fighter, offensive items qualify by tag and defensive ones need health plus armor or
+        magic resist, without team auras. For a support, tank and aura items qualify and damage
+        items do not. One entry per name."""
         out: dict[str, Item] = {}
         offensive = {"Damage", "CriticalStrike", "AttackSpeed", "OnHit", "LifeSteal", "ArmorPenetration"}
+        tanky = {"Health", "Armor", "SpellBlock"}
         for it in self.items.values():
             tags = set(it.tags)
             if it.name in TIER2_BOOTS:
-                if with_boots:
+                if with_boots and it.name in profile.boots:
                     out.setdefault(it.name, it)
                 continue
-            if tags & {"Boots", "Consumable", "Lane", "Trinket", "Aura"} or it.name in SUPPORT_ITEMS:
+            if tags & {"Boots", "Consumable", "Lane", "Trinket"}:
                 continue
-            if it.into_ids or it.price < 2200 or (tags & EXCLUDE):
+            if it.into_ids or it.price < 2000:
                 continue
-            if not (tags & offensive) and not ("Health" in tags and tags & {"Armor", "SpellBlock"}):
-                continue
+            if profile.support:
+                if tags & {"CriticalStrike", "LifeSteal", "SpellDamage", "Jungle"} or not (tags & tanky):
+                    continue
+            else:
+                if "Aura" in tags or it.name in SUPPORT_ITEMS or (tags & EXCLUDE) or it.price < 2200:
+                    continue
+                if not (tags & offensive) and not ("Health" in tags and tags & {"Armor", "SpellBlock"}):
+                    continue
             if it.name not in out or it.price < out[it.name].price:
                 out[it.name] = it
         return list(out.values())
@@ -247,9 +271,10 @@ def enemy_team(data: dict, catalog: Catalog, my_team: str) -> list[dict]:
     return out
 
 
-def shortlist(catalog: Catalog, owned: list[str], needs: dict[str, float], game_min: float, gold: float, n: int = 12) -> list[Item]:
-    """Candidates for next_item: Yasuo's core, tier-2 boots if none owned, and the catalog items
-    that best match the latest need answers (weighted by how strongly each need was answered)."""
+def shortlist(catalog: Catalog, owned: list[str], needs: dict[str, float], game_min: float, gold: float, n: int = 12,
+              profile: ItemProfile = YASUO_PROFILE) -> list[Item]:
+    """Candidates for next_item: the champion's core, tier-2 boots if none owned, and the catalog
+    items that best match the latest need answers (weighted by how strongly each was answered)."""
     owned_l = {o.lower() for o in owned}
     has_boots = any(b.lower() in owned_l for b in TIER2_BOOTS) or any(
         "Boots" in (catalog.get(o).tags if catalog.get(o) else []) and catalog.get(o).price > 300 for o in owned)
@@ -260,12 +285,12 @@ def shortlist(catalog: Catalog, owned: list[str], needs: dict[str, float], game_
             picks.append(it)
 
     if game_min < 1.5 and not owned:
-        for s in STARTERS:
+        for s in profile.starters:
             add(catalog.get(s))
     if not has_boots:
-        for b in TIER2_BOOTS:
+        for b in profile.boots[:3]:
             add(catalog.get(b))
-    for c in YASUO_CORE:
+    for c in profile.core:
         if c not in TIER2_BOOTS:
             add(catalog.get(c))
 
@@ -278,13 +303,15 @@ def shortlist(catalog: Catalog, owned: list[str], needs: dict[str, float], game_
                 sc += w
             if spec.get("text") and spec["text"] in getattr(it, "full_text", ""):
                 sc += w
-        if tags & {"Damage", "CriticalStrike"}:
+        if not profile.support and tags & {"Damage", "CriticalStrike"}:
             sc += 0.3 * (1.0 - needs.get("need_defense_first", 0.0))
-        if "CriticalStrike" in tags:
-            sc += 0.2  # Yasuo doubles crit chance
+        if profile.support and tags & {"Aura", "Active"}:
+            sc += 0.3  # team utility
+        if profile.crit_bonus and "CriticalStrike" in tags:
+            sc += 0.2
         return sc
 
-    ranked = sorted(catalog.completed(with_boots=not has_boots), key=score, reverse=True)
+    ranked = sorted(catalog.completed(with_boots=not has_boots, profile=profile), key=score, reverse=True)
     for it in ranked:
         if len(picks) >= n:
             break
@@ -312,8 +339,9 @@ class BuildPlan:
 class ShopBrain:
     """The itemization head: needs + next_item in one Jev call."""
 
-    def __init__(self, catalog: Catalog | None = None) -> None:
+    def __init__(self, catalog: Catalog | None = None, profile: ItemProfile = YASUO_PROFILE) -> None:
         self.catalog = catalog or Catalog()
+        self.profile = profile
         self.client = TypeSafeClient(retry=RetryPolicy(max_retries=1, backoff_max=0.2, timeout=3.0))
         self.needs: dict[str, float] = {k: 0.3 for k in NEEDS}
         self.plan: BuildPlan | None = None
@@ -334,19 +362,21 @@ class ShopBrain:
         owned = [i.get("displayName") for i in me.get("items", []) if i.get("displayName")]
         gold = float(ap.get("currentGold", 0.0))
         gmin = float((data.get("gameData") or {}).get("gameTime", 0.0)) / 60
-        cands = shortlist(self.catalog, owned, self.needs, gmin, gold)
+        cands = shortlist(self.catalog, owned, self.needs, gmin, gold, profile=self.profile)
+        champ = self.profile.champion
         s = me.get("scores", {})
         state = {
-            "me": {"champion": "Yasuo", "level": ap.get("level"), "gold": int(gold), "items": owned,
+            "me": {"champion": champ, "role": "support" if self.profile.support else "carry", "level": ap.get("level"), "gold": int(gold), "items": owned,
                    "kda": f"{s.get('kills', 0)}/{s.get('deaths', 0)}/{s.get('assists', 0)}"},
             "enemy_team": enemy_team(data, self.catalog, my_team),
             "game_minutes": round(gmin, 1),
         }
-        qs: dict[str, Any] = {k: Noul(instructions=spec["q"]) for k, spec in NEEDS.items()}
+        qs: dict[str, Any] = {k: Noul(instructions=spec["q"].replace("{champ}", champ)) for k, spec in NEEDS.items()}
         qs["next_item"] = Choice(
-            instructions=("Which item should Yasuo build next? Consider what the enemy team deals and does "
-                          "(damage type, crowd control, healing, who is fed), what Yasuo already owns, and that "
-                          "Yasuo doubles his crit chance. Prices are full prices; components already owned count."),
+            instructions=(f"Which item should {champ} build next? Consider what the enemy team deals and does "
+                          f"(damage type, crowd control, healing, who is fed), what {champ} already owns"
+                          f"{', and that ' + self.profile.note if self.profile.note else ''}. "
+                          "Prices are full prices; components already owned count."),
             criteria={it.name: it.brief() for it in cands},
         )
         res = self.client.system_one(state, qs)

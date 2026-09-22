@@ -44,6 +44,13 @@ INTENTS: dict[str, str] = {
 }
 
 
+INTENTS_SUPPORT: dict[str, str] = dict(INTENTS, **{
+    "farm": "Stay in lane beside your carry (the allied bottom laner): zone the enemy and protect the carry. Do not take last hits.",
+    "trade": "Engage `lane_opponent` together with your carry (hook, flay), then back off.",
+    "all_in": "Commit with your carry to kill `lane_opponent` now: hook, flay, box.",
+})
+
+
 @dataclass
 class Decision:
     intent: str
@@ -80,17 +87,17 @@ def candidates_with_prices(owned: list[str], gold: float) -> list[dict]:
     return [{"item": c, "price": ITEM_PRICES.get(c), "affordable_now": ITEM_PRICES.get(c, 10**9) <= gold} for c in item_candidates(owned)]
 
 
-def question_pack(state: dict) -> dict:
+def question_pack(state: dict, role_text: str = "a Yasuo laner in the mid lane", support: bool = False) -> dict:
     """Strategic questions. Itemization is its own head (items.ShopBrain); its current plan
     arrives as state["shopping"] so the recall question can weigh what a trip home would buy."""
     shopping = state.get("shopping") or {"can_buy_now": [], "note": "no build plan yet"}
     return {
         "intent": Choice(
             instructions=(
-                "You are `me`, a Yasuo player in the middle lane. Given the current game state, "
-                "which single action should Yasuo take for the next few seconds?"
+                f"You are `me`, {role_text}. Given the current game state, "
+                "which single action should I take for the next few seconds?"
             ),
-            criteria=INTENTS,
+            criteria=INTENTS_SUPPORT if support else INTENTS,
         ),
         "danger": Score(
             instructions="How dangerous is it for `me` to stay where I am for the next few seconds?",
@@ -137,9 +144,9 @@ class Brain:
             kwargs["model"] = model
         self.client = TypeSafeClient(**kwargs)
 
-    def decide(self, state: dict) -> Decision:
+    def decide(self, state: dict, role_text: str = "a Yasuo laner in the mid lane", support: bool = False) -> Decision:
         t0 = time.perf_counter()
-        res = self.client.system_one(state, question_pack(state))
+        res = self.client.system_one(state, question_pack(state, role_text, support))
         dt = (time.perf_counter() - t0) * 1000
         intent = res.choices["intent"]
         usage = getattr(res, "usage", None)

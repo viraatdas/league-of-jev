@@ -27,3 +27,8 @@ Shared, agent-authored log of cross-cutting decisions the fleet must honor. The 
 - **Interfaces:** CLI: uv run jev doctor | keys | lcu practice|start|pick | play [--dry-run] [--logfile] [--keep-front]; modules jev/{riot_api,state,brain,keybinds,control,screen,mechanics,loop,lcu,config,doctor,cli}.py; tests/offline_loop_check.py; logs/play.log (one line per second); fixtures/<session>/ recorded states; geometry for the 1728x1117 window in jev/config.py.
 - **By:** worker · 2026-09-22T13:10:27.176Z
 
+## worker: Fast path and general itemization built and pushed (48d9c7f,
+- **Did:** Fast path and general itemization built and pushed (48d9c7f, cb6d17e, 0bb20b1); verified offline only, no live game this round. Three Jev heads: strategy (1/s), tactics (back-to-back ~7/s at ~133 ms, OpenAI Five-style filtered action menu + dash-target head), build (Data Dragon catalog, need Nouls for armor/MR/tenacity/anti-heal/defense-first, next_item over an adaptive shortlist, recipe-aware purchases). Health-bar + HUD vision (13-20 ms, one 29 ms full-screen grab per frame), 30 Hz actor with ~15 ms input orders, APM counter, last-hit prediction from minion HP trends, Q-stack tracking, R reflex. Offline checks pass: tests/offline_loop_check.py and tests/offline_micro_check.py (real Jev call on a saved lane screenshot).
+- **Interfaces:** uv run jev play [--tactic-hz 8] [--overlay-corner tr] [--forever] [--logfile logs/play.log]; new modules jev/vision.py, jev/micro.py, jev/tactics.py, jev/items.py; config.Vision and config.FAST in jev/config.py; Controller.slow(), Controller.apm(), Controller.tap(); Player.fast_summary() feeds the overlay.
+- **By:** worker · 2026-09-22T22:09:30.286Z
+

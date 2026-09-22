@@ -15,7 +15,10 @@ from jev import config, keybinds
 from jev.brain import Brain, Decision
 from jev.control import Controller, activate_game
 from jev.mechanics import Mechanics
+from jev.decisions import DecisionLog
 from jev.items import BuildPlan, ShopBrain, enemy_team
+from jev.kits import Kit, kit_for
+from jev.lanes import LANE_LETTER, Lane, lane_for
 from jev.micro import Micro, UnitTracker, build_scene
 from jev.minimap import MinimapReader, MinimapState, dist, lane_progress, lane_wave
 from jev.riot_api import FixtureRecorder, RiotLiveClient
@@ -91,7 +94,9 @@ class HpTracker:
 
 
 class Player:
-    def __init__(self, dry_run: bool = False, quick_cast: bool | None = None, role: str = "MIDDLE", logfile=None, keep_front: bool = True, forever: bool = False, tactic_hz: float = 8.0) -> None:
+    def __init__(self, dry_run: bool = False, quick_cast: bool | None = None, role: str = "", logfile=None, keep_front: bool = True,
+                 forever: bool = False, tactic_hz: float = 8.0, champion: str | None = None, explore: float = 0.0,
+                 decision_log: str | None = "logs/decisions.jsonl") -> None:
         self.dry_run = dry_run
         self.forever = forever
         self.keep_front = keep_front
@@ -130,6 +135,14 @@ class Player:
         self.min_tracker = UnitTracker()
         self.champ_tracker = UnitTracker(max_jump_px=90)
         self.tactic_hz = tactic_hz
+        self.explore = explore
+        self.champion_override = champion
+        self.role_override = role
+        self.kit: Kit = kit_for(champion or "yasuo", role)
+        self.lane: Lane = Lane("mid", "ORDER")
+        self.dlog = DecisionLog(decision_log if not dry_run else None)
+        self._wake_actor = threading.Event()   # set on every new frame and every new Jev answer
+        self._last_logged_seq = 0
         self.tactics: TacticalBrain | None = None
         self.micro: Micro | None = None
         self.scene = None
@@ -158,7 +171,7 @@ class Player:
             st = self.state
             if st and not self.paused:
                 try:
-                    self.decision = self.brain.decide(st)
+                    self.decision = self.brain.decide(st, role_text=self.kit.role_text(self.lane.name), support=self.kit.support)
                     self.recorder.write(st, {"decision": self.decision.summary()})
                 except Exception as e:  # noqa: BLE001
                     self.log_lines.append(f"brain error: {e}")
@@ -205,11 +218,15 @@ class Player:
                 time.sleep(0.1)
                 continue
             try:
+                t_cap = time.time()  # latency is measured from the start of the capture
                 frame = np.array(sct.grab(mon))[:, :, :3]
                 if self.mm is not None:
                     self.mm_state = self.mm.read(np.ascontiguousarray(frame[y0:y0 + side, x0:x0 + side]))
                 if self.vision is not None:
-                    self.view = self.vision.read(frame)
+                    v = self.vision.read(frame)
+                    v.ts = t_cap
+                    self.view = v
+                self._wake_actor.set()
             except Exception as e:  # noqa: BLE001
                 self.log_lines.append(f"perception error: {e}")
                 time.sleep(0.2)
@@ -234,6 +251,8 @@ class Player:
             time.sleep(max(0.0, 0.1 - (time.time() - t0)))
 
     def _full_state(self, data: dict, perception: Perception) -> dict:
+        if perception.lane_progress_pct is not None and perception.position in ("lane", "traveling"):
+            perception.where_label = self.lane.where_label(perception.lane_progress_pct / 100)
         st = build_state(data, perception, self.role)
         if self.shop_brain is not None:
             st["enemy_lineup"] = [{k: e[k] for k in ("champion", "class", "damage", "level", "kda")}
@@ -250,7 +269,7 @@ class Player:
         rate = self.tactics.rate() if self.tactics else 0.0
         if t is not None:
             probs = sorted(t.probabilities.items(), key=lambda kv: -kv[1])[:4]
-            out.append(f"tactic -> {t.action.upper()} p={t.confidence:.2f} ({t.latency_ms:.0f} ms, {rate:.1f}/s)")
+            out.append(f"tactic -> {t.action.upper()}{' (explore)' if t.explored else ''} p={t.confidence:.2f} fits={t.menu_fits:.2f} ({t.latency_ms:.0f} ms, {rate:.1f}/s)")
             out.append("  " + "  ".join(f"{k} {v:.2f}" for k, v in probs))
         sc = self.scene
         if sc is not None:
@@ -263,18 +282,26 @@ class Player:
             needs = " ".join(f"{k.replace('need_', '')[:7]} {v:.2f}" for k, v in b.needs.items())
             out.append(f"build -> {b.target} p={b.confidence:.2f} | buy now: {', '.join(b.buy_now) or '-'}")
             out.append(f"  needs: {needs}")
+        if self.micro is not None:
+            parts = []
+            for kind in ("reflex", "lasthit", "jev"):
+                lat = self.micro.latency(kind)
+                if lat:
+                    parts.append(f"{kind} {lat[0]:.0f}/{lat[1]:.0f}")
+            if parts:
+                out.append("screen->input ms (p50/p90): " + "  ".join(parts))
         out.append(f"APM {self.ctl.apm()}   vision {self.perceive_fps:.0f} fps   api {self.api_ms:.0f} ms   micro: {self.micro.last_action if self.micro else '-'}")
         return out
 
     def _micro_step(self, data: dict, ap: dict, stats: dict, now: float) -> bool:
-        """Screen-level play while units are on screen: Jev's tactical choice, reflexes, and
-        last-hit farming. Returns False when there is nothing on screen (macro moves instead)."""
-        view, mi = self.view, self.micro
+        """Screen-level play while units are on screen: Jev's tactical choice, the kit's reflexes,
+        and the kit's standing behaviour. Returns False when nothing is on screen (macro moves)."""
+        view, mi, kit = self.view, self.micro, self.kit
         if view is None or mi is None or now - view.ts > 0.3:
             return False
         minions = self.min_tracker.update(view.enemies("minion"), now)
         champs = self.champ_tracker.update(view.enemies("champion"), now)
-        if not minions and not champs:
+        if not minions and not champs and not view.allies("champion"):
             self.scene = None
             return False
         ad = float(stats.get("attackDamage", 60.0))
@@ -282,32 +309,51 @@ class Player:
         q_rank = int(ap.get("abilities", {}).get("Q", {}).get("abilityLevel", 0))
         game_s = float((data.get("gameData") or {}).get("gameTime", 0.0))
         sc = build_scene(view, minions, champs, ad, q_rank, game_s, now, config.GEOMETRY.champion_px)
+        if kit.support:
+            sc.killable_auto = []  # supports leave last hits to the carry
         self.scene = sc
-        q3 = mi.q.q3(now)
+        mi.fwd = self.lane.screen_dir(self.mech.nav.progress) if self.mech else mi.fwd
         d = self.decision
         plan = {
             "intent": self.intent,
+            "lane": self.lane.name,
             "aggression_0_to_2": round(d.aggression, 1) if d else 1.0,
             "danger": round(d.danger, 1) if d else 0.0,
             "fight_favorable": round(d.fight_favorable, 2) if d else 0.5,
         }
         if self.tactics is not None:
-            self.tactics.publish(sc, q3, self.state, plan, view.ts)
+            self.tactics.publish(sc, kit, mi, self.state, plan, view.ts)
         if not mi._can_order(now):
             return True
-        if mi.reflexes(sc, now, d is None or d.fight_favorable >= 0.45):
+        if kit.reflex(mi, sc, now, plan):
+            mi.reacted("reflex", view.ts)
             return True
         t = self.tactics.tactic if self.tactics else None
         if t is not None and t.seq > mi.last_seq and t.age(now) < config.FAST.tactic_stale_s:
             mi.last_seq = t.seq
-            if t.action in ("farm", "push", "back_off"):
+            executed = False
+            if t.action in ("farm", "push", "back_off", "hold_with_carry"):
                 mi.mode = t.action
-            elif mi.execute(t.action, sc, now, aspd, t.dash_target):
+            elif kit.execute(mi, t.action, sc, now, aspd, t.extra):
+                executed = True
+                mi.reacted("jev", t.state_ts)
+            self.dlog.record(t, executed, self._metrics(), str(self.state.get("game", {}).get("time")))
+            if executed:
                 return True
-        if mi.mode == "back_off" and sc.champ is not None:
-            mi.back_off(sc, now)
-            return True
-        return mi.farm_step(sc, now, aspd, push=(mi.mode == "push" or self.intent == "push_tower"))
+        before = mi.orders
+        ok = kit.continuous(mi, sc, now, aspd, mi.mode, self.intent == "push_tower")
+        if mi.orders > before and mi.last_action.startswith("last hit"):
+            mi.reacted("lasthit", view.ts)
+        return ok
+
+    def _metrics(self) -> dict:
+        """Outcome signals for the decision log."""
+        me = self.state.get("me", {}) if self.state else {}
+        k, dd, a = (int(x) for x in str(me.get("kda", "0/0/0")).split("/")) if me.get("kda") else (0, 0, 0)
+        sc = self.scene
+        return {"hp": me.get("hp_percent", 0) or 0, "gold": me.get("gold", 0) or 0, "cs": me.get("cs", 0) or 0,
+                "kills": k, "deaths": dd, "assists": a,
+                "enemy_hp": sc.champ.unit.hp if sc is not None and sc.champ is not None else None}
 
     # -- render -------------------------------------------------------------------------
     def _table(self, perception: Perception) -> Table:
@@ -360,11 +406,19 @@ class Player:
         me = find_me(data) or {}
         side = me.get("team", "ORDER")
         self.side = side
-        self.mech = Mechanics(self.ctl, self.screen, self.kb, side)
+        # Kit from the champion actually in the game; role from the assigned position (empty in
+        # custom games, where the kit's default role applies); lane from the role.
+        role = self.role_override or str(me.get("position") or "")
+        self.kit = kit_for(self.champion_override or me.get("championName", "Yasuo"), role)
+        self.role = self.kit.role
+        self.lane = Lane(lane_for(self.kit.role, "bot" if self.kit.support else "mid"), side)
+        self.mech = Mechanics(self.ctl, self.screen, self.kb, side, lane=self.lane, skill_order=self.kit.skill_order)
         self.micro = Micro(self.ctl, self.screen, self.kb, side)
+        if self.shop_brain is not None:
+            self.shop_brain.profile = self.kit.items
         self.data = data
         self._api_dead = False
-        console.print(f"game found, side {side}, champion {me.get('championName')}")
+        console.print(f"game found, side {side}, champion {me.get('championName')} as {self.kit.name} {self.kit.role}, lane {self.lane.name}")
         self._camera_checked = False
         gt = float((data.get("gameData") or {}).get("gameTime", 0.0))
         if gt > 90 and not me.get("isDead"):
@@ -380,7 +434,8 @@ class Player:
         if not self.dry_run:
             threading.Thread(target=self._perceive_loop, daemon=True).start()
             if self.tactic_hz > 0:
-                self.tactics = TacticalBrain(max_hz=self.tactic_hz)
+                self.tactics = TacticalBrain(max_hz=self.tactic_hz, explore=self.explore)
+                self.tactics.on_answer = self._wake_actor.set
                 threading.Thread(target=self.tactics.run, daemon=True).start()
         tick = 1 / (config.FAST.act_hz if not self.dry_run else config.TIMING.tick_hz)
         perception = Perception()
@@ -410,11 +465,14 @@ class Player:
                             self.mech._last_move = 0.0
                     perception = self._tick(data, t0)
                     self.state = self._full_state(data, perception)
+                    self.dlog.resolve(self._metrics())
                     if t0 - self._last_table > 0.25:
                         self._last_table = t0
                         live.update(self._table(perception))
                     self._logline(perception, t0)
-                    time.sleep(max(0.0, tick - (time.time() - t0)))
+                    # Act again on the next frame or Jev answer, or after one tick at the latest.
+                    self._wake_actor.wait(timeout=max(0.0, tick - (time.time() - t0)))
+                    self._wake_actor.clear()
         finally:
             self._stop.set()
             if self.tactics is not None:
@@ -447,24 +505,22 @@ class Player:
         if self.mm is not None:
             mm = self.mm_state  # read by the perception thread
             if mm is not None and mm.pos is not None and now - mm.ts < 1.0:
-                prog, lat = lane_progress(mm.pos, self.side)
+                prog, lat = self.lane.project(mm.pos)
                 m.nav.progress = prog
                 m.nav._last_t = now
                 p.lane_progress_pct = m.nav.pct
-                wave = lane_wave(mm, self.side)
+                wave = lane_wave(mm, self.lane)
                 p.enemy_champions_on_minimap = len(mm.enemy_champions)
                 p.enemy_minions_in_lane, p.ally_minions_in_lane = wave.enemy_count, wave.ally_count
                 if mm.enemy_champions:
                     p.nearest_enemy_champion_units = min(dist(mm.pos, e) for e in mm.enemy_champions)
                 if wave.enemy_front is not None:
-                    f = wave.enemy_front
-                    p.wave_position = ("under my tower" if f < 0.44 else "on my side of the lane" if f < 0.49
-                                       else "at the middle" if f < 0.52 else "on their side" if f < 0.56 else "under their tower")
-                # Tower safety: enemy mid towers still standing.
+                    p.wave_position = self.lane.wave_label(wave.enemy_front)
+                # Tower safety: enemy towers of this lane that still stand (all others count too).
                 enemy_towers = config.RED_TOWERS if self.side == "ORDER" else config.BLUE_TOWERS
-                mid_ids = {3: 5, 4: 4, 5: 3}  # index in list -> mid outer/inner/inhib tower number
+                lane_ids = self.lane.enemy_tower_ids()  # index in list -> tower number in event names
                 for i, t in enumerate(enemy_towers):
-                    if i in mid_ids and mid_ids[i] in self.dead_enemy_mid_towers:
+                    if i in lane_ids and lane_ids[i] in self.dead_enemy_mid_towers:
                         continue
                     if dist(mm.pos, t) < config.TOWER_RANGE:
                         p.near_enemy_tower = True
@@ -485,7 +541,7 @@ class Player:
         enemy_tag = "T2" if self.side == "ORDER" else "T1"
         for e in (data.get("events") or {}).get("Events", []):
             tk = str(e.get("TurretKilled", ""))
-            if e.get("EventName") == "TurretKilled" and f"Turret_{enemy_tag}_C_" in tk:
+            if e.get("EventName") == "TurretKilled" and f"Turret_{enemy_tag}_{LANE_LETTER[self.lane.name]}_" in tk:
                 try:
                     self.dead_enemy_mid_towers.add(int(tk.split("_")[3]))
                 except (IndexError, ValueError):
@@ -550,7 +606,7 @@ class Player:
 
         if self.phase == "base":
             m.go_lane(move_speed, now)
-            if m.nav.progress >= config.OWN_TOWER:
+            if m.nav.progress >= self.lane.own_tower:
                 self.phase = "lane"
                 self.guards.left_base_at = now
             p.position = "traveling"
@@ -580,7 +636,7 @@ class Player:
         elif self.intent == "group":
             m.group(move_speed, now)
         elif self.intent == "recall":
-            if m.nav.progress > config.LANE_CENTER - 0.03 or lost > 0:
+            if m.nav.progress > self.lane.center - self.lane.frac(590) or lost > 0:
                 m.retreat(move_speed, now)  # walk back first, never channel in the middle of the lane
             else:
                 m.start_recall(now)
@@ -644,7 +700,8 @@ class Player:
             if game_min < 12 and potions < 2 and gold - spent >= 50:
                 names.append("Health Potion")
         if not names:
-            names = ["Doran's Blade"] if gold >= 450 else []
+            first = self.kit.items.starters[0] if self.kit.items.starters else "Doran's Blade"
+            names = [first] if gold >= 400 else []
         for item in names:
             if self.mech.shop(item, self._items_now):
                 self.log_lines.append(f"shop: bought {item}")

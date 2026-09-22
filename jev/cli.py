@@ -90,11 +90,16 @@ def play(
     forever: bool = typer.Option(False, help="After a game ends, wait for the next one"),
     overlay_corner: str = typer.Option("tr", help="Overlay corner: tl, tr, bl, br"),
     tactic_hz: float = typer.Option(8.0, help="Max tactical Jev calls per second while in lane (0 = off)"),
+    champion: str = typer.Option("", help="Kit override: yasuo | thresh (default: the champion in the game)"),
+    role: str = typer.Option("", help="Role override: MIDDLE | UTILITY | TOP | BOTTOM (default: assigned position)"),
+    explore: float = typer.Option(0.0, help="Share of tactical picks sampled from Jev's distribution instead of its top choice (bot games)"),
+    decision_log: str = typer.Option("logs/decisions.jsonl", help="Tactical decisions with outcomes, for `jev review`"),
 ) -> None:
-    """Play the current game as Yasuo with Jev driving strategy (1/s) and tactics (~7/s)."""
+    """Play the current game with Jev driving strategy (1/s), tactics (~7/s) and the build."""
     from jev.loop import Player
 
-    player = Player(dry_run=dry_run, logfile=logfile, keep_front=keep_front, forever=forever, tactic_hz=tactic_hz)
+    player = Player(dry_run=dry_run, logfile=logfile, keep_front=keep_front, forever=forever, tactic_hz=tactic_hz,
+                    champion=champion or None, role=role, explore=explore, decision_log=decision_log)
     if not overlay:
         player.run()
         return
@@ -109,13 +114,22 @@ def play(
 
 
 @app.command()
-def lcu(action: str = typer.Argument("status", help="status | practice | custom | bots | start | pick | normal | queues")) -> None:
+def review(path: Path = typer.Argument(Path("logs/decisions.jsonl"))) -> None:
+    """Summarise logged tactical decisions: outcome per action, menu gaps, near-ties."""
+    from jev.decisions import review as run_review
+
+    console.print(run_review(path), markup=False)
+
+
+@app.command()
+def lcu(action: str = typer.Argument("status", help="status | practice | custom | bots | start | pick | normal | queues"),
+        champion: str = typer.Option("yasuo", help="For pick: yasuo | thresh")) -> None:
     """Drive the League client: lobbies, queue, ready check, champ select."""
-    from jev.lcu import LCU, YASUO
+    from jev.lcu import CHAMPIONS, LCU, YASUO
 
     c = LCU()
     if action == "normal":
-        for line in c.play_normal(YASUO):
+        for line in c.play_normal():
             console.print(line, markup=False)
     elif action == "queues":
         for q in c.available_queues():
@@ -133,7 +147,7 @@ def lcu(action: str = typer.Argument("status", help="status | practice | custom 
     elif action == "start":
         console.print(c.start_champ_select())
     elif action == "pick":
-        console.print(c.pick(YASUO))
+        console.print(c.pick(CHAMPIONS.get(champion.lower(), YASUO)))
     c.close()
 
 
