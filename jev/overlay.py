@@ -41,12 +41,18 @@ class _Timer(NSObject):
 
 
 class Overlay:
-    def __init__(self, snapshot: Callable[[], str], x: int = 12, y_from_top: int = 70, w: int = 470, h: int = 250) -> None:
+    """corner: tl, tr, bl, br. Default top-right, under the game's score/clock row."""
+
+    def __init__(self, snapshot: Callable[[], str], corner: str = "tr", w: int = 470, h: int = 250, margin: int = 12) -> None:
         self.snapshot = snapshot
         app = NSApplication.sharedApplication()
         app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
         screen = NSScreen.mainScreen().frame()
-        rect = NSMakeRect(x, screen.size.height - y_from_top - h, w, h)
+        top_offset = 135   # below the macOS menu bar, window title and the in-game score row
+        bottom_offset = 200  # above the HUD
+        x = margin if corner in ("tl", "bl") else screen.size.width - w - margin
+        y = screen.size.height - top_offset - h if corner in ("tl", "tr") else bottom_offset
+        rect = NSMakeRect(x, y, w, h)
         style = NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
         self.panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(rect, style, NSBackingStoreBuffered, False)
         self.panel.setLevel_(1000)  # above normal windows
@@ -77,11 +83,11 @@ class Overlay:
         NSApp.run()
 
 
-def run_with_overlay(worker: Callable[[], None], snapshot: Callable[[], str]) -> None:
+def run_with_overlay(worker: Callable[[], None], snapshot: Callable[[], str], corner: str = "tr") -> None:
     """Start `worker` in a background thread and run the overlay on the main thread."""
     t = threading.Thread(target=worker, daemon=True)
     t.start()
-    Overlay(snapshot).run_forever()
+    Overlay(snapshot, corner=corner).run_forever()
 
 
 def format_snapshot(state: dict, decision, intent: str, mm_summary: str, last_action: str, keys_ok: bool) -> str:

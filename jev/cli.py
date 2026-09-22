@@ -88,6 +88,7 @@ def play(
     keep_front: bool = typer.Option(True, help="Re-activate the game window whenever it is not in front"),
     overlay: bool = typer.Option(True, help="Show the on-screen panel with Jev's decision and probabilities"),
     forever: bool = typer.Option(False, help="After a game ends, wait for the next one"),
+    overlay_corner: str = typer.Option("tr", help="Overlay corner: tl, tr, bl, br"),
 ) -> None:
     """Play the current game as Yasuo with Jev driving intent."""
     from jev.loop import Player
@@ -102,7 +103,7 @@ def play(
         return format_snapshot(player.state, player.decision, player.intent, player._mm_summary(),
                                player.mech.last_action if player.mech else "", player.ctl.keys_ok())
 
-    run_with_overlay(player.run, snapshot)
+    run_with_overlay(player.run, snapshot, corner=overlay_corner)
 
 
 @app.command()
