@@ -39,6 +39,7 @@ DEFAULT_EVENTS: dict[str, str] = {
     "evtUseItem7": "[b]",
     "evtOpenShop": "[p]",
     "evtCameraLockToggle": "[y]",
+    "evtCameraSnap": "[Space]",
     "evtShowScoreBoard": "[Tab]",
 }
 
@@ -143,6 +144,11 @@ class Keybinds:
     @property
     def camera_lock(self) -> Bind:
         return self._ev("evtCameraLockToggle")
+
+    @property
+    def camera_snap(self) -> Bind:
+        """Held key that centres the camera on the champion (Space by default)."""
+        return self._ev("evtCameraSnap")
 
     def quick_cast(self, i: int) -> bool | None:
         """True/False from League's Quickcast section, None when unknown (config not written yet)."""

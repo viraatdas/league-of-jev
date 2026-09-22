@@ -10,6 +10,8 @@ import time
 
 import Quartz
 from Quartz import (
+    CGEventKeyboardSetUnicodeString,
+    CGEventPostToPid,
     CGEventCreateKeyboardEvent,
     CGEventCreateMouseEvent,
     CGEventPost,
@@ -61,6 +63,18 @@ def game_is_frontmost() -> bool:
     return GAME_BUNDLE_HINT in name or "league of legends (tm) client" in name
 
 
+def game_pid() -> int | None:
+    try:
+        from AppKit import NSWorkspace
+
+        for app in NSWorkspace.sharedWorkspace().runningApplications():
+            if GAME_BUNDLE_HINT in str(app.bundleIdentifier() or "").lower():
+                return int(app.processIdentifier())
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
 def activate_game() -> bool:
     """Bring the game process (not the lobby client) to the front."""
     try:
@@ -82,20 +96,36 @@ class Controller:
     (Cmd-Tab, then Ctrl-C) is always safe.
     """
 
-    def __init__(self, dry_run: bool = False, log=None, require_frontmost: str | None = "League") -> None:
+    def __init__(self, dry_run: bool = False, log=None, require_frontmost: str | None = "League", to_pid: bool = True) -> None:
         self.dry_run = dry_run
         self.log = log or (lambda msg: None)
         self._pos = (0.0, 0.0)
         self.require_frontmost = require_frontmost
+        self.to_pid = to_pid
+        self.pid: int | None = game_pid() if to_pid else None
         self.blocked = 0
 
     def _allowed(self) -> bool:
+        """Events go straight to the game process when it is running, so the window need not be
+        frontmost (it can live on another desktop). Without a pid, fall back to the HID tap and
+        require the game to be frontmost so nothing lands in another app."""
         if self.dry_run:
             return False
+        if self.to_pid:
+            if self.pid is None:
+                self.pid = game_pid()
+            if self.pid is not None:
+                return True
         if self.require_frontmost and not game_is_frontmost():
             self.blocked += 1
             return False
         return True
+
+    def _post(self, ev) -> None:
+        if self.to_pid and self.pid is not None:
+            CGEventPostToPid(self.pid, ev)
+        else:
+            CGEventPost(kCGHIDEventTap, ev)
 
     # -- mouse -----------------------------------------------------------------
     def move(self, x: float, y: float) -> None:
@@ -104,20 +134,21 @@ class Controller:
         if not self._allowed():
             return
         ev = CGEventCreateMouseEvent(None, kCGEventMouseMoved, (x, y), kCGMouseButtonLeft)
-        CGEventPost(kCGHIDEventTap, ev)
+        self._post(ev)
 
-    def click(self, x: float, y: float, button: str = "right", hold_ms: int = 25) -> None:
+    def click(self, x: float, y: float, button: str = "right", hold_ms: int = 40) -> None:
         self.move(x, y)
         self.log(f"click_{button}({x:.0f},{y:.0f})")
         if not self._allowed():
             return
+        time.sleep(0.04)  # let the UI register the hover before the press
         if button == "left":
             down, up, btn = kCGEventLeftMouseDown, kCGEventLeftMouseUp, kCGMouseButtonLeft
         else:
             down, up, btn = kCGEventRightMouseDown, kCGEventRightMouseUp, kCGMouseButtonRight
-        CGEventPost(kCGHIDEventTap, CGEventCreateMouseEvent(None, down, (x, y), btn))
+        self._post(CGEventCreateMouseEvent(None, down, (x, y), btn))
         time.sleep(hold_ms / 1000)
-        CGEventPost(kCGHIDEventTap, CGEventCreateMouseEvent(None, up, (x, y), btn))
+        self._post(CGEventCreateMouseEvent(None, up, (x, y), btn))
 
     # -- keyboard --------------------------------------------------------------
     _MOD_CODES = (("ctrl", 59, kCGEventFlagMaskControl), ("shift", 56, kCGEventFlagMaskShift), ("alt", 58, kCGEventFlagMaskAlternate), ("cmd", 55, kCGEventFlagMaskCommand))
@@ -134,7 +165,7 @@ class Controller:
         flags = 0
         active = [(m, c, f) for m, c, f in self._MOD_CODES if wanted[m]]
         for _, mcode, mflag in active:
-            CGEventPost(kCGHIDEventTap, CGEventCreateKeyboardEvent(None, mcode, True))
+            self._post(CGEventCreateKeyboardEvent(None, mcode, True))
             flags |= mflag
             time.sleep(0.03)
         down = CGEventCreateKeyboardEvent(None, code, True)
@@ -142,12 +173,21 @@ class Controller:
         if flags:
             CGEventSetFlags(down, flags)
             CGEventSetFlags(up, flags)
-        CGEventPost(kCGHIDEventTap, down)
+        self._post(down)
         time.sleep(hold_ms / 1000)
-        CGEventPost(kCGHIDEventTap, up)
+        self._post(up)
         for _, mcode, _ in reversed(active):
             time.sleep(0.03)
-            CGEventPost(kCGHIDEventTap, CGEventCreateKeyboardEvent(None, mcode, False))
+            self._post(CGEventCreateKeyboardEvent(None, mcode, False))
+
+    def hold(self, bind, down: bool) -> None:
+        """Press or release a key without the matching up/down, for held keys like camera snap."""
+        if bind.key is None:
+            return
+        self.log(f"hold({bind.key},{'down' if down else 'up'})")
+        if not self._allowed():
+            return
+        self._post(CGEventCreateKeyboardEvent(None, KEYCODES[bind.key], down))
 
     def focus(self, x: float, y: float) -> None:
         """Activate the game process and left-click inside its window so it has keyboard focus."""
@@ -163,18 +203,43 @@ class Controller:
             return
         self.key(bind.key, ctrl=bind.ctrl, shift=bind.shift, alt=bind.alt, cmd=bind.cmd, hold_ms=hold_ms)
 
-    def type_text(self, text: str, per_char_ms: int = 20) -> None:
+    def type_text(self, text: str, per_char_ms: int = 25) -> None:
+        """Text entry for UI fields: each key event carries the character as a Unicode string."""
+        self.log(f"type({text!r})")
+        if not self._allowed():
+            return
         for ch in text:
-            if ch == " ":
-                self.key("space")
-            elif ch.lower() in KEYCODES:
-                self.key(ch.lower(), shift=ch.isupper())
+            code = KEYCODES.get(ch.lower(), 0)
+            for down in (True, False):
+                ev = CGEventCreateKeyboardEvent(None, code, down)
+                CGEventKeyboardSetUnicodeString(ev, 1, ch)
+                self._post(ev)
+                time.sleep(0.015)
             time.sleep(per_char_ms / 1000)
 
     # -- League verbs ------------------------------------------------------------
+    def keys_ok(self) -> bool:
+        """Key events only reach the game while it is the active app; mouse events always do."""
+        return not self.dry_run and game_is_frontmost()
+
     def move_to(self, x: float, y: float) -> None:
         """Right click = move / attack the unit under the cursor."""
         self.click(x, y, "right")
+
+    def attack_move_click(self, x: float, y: float) -> None:
+        """Shift + right click = attack-move to the point (League's evtPlayerAttackMoveClick default)."""
+        self.move(x, y)
+        self.log(f"shift_click_right({x:.0f},{y:.0f})")
+        if not self._allowed():
+            return
+        time.sleep(0.04)
+        down = CGEventCreateMouseEvent(None, kCGEventRightMouseDown, (x, y), kCGMouseButtonRight)
+        up = CGEventCreateMouseEvent(None, kCGEventRightMouseUp, (x, y), kCGMouseButtonRight)
+        CGEventSetFlags(down, kCGEventFlagMaskShift)
+        CGEventSetFlags(up, kCGEventFlagMaskShift)
+        self._post(down)
+        time.sleep(0.04)
+        self._post(up)
 
     def attack_move(self, bind, x: float, y: float) -> None:
         """Attack-move key then left click: attacks the nearest unit on the way."""

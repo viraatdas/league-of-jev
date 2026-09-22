@@ -82,6 +82,39 @@ class Mechanics:
         return blue_pt if self.side == "ORDER" else red_pt
 
     # -- primitive orders -----------------------------------------------------------
+    def _snapped(self, fn) -> None:
+        """Run a screen-relative action while the camera-snap key is held (only possible when keys
+        reach the game); otherwise rely on the camera lock and run it directly."""
+        if not self.ctl.keys_ok():
+            fn()
+            return
+        self.ctl.hold(self.kb.camera_snap, True)
+        time.sleep(0.05)
+        try:
+            fn()
+        finally:
+            time.sleep(0.03)
+            self.ctl.hold(self.kb.camera_snap, False)
+
+    def _pt(self, xy) -> tuple[float, float]:
+        return self.screen.to_points(float(xy[0]), float(xy[1]))
+
+    def _attack_move(self, x: float, y: float) -> None:
+        if self.ctl.keys_ok():
+            self.ctl.attack_move(self.kb.attack_move, x, y)
+        else:
+            self.ctl.attack_move_click(x, y)
+
+    def _cast(self, idx: int, x: float, y: float) -> None:
+        """Ability by key when possible, else click its HUD icon and then the target point."""
+        if self.ctl.keys_ok():
+            self.ctl.cast(self.kb.ability(idx), x, y, self.kb.quick_cast(idx))
+            return
+        icon = self.geo.ability_icons[idx - 1]
+        self.ctl.click(*self._pt(icon), "left")
+        time.sleep(0.05)
+        self.ctl.click(x, y, "left")
+
     def walk(self, direction: int, move_speed: float, now: float, attack: bool = False, px: float | None = None) -> None:
         """Keep a move (or attack-move) order alive in the given lane direction."""
         self._move_dir = direction
@@ -92,10 +125,10 @@ class Mechanics:
         dist = px or (self.geo.attack_move_px if attack else self.geo.move_click_px)
         x, y = self._ahead(dist, direction)
         if attack:
-            self.ctl.attack_move(self.kb.attack_move, x, y)
+            self._snapped(lambda: self._attack_move(x, y))
             self.last_action = f"attack-move {'fwd' if direction > 0 else 'back'}"
         else:
-            self.ctl.move_to(x, y)
+            self._snapped(lambda: self.ctl.move_to(x, y))
             self.last_action = f"move {'fwd' if direction > 0 else 'back'}"
 
     def hold(self, now: float) -> None:
@@ -107,7 +140,7 @@ class Mechanics:
             return
         self._last_q = now
         x, y = self._ahead(self.geo.q_cast_px, 1)
-        self.ctl.cast(self.kb.ability(1), x, y, self.kb.quick_cast(1))
+        self._snapped(lambda: self._cast(1, x, y))
         self.last_action = "Q up the lane"
 
     def go_to_map(self, target, now: float) -> bool:
@@ -137,7 +170,7 @@ class Mechanics:
             if now - self._last_move >= self.timing.move_reissue_s:
                 self._last_move = now
                 x, y = self._ahead(self.geo.attack_move_px * 0.5, 1)
-                self.ctl.attack_move(self.kb.attack_move, x, y)
+                self._snapped(lambda: self._attack_move(x, y))
                 self.last_action = "attack-move hold"
         self.blind_q(now)
 
@@ -153,7 +186,7 @@ class Mechanics:
             x, y = self._ahead(self.geo.attack_move_px * 0.6, 1)
             if now - self._last_move >= self.timing.move_reissue_s:
                 self._last_move = now
-                self.ctl.attack_move(self.kb.attack_move, x, y)
+                self._snapped(lambda: self._attack_move(x, y))
                 self.last_action = "attack-move at tower"
         self.blind_q(now)
 
@@ -183,9 +216,12 @@ class Mechanics:
 
     def start_recall(self, now: float) -> None:
         if self.recall_started is None:
-            self.ctl.press(self.kb.stop)
-            time.sleep(0.05)
-            self.ctl.press(self.kb.recall)
+            if self.ctl.keys_ok():
+                self.ctl.press(self.kb.stop)
+                time.sleep(0.05)
+                self.ctl.press(self.kb.recall)
+            elif self.geo.recall_button:
+                self.ctl.click(*self._pt(self.geo.recall_button), "left")
             self.recall_started = now
             self.hold(now)
             self.last_action = "recalling"
@@ -197,27 +233,62 @@ class Mechanics:
         self.recall_started = None
 
     def level_up(self, ability_levels: dict[str, int]) -> str | None:
+        """Click the HUD chevron (works in the background); the key is used only when it can land."""
         counts = {"Q": 0, "W": 0, "E": 0, "R": 0}
         for ab in YASUO_SKILL_ORDER:
             counts[ab] += 1
             if ability_levels.get(ab, 0) < counts[ab]:
-                self.ctl.press(self.kb.level(ABILITY_INDEX[ab]))
+                idx = ABILITY_INDEX[ab]
+                if self.ctl.keys_ok():
+                    self.ctl.press(self.kb.level(idx))
+                else:
+                    self.ctl.click(*self._pt(self.geo.level_chevrons[idx - 1]), "left")
                 self.last_action = f"level {ab}"
                 return ab
         return None
 
-    def shop(self, item: str) -> bool:
-        if not self.geo.shop_search:
+    def shop(self, item: str, items_now=None) -> bool:
+        """Buy `item`, verified through the API (items_now() returns the current item names).
+        Mouse-only path: HUD shop button, recommended card or boots card, PURCHASE, close X.
+        The search box needs typing, so it is used only while keys reach the game."""
+        before = set(items_now()) if items_now else set()
+
+        def bought() -> bool:
+            if not items_now:
+                return False
+            time.sleep(0.5)
+            return bool(set(items_now()) - before)
+
+        if self.geo.shop_button:
+            self.ctl.click(*self._pt(self.geo.shop_button), "left")
+        elif self.ctl.keys_ok():
+            self.ctl.press(self.kb.shop)
+        else:
             return False
-        self.ctl.press(self.kb.shop)
-        time.sleep(0.6)
-        sx, sy = self.screen.to_points(*self.geo.shop_search)
-        self.ctl.click(sx, sy, "left")
-        time.sleep(0.15)
-        self.ctl.type_text(item)
-        time.sleep(0.4)
-        self.ctl.key("return")
+        time.sleep(0.9)
+        ok = False
+        low = item.lower()
+        card = None
+        if low.startswith("doran") and self.geo.starter_card:
+            card = self.geo.starter_card
+        elif ("boots" in low or "greaves" in low) and self.geo.boots_card:
+            card = self.geo.boots_card
+        if card and self.geo.purchase_button:
+            self.ctl.click(*self._pt(card), "left")
+            time.sleep(0.4)
+            self.ctl.click(*self._pt(self.geo.purchase_button), "left")
+            ok = bought()
+        if not ok and self.ctl.keys_ok() and self.geo.shop_search:
+            self.ctl.click(*self._pt(self.geo.shop_search), "left")
+            time.sleep(0.3)
+            self.ctl.type_text(item)
+            time.sleep(0.6)
+            self.ctl.key("return")
+            ok = bought()
+        if self.geo.shop_close:
+            self.ctl.click(*self._pt(self.geo.shop_close), "left")
+        elif self.ctl.keys_ok():
+            self.ctl.press(self.kb.shop)
         time.sleep(0.3)
-        self.ctl.key("escape")
-        self.last_action = f"bought {item}"
-        return True
+        self.last_action = f"bought {item}" if ok else f"shop: could not buy {item}"
+        return ok

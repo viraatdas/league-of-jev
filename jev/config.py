@@ -29,7 +29,16 @@ class Geometry:
     # Optional minimap square (x, y, side) in frame pixels. None = use screen-relative clicks only.
     minimap: tuple[int, int, int] | None = (1350, 705, 372)
     # Optional shop search box (x, y) in frame pixels. None = shopping disabled.
-    shop_search: tuple[int, int] | None = None
+    shop_search: tuple[int, int] | None = (676, 242)
+    starter_card: tuple[int, int] | None = (676, 400)      # "Doran's Blade Start" recommended card
+    purchase_button: tuple[int, int] | None = (1167, 582)
+    shop_close: tuple[int, int] | None = (1340, 183)
+    shop_button: tuple[int, int] | None = (1181, 1063)     # HUD "P" shop icon
+    recall_button: tuple[int, int] | None = (1181, 1020)   # HUD "B" recall icon
+    boots_card: tuple[int, int] | None = (418, 765)        # first "commonly built" icon (boots)
+    # HUD ability icons and the level-up chevrons above them, Q W E R
+    ability_icons: tuple[tuple[int, int], ...] = ((620, 985), (737, 985), (799, 985), (861, 985))
+    level_chevrons: tuple[tuple[int, int], ...] = ((675, 935), (737, 935), (799, 935), (861, 935))
     move_click_px: int = 420        # how far ahead to click when walking
     attack_move_px: int = 260       # how far ahead to attack-move at the wave
     q_cast_px: int = 300            # blind Q distance up the lane

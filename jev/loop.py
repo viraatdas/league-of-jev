@@ -149,8 +149,7 @@ class Player:
         side = me.get("team", "ORDER")
         self.mech = Mechanics(self.ctl, self.screen, self.kb, side)
         console.print(f"game found, side {side}, champion {me.get('championName')}")
-        cx, cy = self.mech._center()
-        self.ctl.focus(*self.screen.to_points(cx, cy + 40))
+        # Input goes straight to the game process, so no activation or focus click is needed.
         threading.Thread(target=self._brain_loop, daemon=True).start()
         tick = 1 / config.TIMING.tick_hz
         perception = Perception()
@@ -263,15 +262,20 @@ class Player:
             f"L{me.get('level')} hp={me.get('hp_percent')}% gold={me.get('gold')} {me.get('kda')} cs={me.get('cs')} "
             f"| {p.position} lane={p.lane_progress_pct}% dmg={p.hp_lost_recent_pct:.0f} | intent={self.intent} "
             f"| jev={self.decision.summary() if self.decision else '-'} | act={self.mech.last_action if self.mech else ''} "
-            f"blocked={self.ctl.blocked}\n"
+            f"keys={'y' if self.ctl.keys_ok() else 'n'} | {self.log_lines[-1] if self.log_lines else ''}\n"
         )
         with open(self.logfile, "a") as f:
             f.write(line)
 
+    def _items_now(self) -> list[str]:
+        d = self.riot.all_game_data() or {}
+        me = find_me(d) or {}
+        return [i.get("displayName", "") for i in me.get("items", [])]
+
     def _shop_if_possible(self) -> None:
         d = self.decision
         if d and d.next_item and self.mech:
-            if self.mech.shop(d.next_item):
-                self.log_lines.append(f"shop: {d.next_item}")
+            if self.mech.shop(d.next_item, self._items_now):
+                self.log_lines.append(f"shop: bought {d.next_item}")
             else:
-                self.log_lines.append("shop skipped (no shop_search geometry calibrated)")
+                self.log_lines.append(f"shop: could not buy {d.next_item}")
