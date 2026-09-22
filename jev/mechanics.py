@@ -38,6 +38,17 @@ class Navigator:
             self.progress = max(0.0, min(1.0, self.progress))
         self._last_t = now
 
+    def advance_toward(self, target: float, move_speed: float, now: float) -> None:
+        """A minimap order to `target` is being followed; integrate progress toward it."""
+        if self._last_t is not None:
+            dt = max(0.0, min(now - self._last_t, 1.0))
+            step = move_speed * dt / config.DIAGONAL_UNITS
+            if abs(target - self.progress) <= step:
+                self.progress = target
+            else:
+                self.progress += step if target > self.progress else -step
+        self._last_t = now
+
     @property
     def pct(self) -> int:
         return int(round(self.progress * 100))
@@ -80,6 +91,34 @@ class Mechanics:
 
     def _own(self, blue_pt, red_pt):
         return blue_pt if self.side == "ORDER" else red_pt
+
+    def _lane_point(self, progress: float) -> tuple[float, float]:
+        """Map point at `progress` along the mid diagonal from the own fountain to the enemy one."""
+        a = self._own(config.BLUE_FOUNTAIN, config.RED_FOUNTAIN)
+        b = self._own(config.RED_FOUNTAIN, config.BLUE_FOUNTAIN)
+        return a[0] + (b[0] - a[0]) * progress, a[1] + (b[1] - a[1]) * progress
+
+    def go_progress(self, target: float, move_speed: float, now: float, attack: bool = False, force: bool = False) -> bool:
+        """Order a move (or attack-move) to the lane point at `target` via the minimap. Returns
+        False when no minimap geometry is calibrated (caller falls back to screen clicks)."""
+        pt = self._minimap_point(*self._lane_point(target))
+        if pt is None:
+            return False
+        self.nav.advance_toward(target, move_speed, now)
+        self._move_dir = 0
+        if not force and now - self._last_move < self.timing.move_reissue_s:
+            return True
+        self._last_move = now
+        if attack:
+            self.ctl.move(*pt)
+            self.ctl.press(self.kb.attack_move)
+            time.sleep(0.02)
+            self.ctl.click(*pt, "left")
+            self.last_action = f"attack-move to lane {int(target * 100)}%"
+        else:
+            self.ctl.move_to(*pt)
+            self.last_action = f"move to lane {int(target * 100)}%"
+        return True
 
     # -- primitive orders -----------------------------------------------------------
     def _snapped(self, fn) -> None:
@@ -157,15 +196,13 @@ class Mechanics:
 
     # -- behaviours ---------------------------------------------------------------------
     def go_lane(self, move_speed: float, now: float) -> None:
-        if self.go_to_map(config.MID_CENTER, now):
-            self.nav.moved(1, move_speed, now)
-            return
-        self.walk(1, move_speed, now)
+        if not self.go_progress(config.OWN_TOWER, move_speed, now, attack=False):
+            self.walk(1, move_speed, now)
 
     def farm(self, move_speed: float, now: float, aggression: float = 1.0, contact: bool = False) -> None:
         """aggression is Jev's 0..2 score: passive stays nearer the own tower, aggressive holds
         closer to the enemy side of the wave. Without vision the wave is found by feel: minion
-        chip damage means contact, so hold; no contact for a while means creep forward a step."""
+        chip damage means contact, so hold; no contact for a while means patrol along the lane."""
         if not hasattr(self, "_last_contact"):
             self._last_contact = now
             self._seek = 0.0
@@ -173,26 +210,25 @@ class Mechanics:
         if contact:
             self._last_contact = now
         elif now - self._last_contact > self.timing.seek_after_s:
-            # Patrol: creep forward to the cap, then back toward the own tower, until minions are felt.
             self._seek += self._seek_dir * self.timing.seek_step
             if self._seek >= self.timing.seek_max:
                 self._seek_dir = -1
             elif self._seek <= -self.timing.seek_back:
                 self._seek_dir = 1
         limit = config.MAX_ADVANCE + (aggression - 1.0) * 0.035 + self._seek
-        limit = min(limit, config.HARD_LIMIT)
-        if self.nav.progress < limit - 0.005:
-            self.walk(1, move_speed, now, attack=True)
-        elif self.nav.progress > limit + 0.02:
-            self.walk(-1, move_speed, now, attack=True, px=self.geo.attack_move_px)
+        limit = max(config.OWN_TOWER, min(limit, config.HARD_LIMIT))
+        if abs(self.nav.progress - limit) > 0.01:
+            if not self.go_progress(limit, move_speed, now, attack=True):
+                self.walk(1 if limit > self.nav.progress else -1, move_speed, now, attack=True)
         else:
-            self.hold(now)
-            if now - self._last_move >= self.timing.move_reissue_s:
-                self._last_move = now
-                # Attack-move on the spot: fights whatever is in range without creeping forward.
-                x, y = self._ahead(20, 1)
-                self._snapped(lambda: self._attack_move(x, y))
-                self.last_action = "attack-move hold"
+            # Hold: attack-move onto the spot so he fights what is in range without moving off.
+            if not self.go_progress(self.nav.progress, move_speed, now, attack=True):
+                self.hold(now)
+                if now - self._last_move >= self.timing.move_reissue_s:
+                    self._last_move = now
+                    x, y = self._ahead(20, 1)
+                    self._snapped(lambda: self._attack_move(x, y))
+            self.last_action = "hold at lane %d%%" % int(self.nav.progress * 100)
         self.blind_q(now)
 
     def trade(self, move_speed: float, now: float) -> None:
@@ -200,15 +236,9 @@ class Mechanics:
         self.walk(1, move_speed, now, attack=True, px=self.geo.attack_move_px)
 
     def push(self, move_speed: float, now: float) -> None:
-        if self.nav.progress < config.PUSH_ADVANCE:
+        target = config.PUSH_ADVANCE if self.nav.progress < config.PUSH_ADVANCE - 0.01 else self.nav.progress
+        if not self.go_progress(target, move_speed, now, attack=True):
             self.walk(1, move_speed, now, attack=True)
-        else:
-            self.hold(now)
-            x, y = self._ahead(self.geo.attack_move_px * 0.6, 1)
-            if now - self._last_move >= self.timing.move_reissue_s:
-                self._last_move = now
-                self._snapped(lambda: self._attack_move(x, y))
-                self.last_action = "attack-move at tower"
         self.blind_q(now)
 
     def resync_to_own_tower(self) -> None:
@@ -218,14 +248,10 @@ class Mechanics:
         self.nav.progress = config.OWN_TOWER
 
     def retreat(self, move_speed: float, now: float) -> None:
-        own_t1 = self._own(config.BLUE_MID_T1, config.RED_MID_T1)
-        if self.nav.progress > config.OWN_TOWER - 0.03:
-            if not self.go_to_map(own_t1, now):
-                self.walk(-1, move_speed, now, px=self.geo.retreat_click_px)
-            else:
-                self.nav.moved(-1, move_speed, now)
-        else:
-            self.hold(now)
+        target = config.OWN_TOWER - 0.02
+        if not self.go_progress(target, move_speed, now, attack=False):
+            self.walk(-1, move_speed, now, px=self.geo.retreat_click_px)
+        if abs(self.nav.progress - target) <= 0.01:
             self.last_action = "holding at own tower"
 
     def defend(self, move_speed: float, now: float) -> None:
@@ -234,11 +260,7 @@ class Mechanics:
 
     def group(self, move_speed: float, now: float) -> None:
         """v0: hold mid centre with the team; no cross-map travel yet."""
-        if self.nav.progress < config.LANE_CENTER - 0.02:
-            self.walk(1, move_speed, now)
-        elif self.nav.progress > config.LANE_CENTER + 0.02:
-            self.walk(-1, move_speed, now)
-        else:
+        if not self.go_progress(config.LANE_CENTER, move_speed, now, attack=True):
             self.hold(now)
 
     def start_recall(self, now: float) -> None:
