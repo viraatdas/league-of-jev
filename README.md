@@ -1,10 +1,22 @@
 # league-of-jev
 
-Jev, TypeSafe's fast System One model, plays Yasuo. The bot reads the game through Riot's
-local Live Client Data API, asks Jev a pack of typed questions once a second (about 200 ms
-round trip), and turns the chosen intent into mouse and keyboard input on macOS. No screen
-reading in v0: movement is blind clicks along the mid-lane diagonal, attacks are attack-move,
-Q is fired up the lane, and damage is noticed from HP deltas.
+Jev, TypeSafe's fast System One model, plays Yasuo. Three Jev heads make every decision; code
+reads the game and executes. Riot's local Live Client Data API gives exact stats (HP, gold,
+items, levels, events). A light screen read (colour masks, no model) gives positions: the
+minimap for macro position, health bars for every unit on screen with its HP, and the HUD
+icons for cooldowns.
+
+| Head | Rate | Questions | Answer is used for |
+|---|---|---|---|
+| Strategy | 1/s, and at once on big HP changes | intent (8 modes), danger, should_recall, fight_favorable, aggression | lane mode, recalls, how far forward to stand |
+| Tactics | back to back, ~7/s while units are on screen | action from a filtered menu (farm, push, q_minions, poke_q, tornado, eq_champion, gapclose, auto_champion, ult, wind_wall, back_off) plus a dash-target head | the next move, executed within one 30 Hz actor tick |
+| Build | every 20 s and on entering base | need_armor, need_magic_resist, need_tenacity, need_antiheal, need_defense_first, next_item over a shortlist from the full Data Dragon catalog | what to buy; code buys the item or its best affordable components |
+
+The tactical head follows OpenAI Five's action layout (arXiv 1912.06680, Appendix F): a primary
+action from a list filtered to what is possible now, plus target parameters read only when the
+action needs them. Code-only reflexes: last hits from minion HP trends, R the moment our own
+tornado lifts the target, level-ups, and a survival floor that retreats when HP collapses
+between Jev answers. Input is capped at about 545 orders a minute; the overlay shows APM.
 
 Riot's third-party policy prohibits automated input. Run this in Practice Tool or a custom
 game against bots. Queueing it into matchmade games is your account and your call.
@@ -69,9 +81,15 @@ single event, so you can grab the mouse back at any time.
 
 - `jev/riot_api.py` Live Client Data poller and fixture recorder
 - `jev/state.py` compact JSON state Jev is asked about
-- `jev/brain.py` the Yasuo question pack and the `Decision` it returns
+- `jev/brain.py` the strategy question pack and the `Decision` it returns
+- `jev/tactics.py` the tactical head: action filters, state, back-to-back Jev thread
+- `jev/items.py` the build head: Data Dragon catalog, need questions, shortlist, recipe-aware purchases
+- `jev/vision.py` health bars (units and HP) and HUD icons (cooldowns) from one screen grab
+- `jev/minimap.py` minimap reader: own position, minions, champions
+- `jev/micro.py` unit tracking, last-hit prediction, Q-stack count, combo executor, reflexes
+- `jev/overlay.py` click-through panel with every head's answers and probabilities
 - `jev/keybinds.py` reads League's input config
 - `jev/control.py` Quartz CGEvent mouse and keyboard
-- `jev/mechanics.py` blind behaviours: go lane, farm, trade, push, retreat, recall, level, shop
-- `jev/loop.py` main loop, safety rules, Jev thread, terminal panel
+- `jev/mechanics.py` macro behaviours: travel, lane position, retreat, recall, level, shop
+- `jev/loop.py` threads (API, perception, strategy, tactics, build), 30 Hz actor, safety rules
 - `PLAN.md` design notes and policy discussion
