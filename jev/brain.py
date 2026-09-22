@@ -40,7 +40,7 @@ INTENTS: dict[str, str] = {
     "recall": "Move to a safe spot and recall to base to spend gold or heal.",
     "push_tower": "Push the wave into the enemy tower and attack the tower.",
     "group": "Leave lane and join teammates at `destination` for an objective or fight.",
-    "defend": "Fall back to protect your own tower or inhibitor that is under attack.",
+    "defend": "Fall back to protect my own tower or inhibitor that is under attack (at `destination` if it names one of mine).",
     "go_to": "Leave the lane and go to `destination`: another lane, an objective (dragon, baron), the river, a jungle buff, or a tower, to fight, help, take the objective, or ward.",
 }
 

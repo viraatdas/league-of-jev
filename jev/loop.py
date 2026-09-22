@@ -730,7 +730,8 @@ class Player:
             m.retreat(move_speed, now)  # walking to own tower to re-base position
             self.intent = "resync"
             return p
-        if self.intent in ("go_to", "group") and self.decision is not None and self.decision.destination:
+        dest = self.decision.destination if self.decision is not None else None
+        if dest and (self.intent in ("go_to", "group") or (self.intent == "defend" and dest.startswith("my_"))):
             self._go_to(data, ap, cs, now)
             return p
         if self.intent in ("farm", "trade", "push_tower", "defend") and self._micro_step(data, ap, cs, now):
