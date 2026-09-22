@@ -85,11 +85,12 @@ def record(hz: float = 2.0) -> None:
 def play(
     dry_run: bool = typer.Option(False, help="Log actions instead of sending input"),
     logfile: Path | None = typer.Option(None, help="Append one status line per second here"),
+    keep_front: bool = typer.Option(True, help="Re-activate the game window whenever it is not in front"),
 ) -> None:
     """Play the current game as Yasuo with Jev driving intent."""
     from jev.loop import Player
 
-    Player(dry_run=dry_run, logfile=logfile).run()
+    Player(dry_run=dry_run, logfile=logfile, keep_front=keep_front).run()
 
 
 @app.command()

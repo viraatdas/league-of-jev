@@ -13,7 +13,7 @@ from rich.table import Table
 
 from jev import config, keybinds
 from jev.brain import Brain, Decision
-from jev.control import Controller
+from jev.control import Controller, activate_game
 from jev.mechanics import Mechanics
 from jev.riot_api import FixtureRecorder, RiotLiveClient
 from jev.screen import Screen
@@ -23,31 +23,23 @@ console = Console()
 
 
 def choose_intent(d: Decision | None, state: dict, p: Perception, now: float, guard: "Guards") -> str:
-    """Code owns the final call. Jev's answers are inputs, thresholds live here."""
+    """Jev decides. Code adds only what a decision model cannot: a survival floor when HP is
+    collapsing between Jev ticks, and mechanics constraints (no recall mid-lane, handled later)."""
     me = state["me"]
     if not me["alive"]:
         return "dead"
     if p.recalling:
         return "recall"
     since_dmg = p.seconds_since_damage if p.seconds_since_damage is not None else 99.0
-    # Safety rules that do not wait for Jev.
-    if p.hp_lost_recent_pct >= config.TIMING.heavy_damage_pct and me["hp_percent"] < 45:
-        guard.retreat_until = now + config.TIMING.retreat_hold_s
-    if me["hp_percent"] < 30 and since_dmg < 5:
-        guard.retreat_until = now + config.TIMING.retreat_hold_s
+    if me["hp_percent"] < 15 and since_dmg < 4:
+        guard.retreat_until = now + 4.0  # survival floor, shorter than Jev's own retreat calls
     if now < guard.retreat_until:
         return "retreat"
     if d is None:
         return "farm"
     if d.danger >= 2.5:
-        guard.retreat_until = now + config.TIMING.retreat_hold_s / 2
         return "retreat"
-    if since_dmg > 8 and me["hp_percent"] < 25 and d.should_recall >= 0.4:
-        return "recall"
-    probs = d.intent_probabilities
-    if probs.get("retreat", 0) + probs.get("recall", 0) >= 0.55:
-        return "recall" if (p.seconds_since_damage or 99) > 6 and d.should_recall >= 0.5 else "retreat"
-    if d.should_recall >= 0.75 and since_dmg > 6:
+    if d.intent == "recall" or (d.should_recall >= 0.8 and since_dmg > 6):
         return "recall"
     if d.intent in ("trade", "all_in"):
         return "trade"
@@ -84,8 +76,10 @@ class HpTracker:
 
 
 class Player:
-    def __init__(self, dry_run: bool = False, quick_cast: bool | None = None, role: str = "MIDDLE", logfile=None) -> None:
+    def __init__(self, dry_run: bool = False, quick_cast: bool | None = None, role: str = "MIDDLE", logfile=None, keep_front: bool = True) -> None:
         self.dry_run = dry_run
+        self.keep_front = keep_front
+        self._last_activate = 0.0
         self.logfile = logfile
         self._last_logged = 0.0
         self.role = role
@@ -98,29 +92,35 @@ class Player:
         self.decision: Decision | None = None
         self.state: dict = {}
         self._stop = threading.Event()
+        self._wake = threading.Event()
         self.mech: Mechanics | None = None
         self.hp = HpTracker(config.TIMING.damage_window_s)
         self.phase = "base"  # base | lane | dead
         self.intent = "farm"
         self.recorder = FixtureRecorder()
         self.guards = Guards()
+        self._base_shop_done = False
+        self.paused = False
+        self._last_sig = (None, None, 0)
 
     def _log_action(self, msg: str) -> None:
         self.log_lines.append(msg)
 
     # -- brain thread -------------------------------------------------------------------
     def _brain_loop(self) -> None:
+        """Ask Jev once per period, or immediately when the tick flags a significant change."""
         period = 1 / config.TIMING.brain_hz
         while not self._stop.is_set():
             t0 = time.time()
             st = self.state
-            if st:
+            if st and not self.paused:
                 try:
                     self.decision = self.brain.decide(st)
                     self.recorder.write(st, {"decision": self.decision.summary()})
                 except Exception as e:  # noqa: BLE001
                     self.log_lines.append(f"brain error: {e}")
-            time.sleep(max(0.05, period - (time.time() - t0)))
+            self._wake.wait(timeout=max(0.05, period - (time.time() - t0)))
+            self._wake.clear()
 
     # -- render -------------------------------------------------------------------------
     def _table(self, perception: Perception) -> Table:
@@ -160,6 +160,23 @@ class Player:
                     data = self.riot.all_game_data()
                     if data is None:
                         break
+                    if not self.dry_run and not self.ctl.keys_ok():
+                        if self.keep_front and t0 - self._last_activate > 3.0:
+                            self._last_activate = t0
+                            activate_game()
+                            time.sleep(0.4)
+                        if not self.ctl.keys_ok():
+                            self.paused = True
+                            perception = Perception(position="paused: game window not active")
+                            self.state = build_state(data, perception, self.role)
+                            live.update(self._table(perception))
+                            self._logline(perception, t0)
+                            time.sleep(0.5)
+                            continue
+                    if self.paused:
+                        self.paused = False
+                        if self.mech:
+                            self.mech._last_move = 0.0
                     perception = self._tick(data, t0)
                     self.state = build_state(data, perception, self.role)
                     live.update(self._table(perception))
@@ -181,6 +198,11 @@ class Player:
         move_speed = min(float(cs.get("moveSpeed", 345)), config.TIMING.max_reckon_speed)
         me = find_me(data) or {}
         lost = self.hp.update(hp_pct, now)
+        # Significant change: new damage, level, or death state -> wake the brain right away.
+        sig = (int(ap.get("level", 1)), bool(me.get("isDead")), int(hp_pct // 10))
+        if lost >= 8 or sig != self._last_sig:
+            self._last_sig = sig
+            self._wake.set()
         p = Perception(
             position=self.phase,
             lane_progress_pct=m.nav.pct,
@@ -201,10 +223,21 @@ class Player:
             self.phase = "dead"
             m.nav.reset_to_base()
             self.intent = "dead"
+            self._base_shop_done = False
+        self.paused = False
+        self._last_sig = (None, None, 0)
             return p
         if self.phase == "dead":
             self.phase = "base"
-            self._shop_if_possible()
+
+        # Shop once per visit to base: at game start, after respawn, after a recall.
+        if self.phase == "base" and not self._base_shop_done:
+            gold = float(ap.get("currentGold", 0))
+            if self.decision is None and now - self.guards.left_base_at < 3.0 and gold >= 450:
+                return p  # give Jev a moment to name the item
+            if gold >= 450:
+                self._shop_if_possible()
+            self._base_shop_done = True
 
         state = self.state or build_state(data, p, self.role)
         self.intent = choose_intent(self.decision, state, p, now, self.guards)
@@ -219,7 +252,9 @@ class Player:
                 m.cancel_recall()
                 m.nav.reset_to_base()
                 self.phase = "base"
-                self._shop_if_possible()
+                self._base_shop_done = False
+        self.paused = False
+        self._last_sig = (None, None, 0)
                 self.intent = "farm"
             else:
                 return p
@@ -274,8 +309,9 @@ class Player:
 
     def _shop_if_possible(self) -> None:
         d = self.decision
-        if d and d.next_item and self.mech:
-            if self.mech.shop(d.next_item, self._items_now):
-                self.log_lines.append(f"shop: bought {d.next_item}")
+        item = d.next_item if d and d.next_item else "Doran's Blade"
+        if self.mech:
+            if self.mech.shop(item, self._items_now):
+                self.log_lines.append(f"shop: bought {item}")
             else:
-                self.log_lines.append(f"shop: could not buy {d.next_item}")
+                self.log_lines.append(f"shop: could not buy {item}")

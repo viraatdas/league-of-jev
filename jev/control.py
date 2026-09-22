@@ -96,7 +96,7 @@ class Controller:
     (Cmd-Tab, then Ctrl-C) is always safe.
     """
 
-    def __init__(self, dry_run: bool = False, log=None, require_frontmost: str | None = "League", to_pid: bool = True) -> None:
+    def __init__(self, dry_run: bool = False, log=None, require_frontmost: str | None = "League", to_pid: bool = False) -> None:
         self.dry_run = dry_run
         self.log = log or (lambda msg: None)
         self._pos = (0.0, 0.0)
@@ -106,9 +106,9 @@ class Controller:
         self.blocked = 0
 
     def _allowed(self) -> bool:
-        """Events go straight to the game process when it is running, so the window need not be
-        frontmost (it can live on another desktop). Without a pid, fall back to the HID tap and
-        require the game to be frontmost so nothing lands in another app."""
+        """Default: HID-tap events, only while the game is the active app. Verified through the
+        game API: the game ignores input while another app is active, including events posted to
+        its process, so to_pid stays off. Nothing is ever sent to a different app."""
         if self.dry_run:
             return False
         if self.to_pid:
@@ -219,7 +219,7 @@ class Controller:
 
     # -- League verbs ------------------------------------------------------------
     def keys_ok(self) -> bool:
-        """Key events only reach the game while it is the active app; mouse events always do."""
+        """Input reaches the game only while it is the active app."""
         return not self.dry_run and game_is_frontmost()
 
     def move_to(self, x: float, y: float) -> None:
