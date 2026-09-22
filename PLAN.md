@@ -90,6 +90,14 @@ put ads in the overlay.
 - First full run: starter bought, abilities leveled, CS 0 -> 20 in three minutes once the
   aim anchor was corrected, recalls on Jev's call, two early deaths to the tower before the
   advance limit and hold-without-creep fixes.
+- Screen-relative forward/back clicks drift: after ten minutes he was in the top-side
+  jungle. All lane positioning now goes through minimap orders at points on the base-to-base
+  diagonal (attack-move onto the minimap for farming), so the pathfinder keeps him in lane.
+- Minions rarely hit a champion, so "contact with the wave" is judged by income: gold
+  arriving faster than the passive rate, or the (tens-rounded) creep score moving. Without
+  contact the bot patrols 45% to 54% of the lane at walking speed.
+- Jev is given the candidate items with prices and an affordable_now flag, so its recall and
+  item calls see what the gold can buy.
 
 ## Next
 
