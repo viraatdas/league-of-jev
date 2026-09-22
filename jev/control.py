@@ -184,6 +184,11 @@ class Controller:
         time.sleep(hold_ms / 1000)
         self._post(CGEventCreateMouseEvent(None, up, (x, y), btn))
 
+    def double_click(self, x: float, y: float) -> None:
+        self.click(x, y, "left")
+        time.sleep(0.08)
+        self.click(x, y, "left")
+
     # -- keyboard --------------------------------------------------------------
     _MOD_CODES = (("ctrl", 59, kCGEventFlagMaskControl), ("shift", 56, kCGEventFlagMaskShift), ("alt", 58, kCGEventFlagMaskAlternate), ("cmd", 55, kCGEventFlagMaskCommand))
 

@@ -298,8 +298,9 @@ class Mechanics:
 
     def shop(self, item: str, items_now=None) -> bool:
         """Buy `item`, verified through the API (items_now() returns the current item names).
-        Mouse-only path: HUD shop button, recommended card or boots card, PURCHASE, close X.
-        The search box needs typing, so it is used only while keys reach the game."""
+        HUD shop button, then either a recommended card or the search box plus the first result
+        tile; a double-click on a tile is what buys (verified live, Enter and PURCHASE do not).
+        Closed with the X. The search box needs typing, so it is used only while keys land."""
         before = set(items_now()) if items_now else set()
 
         def bought() -> bool:
@@ -323,7 +324,8 @@ class Mechanics:
         elif ("boots" in low or "greaves" in low) and self.geo.boots_card:
             card = self.geo.boots_card
         if card and self.geo.purchase_button:
-            self.ctl.click(*self._pt(card), "left")
+            # Double-click on a tile buys it; the PURCHASE click is a harmless fallback.
+            self.ctl.double_click(*self._pt(card))
             time.sleep(0.4)
             self.ctl.click(*self._pt(self.geo.purchase_button), "left")
             ok = bought()
@@ -333,10 +335,8 @@ class Mechanics:
             time.sleep(0.3)
             self.ctl.type_text(item)
             time.sleep(0.8)
-            if self.geo.search_result and self.geo.purchase_button:
-                self.ctl.click(*self._pt(self.geo.search_result), "left")
-                time.sleep(0.4)
-                self.ctl.click(*self._pt(self.geo.purchase_button), "left")
+            if self.geo.search_result:
+                self.ctl.double_click(*self._pt(self.geo.search_result))
             ok = bought()
         if self.geo.shop_close:
             self.ctl.click(*self._pt(self.geo.shop_close), "left")

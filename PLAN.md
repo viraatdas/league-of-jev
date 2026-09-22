@@ -98,6 +98,9 @@ put ads in the overlay.
   contact the bot patrols 45% to 54% of the lane at walking speed.
 - Jev is given the candidate items with prices and an affordable_now flag, so its recall and
   item calls see what the gold can buy.
+- Shop: typing into the search box works (each key event carries the character); Enter and
+  the PURCHASE ITEM button do nothing, a double-click on the result tile buys. Verified live:
+  Immortal Shieldbow bought at base with 3,380 gold.
 
 ## Next
 
