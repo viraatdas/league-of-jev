@@ -58,6 +58,10 @@ class Timing:
     retreat_hold_s: float = 7.0     # keep retreating this long after a safety trigger
     no_recall_after_base_s: float = 25.0
     max_reckon_speed: float = 400.0
+    seek_after_s: float = 10.0      # no minion contact this long -> creep forward
+    seek_step: float = 0.01         # per farm tick while seeking (about 5 Hz)
+    seek_max: float = 0.05          # never seek past MAX_ADVANCE + this
+    resync_s: float = 14.0          # mid-game start: walk to own tower this long first
 
 
 GEOMETRY = Geometry()

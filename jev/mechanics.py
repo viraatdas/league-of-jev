@@ -162,10 +162,16 @@ class Mechanics:
             return
         self.walk(1, move_speed, now)
 
-    def farm(self, move_speed: float, now: float, aggression: float = 1.0) -> None:
+    def farm(self, move_speed: float, now: float, aggression: float = 1.0, contact: bool = False) -> None:
         """aggression is Jev's 0..2 score: passive stays nearer the own tower, aggressive holds
-        closer to the enemy side of the wave."""
-        limit = config.MAX_ADVANCE + (aggression - 1.0) * 0.035
+        closer to the enemy side of the wave. Without vision the wave is found by feel: minion
+        chip damage means contact, so hold; no contact for a while means creep forward a step."""
+        if contact:
+            self._last_contact = now
+            self._seek = 0.0
+        elif now - getattr(self, "_last_contact", now) > self.timing.seek_after_s:
+            self._seek = min(getattr(self, "_seek", 0.0) + self.timing.seek_step, self.timing.seek_max)
+        limit = config.MAX_ADVANCE + (aggression - 1.0) * 0.035 + getattr(self, "_seek", 0.0)
         if self.nav.progress < limit:
             self.walk(1, move_speed, now, attack=True)
         else:
@@ -193,6 +199,12 @@ class Mechanics:
                 self._snapped(lambda: self._attack_move(x, y))
                 self.last_action = "attack-move at tower"
         self.blind_q(now)
+
+    def resync_to_own_tower(self) -> None:
+        """Mid-game start: assume nothing about position, walk to the own tower and re-base the
+        dead reckoning there."""
+        self._seek = 0.0
+        self.nav.progress = config.OWN_TOWER
 
     def retreat(self, move_speed: float, now: float) -> None:
         own_t1 = self._own(config.BLUE_MID_T1, config.RED_MID_T1)

@@ -55,6 +55,7 @@ class Guards:
         self.retreat_until = 0.0
         self.left_base_at = 0.0
         self.last_level_t = 0.0
+        self.resync_until = 0.0
 
 
 class HpTracker:
@@ -151,7 +152,14 @@ class Player:
         side = me.get("team", "ORDER")
         self.mech = Mechanics(self.ctl, self.screen, self.kb, side)
         console.print(f"game found, side {side}, champion {me.get('championName')}")
-        # Input goes straight to the game process, so no activation or focus click is needed.
+        gt = float((data.get("gameData") or {}).get("gameTime", 0.0))
+        if gt > 90 and not me.get("isDead"):
+            # Joined mid-game: position unknown, so walk to the own tower first and re-base there.
+            self.phase = "lane"
+            self.guards.left_base_at = time.time()
+            self.guards.resync_until = time.time() + config.TIMING.resync_s
+            self.mech.resync_to_own_tower()
+            self._base_shop_done = True
         threading.Thread(target=self._brain_loop, daemon=True).start()
         tick = 1 / config.TIMING.tick_hz
         perception = Perception()
@@ -266,8 +274,13 @@ class Player:
             return p
 
         p.position = "lane"
+        if now < self.guards.resync_until:
+            m.retreat(move_speed, now)  # walking to own tower to re-base position
+            self.intent = "resync"
+            return p
         if self.intent == "farm":
-            m.farm(move_speed, now, self.decision.aggression if self.decision else 1.0)
+            contact = 0.5 <= lost < config.TIMING.heavy_damage_pct or (p.seconds_since_damage is not None and p.seconds_since_damage < 6)
+            m.farm(move_speed, now, self.decision.aggression if self.decision else 1.0, contact)
         elif self.intent == "trade":
             m.trade(move_speed, now)
         elif self.intent == "push_tower":
