@@ -22,3 +22,8 @@ Shared, agent-authored log of cross-cutting decisions the fleet must honor. The 
 - **Interfaces:** CLI: uv run jev doctor | keys | lcu practice|start|pick | play [--dry-run] [--logfile] [--keep-front]; modules jev/{riot_api,state,brain,keybinds,control,screen,mechanics,loop,lcu,config,doctor,cli}.py; tests/offline_loop_check.py; logs/play.log; fixtures/<session>/ recorded states; geometry in jev/config.py.
 - **By:** worker · 2026-09-22T13:05:03.193Z
 
+## worker: Jev plays Yasuo standalone and is running now (`uv
+- **Did:** Jev plays Yasuo standalone and is running now (`uv run jev play --logfile logs/play.log`, loop alive, game in front). Over this session in Practice Tool: starter, boots and Immortal Shieldbow bought through the shop (double-click on the tile is what buys), Q/W/E/R leveled to level 9, minimap-based lane positioning along the mid diagonal, patrol for the wave judged by income, Jev-called recalls, no deaths in the last 25 game minutes after three early ones. Jev: avg 175 ms per call over 1,599 calls, ~1.6k tokens with priced item candidates, event-driven re-asks on damage/level/death. Input only lands while the game is the active window; the loop keeps it in front. Everything is committed and pushed to origin/main (latest 44a5914). Findings in PLAN.md.
+- **Interfaces:** CLI: uv run jev doctor | keys | lcu practice|start|pick | play [--dry-run] [--logfile] [--keep-front]; modules jev/{riot_api,state,brain,keybinds,control,screen,mechanics,loop,lcu,config,doctor,cli}.py; tests/offline_loop_check.py; logs/play.log (one line per second); fixtures/<session>/ recorded states; geometry for the 1728x1117 window in jev/config.py.
+- **By:** worker · 2026-09-22T13:10:27.176Z
+

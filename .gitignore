@@ -10,3 +10,4 @@ fixtures/*.json
 __pycache__/
 *.pyc
 snapshots/
+logs/
