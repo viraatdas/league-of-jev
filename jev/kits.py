@@ -705,23 +705,33 @@ class LeeSin(Kit):
             mi.ctl.press(mi.kb.ability(1))
             self.q_at = 0.0
             mi._ordered(now, f"{mode}: Q2 dash to the champion")
-            self.burst_at = now
+            self.burst_at = self.spell_at = now
+            self.autos_since = 0
+            return True
+        # Flurry: two quick autos after each spell before the next one (energy lasts, damage goes up).
+        if (d <= 250 and now - getattr(self, "spell_at", 0.0) < 3.0 and getattr(self, "autos_since", 2) < 2
+                and mi.attack_ready(now, aspd)):
+            mi.attack(ch, now, f"{mode}: flurry auto")
+            self.autos_since = getattr(self, "autos_since", 0) + 1
             return True
         if rdy.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE * 0.9 and now - self.q_at > 3.0:
             x, y = ch.lead(now, 0.25 + d / 1800)
             mi.cast(1, x, y)
-            self.q_at = now
+            self.q_at = self.spell_at = now
+            self.autos_since = 0
             mi._ordered(now, f"{mode}: Q Sonic Wave at the champion")
             return True
         if self.e2_up(sc, now) and d <= 500 and mode == "all_in":
             mi.ctl.press(mi.kb.ability(3))
             self.e_at = 0.0
+            self.spell_at, self.autos_since = now, 0
             mi._ordered(now, f"{mode}: E2 cripple")
             return True
         if rdy.get("E") and not self.e2_up(sc, now) and d <= self.E_RADIUS - 40 and now - self.e_at > 3.0:
             mi.ctl.press(mi.kb.ability(3))
             self.e_at = now
-            self.burst_at = now
+            self.burst_at = self.spell_at = now
+            self.autos_since = 0
             mi._ordered(now, f"{mode}: E Tempest")
             return True
         if rdy.get("W") and mi.hp_pct < 45 and d <= 600:
