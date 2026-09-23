@@ -113,7 +113,7 @@ class Fast:
 
     act_hz: float = 30.0               # actor loop rate
     min_action_gap_s: float = 0.11     # at most ~545 orders a minute
-    hover_s: float = 0.004             # in-game click: cursor move -> button down
+    hover_s: float = 0.012             # in-game click: cursor move -> button down (the game must see the cursor over a unit)
     hold_s: float = 0.012              # button / key hold
     mod_gap_s: float = 0.008           # modifier down -> key
     tactic_stale_s: float = 0.45       # drop a Jev tactical answer older than this
