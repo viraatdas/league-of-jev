@@ -121,7 +121,8 @@ class Fast:
     r_watch_s: float = 1.0             # after a tornado, watch this long for R to light up
     windup_frac: float = 0.22          # share of an attack spent in wind-up; move only after it
     lasthit_margin: float = 1.0        # predicted HP must be below damage * margin
-    lasthit_lead_s: float = 0.18       # predict minion HP this far ahead (input + wind-up)
+    lasthit_lead_s: float = 0.1        # input to the game; walk and wind-up are added per minion
+    q_cast_s: float = 0.3              # Yasuo Q cast time (shortened by attack speed; approximate)
     melee_hp: tuple[float, float] = (477.0, 22.0)   # base, per 90 s (approximate)
     caster_hp: tuple[float, float] = (296.0, 8.0)
     q_base: tuple[float, ...] = (20.0, 45.0, 70.0, 95.0, 120.0)  # plus 105% AD (approximate)

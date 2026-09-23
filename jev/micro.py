@@ -123,6 +123,7 @@ class Scene:
     champ_dist: float | None = None
     killable_auto: list[Track] = field(default_factory=list)
     killable_q: list[Track] = field(default_factory=list)
+    soon_killable: list[Track] = field(default_factory=list)   # one auto kills it within ~1.2 s: get in range now
     dash_toward: Track | None = None                          # minion to E through toward the champion
     dash_options: list[tuple[Track, float]] = field(default_factory=list)  # (minion, units gained toward champion)
     ready: dict[str, bool] = field(default_factory=dict)
@@ -132,7 +133,8 @@ class Scene:
         return math.hypot(tr.unit.x - self.me_xy[0], tr.unit.y - self.me_xy[1]) / VC.px_per_unit
 
 
-def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float, q_rank: int, game_s: float, now: float, fallback_xy) -> Scene:
+def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float, q_rank: int, game_s: float, now: float, fallback_xy,
+                aspd: float = 0.7, move_speed: float = 345.0) -> Scene:
     me_xy = (view.me.x, view.me.y) if view.me else fallback_xy
     sc = Scene(me_xy=me_xy, minions=minions, allies=len(view.allies("minion")), ally_champs=view.allies("champion"))
     sc.ready = dict(view.hud.ready)
@@ -142,14 +144,23 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
         sc.champ_dist = sc.dist(sc.champ)
     hp_max = minion_max_hp(game_s)
     q_dmg = (FAST.q_base[max(0, min(q_rank, 5) - 1)] + FAST.q_ad * ad) if q_rank else 0.0
+    windup = FAST.windup_frac / max(0.3, aspd)
     for tr in minions:
         d = sc.dist(tr)
-        hp_abs = tr.predict_hp(now, FAST.lasthit_lead_s) * hp_max
-        if d <= VC.auto_range + 250 and hp_abs <= ad * FAST.lasthit_margin:
+        # Forecast the minion's HP at the moment the hit lands: input, the walk into range, the
+        # wind-up. With only the input lead, a hit that needed a walk landed after the allied
+        # minions had taken the kill ("last hit (3%)" on a dying minion, game 2).
+        walk = max(0.0, d - VC.auto_range) / max(250.0, move_speed)
+        at_hit = tr.predict_hp(now, FAST.lasthit_lead_s + walk + windup) * hp_max
+        if d <= VC.auto_range + 250 and 0 < at_hit <= ad * FAST.lasthit_margin:
             sc.killable_auto.append(tr)
-        if q_rank and d <= VC.q_range and hp_abs <= q_dmg:
+        if tr not in sc.killable_auto and tr.hp_rate(now) < 0 and 0 < tr.predict_hp(now, 1.2) * hp_max <= ad * 1.1:
+            sc.soon_killable.append(tr)
+        at_q = tr.predict_hp(now, FAST.lasthit_lead_s + FAST.q_cast_s) * hp_max
+        if q_rank and d <= VC.q_range and 0 < at_q <= q_dmg:
             sc.killable_q.append(tr)
     sc.killable_auto.sort(key=lambda t: t.unit.hp)
+    sc.soon_killable.sort(key=lambda t: t.predict_hp(now, 1.2))
     if sc.champ is not None and sc.champ_dist is not None and sc.champ_dist > VC.e_range * 0.8:
         # A minion within E range whose far side is closer to the champion than we are now.
         cx, cy = sc.champ.unit.x, sc.champ.unit.y
@@ -285,6 +296,16 @@ class Micro:
         if push and self.attack_ready(now, attack_speed):
             tgt = min(sc.minions, key=lambda t: t.unit.hp)
             self.attack(tgt, now, "push: attack lowest minion")
+            return True
+        if sc.soon_killable:
+            # About to be last-hittable: be in range when it is, so the hit needs no walk.
+            tr = sc.soon_killable[0]
+            if sc.dist(tr) > VC.auto_range - 20:
+                mx, my = sc.me_xy
+                dx, dy = tr.unit.x - mx, tr.unit.y - my
+                n = math.hypot(dx, dy) or 1.0
+                stand = (VC.auto_range - 60) * VC.px_per_unit
+                self.move_screen(tr.unit.x - dx / n * stand, tr.unit.y - dy / n * stand, now, "farm: step up for a last hit", every=0.15)
             return True
         # The wave's front line is the enemy minion furthest toward OUR side (smallest projection on
         # the lane direction), not the one nearest to us: inside the wave, the nearest one is next to

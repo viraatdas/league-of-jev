@@ -506,7 +506,8 @@ class Player:
         aspd = float(stats.get("attackSpeed", 0.7))
         q_rank = int(ap.get("abilities", {}).get("Q", {}).get("abilityLevel", 0))
         game_s = float((data.get("gameData") or {}).get("gameTime", 0.0))
-        sc = build_scene(view, minions, champs, ad, q_rank, game_s, now, config.GEOMETRY.champion_px)
+        sc = build_scene(view, minions, champs, ad, q_rank, game_s, now, config.GEOMETRY.champion_px,
+                         aspd=aspd, move_speed=float(stats.get("moveSpeed", 345.0)))
         if kit.support:
             sc.killable_auto = []  # supports leave last hits to the carry
         self.scene = sc
