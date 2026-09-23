@@ -405,6 +405,11 @@ class Mechanics:
 
     def shop(self, item: str, items_now=None) -> bool:
         with self.ctl.slow():
+            # Stand still first: an earlier move order walks the champion out of shop range while the
+            # shop is open, and an out-of-range buy only queues the item.
+            if self.ctl.keys_ok():
+                self.ctl.press(self.kb.stop)
+                time.sleep(0.15)
             return self._shop(item, items_now)
 
     def _shop(self, item: str, items_now=None) -> bool:
