@@ -182,8 +182,8 @@ class VisionReader:
         for m in masks.values():
             m[max(0, my - 20 - y0):, max(0, mx - 20 - x0):] = 0
             m[max(0, hy0 - y0):, max(0, hx0 - x0):max(0, hx1 - x0)] = 0
-            cx0, cy0, cx1, cy1 = self.vc.chat_block
-            m[max(0, cy0 - y0):max(0, cy1 - y0), max(0, cx0 - x0):max(0, cx1 - x0)] = 0
+            for bx0, by0, bx1, by1 in (self.vc.chat_block, self.vc.target_block, self.vc.portrait_block):
+                m[max(0, by0 - y0):max(0, by1 - y0), max(0, bx0 - x0):max(0, bx1 - x0)] = 0
         found = self._bars(masks, dark, x0, y0)
         units = [u for u in found if u.team != "self"]
         mine = [u for u in found if u.team == "self" and u.kind == "champion"]
@@ -191,6 +191,9 @@ class VisionReader:
         if mine:
             cx, cy = self.champion_px()
             me = min(mine, key=lambda u: u.dist_px(cx, cy))
+            # Our own resource bar (flow, mana, energy) under the HP bar reads as an allied minion.
+            units = [u for u in units if not (u.team == "ally" and u.kind == "minion" and abs(u.bar[0] - me.bar[0]) < 30
+                                              and 0 < u.bar[1] - me.bar[1] < 24)]
         return units, me
 
     def champion_px(self) -> tuple[float, float]:

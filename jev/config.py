@@ -84,6 +84,8 @@ class Vision:
     view: tuple[int, int, int, int] = (90, 70, 1728, 940)   # x0, y0, x1, y1 of the game view (no HUD, no sidebar)
     hud_block: tuple[int, int, int, int] = (285, 895, 1225, 1117)  # ability bar and item panel
     chat_block: tuple[int, int, int, int] = (0, 560, 500, 870)      # chat box: coloured names are not units
+    target_block: tuple[int, int, int, int] = (0, 55, 355, 195)     # selected-target panel (its red HP bar read as minions)
+    portrait_block: tuple[int, int, int, int] = (1335, 530, 1728, 705)  # teammate portraits above the minimap
     frame_dark_v: int = 60             # HSV value below this counts as the dark bar frame
     minion_bar_w: int = 60             # fill width of a full minion bar
     minion_bar_h: tuple[int, int] = (3, 6)
