@@ -799,8 +799,15 @@ class Player:
             self._at_camp = False
             if self.micro is not None:
                 self.micro.at_camp = False
-        if self.scene is not None and self.scene.minions:
+        # Tiny red bars (a few px) flicker around a champion carrying the red buff and read as
+        # nearly dead minions: they kept a dead camp "alive" for a minute (g07). Only a large
+        # monster or a unit above 12% keeps the camp going.
+        real = [t for t in (self.scene.minions if self.scene is not None else []) if t.unit.kind == "monster" or t.unit.hp >= 0.12]
+        if real:
             js.last_seen_monster = gt
+            js.low_seen = min(js.low_seen, min(t.unit.hp for t in real))
+            return
+        if self.scene is not None and self.scene.minions and gt - js.last_seen_monster <= 3.0:
             js.low_seen = min(js.low_seen, min(t.unit.hp for t in self.scene.minions))
             return
         # Cleared: monsters were seen here and none for 3 s; or none at all 20 s after arriving
