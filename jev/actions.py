@@ -188,9 +188,12 @@ def universal(ctx: Ctx) -> list[Spec]:
     out = [
         Spec("move", "Walk to the chosen point.", POINT, range=600, run=_move),
         Spec("attack_move", "Walk toward the chosen point, attacking the first enemy on the way.", POINT, range=500, run=_attack_move),
-        Spec("stop", "Stop moving and attacking right now (cancel).", NONE, run=_key(lambda kb: kb.stop)),
-        Spec("hold", "Hold position: stay still, only attack enemies already in range.", NONE, run=_key(lambda kb: kb.hold)),
     ]
+    if sc.champ is not None:
+        # Standing still is only a move with an enemy champion in view (bait, wait out a skillshot);
+        # offered always, Jev picked it in base and the champion idled into an AFK warning.
+        out += [Spec("stop", "Stop moving and attacking right now (cancel).", NONE, run=_key(lambda kb: kb.stop)),
+                Spec("hold", "Hold position: stay still, only attack enemies already in range.", NONE, run=_key(lambda kb: kb.hold))]
     if sc.minions or sc.champ is not None:
         out.append(Spec("attack", "Basic attack the chosen enemy unit.", UNIT, who="enemy", range=VC.auto_range + 300, run=_attack))
     return out

@@ -134,8 +134,8 @@ class TacticalBrain:
     def ask(self, inp: TacticInput) -> Tactic | None:
         t0 = time.time()
         ctx = inp.ctx
-        if not ctx.sc.minions and ctx.sc.champ is None and not ctx.ally_units:
-            return None
+        if not ctx.sc.minions and ctx.sc.champ is None and not (ctx.kit.support and ctx.ally_units):
+            return None  # nothing to fight; a laner among allies only picked hold/stop and stood in base
         specs = menu(inp)
         cands = actions.candidates(ctx)
         qs = actions.questions(ctx, specs, cands, ctx.kit.role_text(inp.plan.get("lane", "mid")), inp.opp_name)

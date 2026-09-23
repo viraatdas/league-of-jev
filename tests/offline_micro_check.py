@@ -58,7 +58,7 @@ for kit, lane in ((Yasuo(), Lane("mid", "ORDER")), (Thresh(), Lane("bot", "ORDER
         ctx2 = actions.Ctx(mi=m2, sc=sc, kit=kit, lane=lane, now=time.time(), aspd=0.7, ally_units=[], lane_progress=0.48)
         actions.execute(ctx2, s, t.cands, t.target_probs, t.where_probs, t.distance)
     names = {s.name for s in specs}
-    assert {"move", "attack_move", "stop", "hold", "attack"} <= names, names
+    assert {"move", "attack_move", "attack"} <= names and not {"stop", "hold"} & names, names  # stop/hold only with an enemy champion
     assert "flash" in names and "ignite" not in names  # no enemy champion on this frame, so ignite is filtered out
     assert "potion_slot2" in names and "ward" in names
 print("MICRO OK")

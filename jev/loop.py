@@ -270,6 +270,9 @@ class Player:
                         v = self.vision.read(frame)
                         v.ts = f.ts  # latency is measured from when the frame was captured
                         self.view = v
+                    if f.ts - getattr(self, "_dialog_checked", 0.0) >= 1.5:
+                        self._dialog_checked = f.ts
+                        self._dialog_ok = self._find_dialog_ok(frame)
                     read_ms.append((time.perf_counter() - t0) * 1000)
                     self.perceive_ms = sorted(read_ms)[len(read_ms) // 2]
                     self.frame_age_ms = (time.time() - f.ts) * 1000
@@ -299,6 +302,38 @@ class Player:
                     n, t_rate = 0, time.time()
         finally:
             cap.stop()
+
+    def _find_dialog_ok(self, frame) -> tuple[float, float] | None:
+        """The Ok button of a modal game dialog (AFK Warning, Network Warning), in frame px, or
+        None. Template match in a small box around the screen centre, about 1 ms."""
+        import cv2
+        from pathlib import Path
+
+        if not hasattr(self, "_ok_tpl"):
+            t = cv2.imread(str(Path(__file__).parent / "assets" / "dialog_ok.png"))
+            self._ok_tpl = cv2.cvtColor(t, cv2.COLOR_BGR2GRAY) if t is not None else None
+        if self._ok_tpl is None:
+            return None
+        x0, y0 = 680, 430
+        box = frame[y0:620, x0:1050]
+        g = cv2.cvtColor(box, cv2.COLOR_BGRA2GRAY if box.shape[2] == 4 else cv2.COLOR_BGR2GRAY)
+        r = cv2.matchTemplate(g, self._ok_tpl, cv2.TM_CCOEFF_NORMED)
+        _, mx, _, loc = cv2.minMaxLoc(r)
+        if mx < 0.8:
+            return None
+        h, w = self._ok_tpl.shape[:2]
+        return x0 + loc[0] + w / 2, y0 + loc[1] + h / 2
+
+    def _dismiss_dialog(self, now: float) -> bool:
+        pt = getattr(self, "_dialog_ok", None)
+        if pt is None or now - getattr(self, "_dialog_clicked", 0.0) < 3.0:
+            return False
+        self._dialog_clicked = now
+        self._dialog_ok = None
+        with self.ctl.slow():
+            self.ctl.click(*self.screen.to_points(*pt), "left")
+        self.log_lines.append("dialog: clicked Ok (AFK / network warning)")
+        return True
 
     def _api_loop(self) -> None:
         fails = 0
@@ -464,7 +499,7 @@ class Player:
             raw_minions = [u for u in raw_minions if self.lane.project(world(u))[1] < 900]
         minions = self.min_tracker.update(raw_minions, now)
         champs = self.champ_tracker.update(view.enemies("champion"), now)
-        if not minions and not champs and not view.allies("champion"):
+        if not minions and not champs and not (self.kit.support and view.allies("champion")):
             self.scene = None
             return False
         ad = float(stats.get("attackDamage", 60.0))
@@ -855,6 +890,7 @@ class Player:
                         if self.mech:
                             self.mech._last_move = 0.0
                     self._pause_guard(data, t0)
+                    self._dismiss_dialog(t0)
                     self._lasthit_check(float((data.get("activePlayer") or {}).get("currentGold", 0.0)), t0)
                     perception = self._tick(data, t0)
                     self.state = self._full_state(data, perception)
