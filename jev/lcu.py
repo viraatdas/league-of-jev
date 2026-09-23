@@ -141,8 +141,12 @@ class LCU:
         }
         return self.req("POST", "/lol-lobby/v2/lobby", payload)
 
-    def add_bot(self, champion_id: int, team: str = "200", difficulty: str = "RSINTERMEDIATE") -> tuple[int, Any]:
-        return self.req("POST", "/lol-lobby/v1/lobby/custom/bots", {"botDifficulty": difficulty, "championId": champion_id, "teamId": team})
+    def add_bot(self, champion_id: int, team: str = "200", difficulty: str = "RSINTERMEDIATE", position: str = "") -> tuple[int, Any]:
+        import uuid
+
+        return self.req("POST", "/lol-lobby/v1/lobby/custom/bots",
+                        {"botDifficulty": difficulty, "championId": champion_id, "teamId": team,
+                         "position": position, "botUuid": str(uuid.uuid4())})
 
     def start_champ_select(self) -> tuple[int, Any]:
         return self.req("POST", "/lol-lobby/v1/lobby/custom/start-champ-select")
@@ -208,10 +212,11 @@ class LCU:
             return
         bots = [b.get("id") for b in self.available_bots() if b.get("id") and b.get("id") != champion_id]
         yield f"{len(bots)} bot champions available"
-        for i, cid in enumerate(bots[:9]):
-            team = "100" if i < 4 else "200"
-            c, b = self.add_bot(cid, team, difficulty)
-            yield f"bot {cid} team {team}: {c} {b if c >= 400 else ''}"
+        slots = [("100", p) for p in ("TOP", "JUNGLE", "BOTTOM", "UTILITY")] + \
+                [("200", p) for p in ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY")]
+        for (team, pos), cid in zip(slots, bots):
+            c, b = self.add_bot(cid, team, difficulty, pos)
+            yield f"bot {cid} {team} {pos}: {c} {b if c >= 400 else ''}"
         c, b = self.start_champ_select()
         yield f"start champ select: {c} {b if c >= 400 else ''}"
         t0 = time.time()
