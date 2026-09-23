@@ -788,10 +788,15 @@ class Player:
                 self.micro.at_camp = False
         if self.scene is not None and self.scene.minions:
             js.last_seen_monster = gt
+            js.low_seen = min(js.low_seen, min(t.unit.hp for t in self.scene.minions))
             return
         # Cleared: monsters were seen here and none for 3 s; or none at all 20 s after arriving
         # (someone else took the camp). "None seen for 3 s" alone marked red cleared before it spawned.
         seen_here = js.last_seen_monster >= js.arrived_at
+        if seen_here and gt - js.last_seen_monster > 3.0 and js.low_seen > 0.35:
+            # Gone while still healthy: we walked off or it leashed (red buff back to full, g05). Retry.
+            js.arrived_at, js.last_seen_monster, js.low_seen = None, 0.0, 1.0
+            return
         if (seen_here and gt - js.last_seen_monster > 3.0) or (not seen_here and gt - js.arrived_at > 20.0):
             js.mark_cleared(js.current, gt)
             self.log_lines.append(f"jungle: cleared {list(js.cleared)[-1]} at {int(gt)}s")
