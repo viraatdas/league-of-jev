@@ -190,6 +190,7 @@ class Micro:
         self.react_ms: collections.deque[tuple[str, float]] = collections.deque(maxlen=200)
         self._later: list[tuple[float, object]] = []
         self.last_exec: dict | None = None
+        self.lh_pending: list[tuple[float, str, float]] = []   # (time, kind, minion HP fraction) awaiting a gold check
 
     def set_mode(self, mode: str, now: float) -> None:
         if mode != self.mode:
@@ -277,6 +278,7 @@ class Micro:
             return False
         if sc.killable_auto and self.attack_ready(now, attack_speed):
             self.attack(sc.killable_auto[0], now, f"last hit ({int(sc.killable_auto[0].unit.hp * 100)}%)")
+            self.lh_pending.append((now, "auto", sc.killable_auto[0].unit.hp))
             return True
         if self.in_windup(now, attack_speed):
             return True

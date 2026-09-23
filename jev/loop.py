@@ -555,6 +555,35 @@ class Player:
             mi.set_mode("all_in", now)
             self.log_lines.append(f"fight: strategy says all in (p={dd.intent_confidence:.2f})")
 
+    def _lasthit_check(self, gold: float, now: float) -> None:
+        """Did each last-hit attempt pay? A CS is a gold jump of 12+ above passive income within
+        a second of the order. Tallied by kind and minion HP bucket; logged once a minute, so
+        thresholds can be tuned from numbers instead of guesses."""
+        mi = self.micro
+        if mi is None:
+            return
+        gh = self._lh_gold = getattr(self, "_lh_gold", collections.deque(maxlen=400))
+        gh.append((now, gold))
+        stats = self._lh_stats = getattr(self, "_lh_stats", collections.defaultdict(lambda: [0, 0]))
+        keep = []
+        for t, kind, hp in mi.lh_pending:
+            if now - t < 1.1:
+                keep.append((t, kind, hp))
+                continue
+            before = [g for tt, g in gh if tt <= t]
+            after = [g for tt, g in gh if t < tt <= t + 1.1]
+            ok = bool(before and after) and max(after) - before[-1] >= 12 + 2.1 * 1.1
+            key = f"{kind} {int(hp * 100) // 5 * 5}%"
+            stats[key][0] += 1
+            stats[key][1] += int(ok)
+            stats[kind][0] += 1
+            stats[kind][1] += int(ok)
+        mi.lh_pending = keep
+        if now - getattr(self, "_lh_logged", 0.0) > 60 and stats:
+            self._lh_logged = now
+            parts = [f"{k} {v[1]}/{v[0]}" for k, v in sorted(stats.items())]
+            self.log_lines.append("lasthits paid: " + ", ".join(parts))
+
     def _pause_guard(self, data: dict, now: float) -> None:
         """Game time frozen for 10 s with the API alive: the game is paused (only possible in custom
         games). Log it and type /unpause once per pause."""
@@ -826,6 +855,7 @@ class Player:
                         if self.mech:
                             self.mech._last_move = 0.0
                     self._pause_guard(data, t0)
+                    self._lasthit_check(float((data.get("activePlayer") or {}).get("currentGold", 0.0)), t0)
                     perception = self._tick(data, t0)
                     self.state = self._full_state(data, perception)
                     self.dlog.resolve(self._metrics())

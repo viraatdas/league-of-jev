@@ -234,6 +234,8 @@ def summoner_specs(ctx: Ctx, names: list[str | None]) -> list[Spec]:
         tt, who, rng, text = SUMMONERS[name]
         if tt == UNIT and who == "enemy_champion" and ctx.sc.champ is None:
             continue
+        if name == "ignite" and ctx.sc.champ.unit.hp > 0.45:
+            continue  # ignite is a finisher: burned at full HP it only wasted the spell (bot game 4: 3 uses, no kills)
         out.append(Spec(name, f"{hud}: {text}", tt, who=who, range=rng,
                         run=cast_run(lambda kb, i=i: kb.summoner(i + 1), f"evtCastAvatarSpell{i + 1}")))
     return out
