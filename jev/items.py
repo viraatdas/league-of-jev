@@ -356,11 +356,49 @@ class ShopBrain:
         self.lock = threading.Lock()
 
     def decide(self, data: dict, my_team: str) -> BuildPlan:
+        prev = self.plan
         prior = dict(self.needs)
         plan = self._decide(data, my_team)
         if max(abs(plan.needs[k] - prior.get(k, 0.3)) for k in plan.needs) > 0.3:
             plan = self._decide(data, my_team)  # the shortlist was built on stale needs: ask again
-        return plan
+        return self._stick(prev, plan, data, my_team)
+
+    def _components(self, item: Item) -> set[str]:
+        out: set[str] = set()
+        for c in item.from_ids:
+            ci = self.catalog.items.get(c)
+            if ci is not None:
+                out.add(ci.name)
+                out |= self._components(ci)
+        return out
+
+    def _stick(self, prev: "BuildPlan | None", plan: "BuildPlan", data: dict, my_team: str) -> "BuildPlan":
+        """Finish what was started: when we own a component of the previous target and have not
+        completed it, keep that target unless Jev now clearly prefers something else (by 0.15).
+        Close calls otherwise flip-flop and buy pieces of two different items."""
+        if prev is None or prev.target == plan.target:
+            return plan
+        target = self.catalog.get(prev.target)
+        if target is None:
+            return plan
+        ap = data.get("activePlayer", {})
+        me = next((p for p in data.get("allPlayers", []) if p.get("team") == my_team and
+                   (p.get("riotId") == ap.get("riotId") or p.get("summonerName") == ap.get("summonerName"))), {})
+        owned = [i.get("displayName") for i in me.get("items", []) if i.get("displayName")]
+        started = any(o in self._components(target) for o in owned)
+        if prev.target in owned or not started:
+            return plan
+        if plan.probabilities.get(plan.target, 0) - plan.probabilities.get(prev.target, 0) >= 0.15:
+            return plan
+        gold = float(ap.get("currentGold", 0.0))
+        buys = self.catalog.purchases(target, owned, gold)
+        stuck = BuildPlan(target=target.name, confidence=plan.probabilities.get(target.name, prev.confidence),
+                          probabilities=plan.probabilities, needs=plan.needs, buy_now=[b.name for b in buys],
+                          buy_now_cost=sum(b.price for b in buys), ts=plan.ts, latency_ms=plan.latency_ms,
+                          shortlist=plan.shortlist)
+        with self.lock:
+            self.plan = stuck
+        return stuck
 
     def _decide(self, data: dict, my_team: str) -> BuildPlan:
         t0 = time.time()
