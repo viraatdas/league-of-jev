@@ -1245,6 +1245,14 @@ class Player:
                 return p
 
         jdest = self.decision.destination if self.decision is not None else None
+        if self.intent in ("go_to", "group") and jdest in ("dragon_pit", "baron_pit"):
+            # An objective needs the team there: alone, a level-3 Lee attack-moved in the dragon pit
+            # for two minutes (g07) and the bots never came. Go only when two allies are near it.
+            pit = map_places.places(self.side)[jdest][0]
+            mm = self.mm_state
+            allies_near = sum(1 for a in (mm.ally_champions if mm is not None else []) if dist(a, pit) < 2500)
+            if allies_near < 2:
+                self.intent = "farm"
         if self.jungle_state is not None and self.intent in ("go_to", "group"):
             gt_now = float((data.get("gameData") or {}).get("gameTime", 0.0))
             p_go = d0.intent_probabilities.get(self.intent, 0.0) if d0 is not None else 0.0
