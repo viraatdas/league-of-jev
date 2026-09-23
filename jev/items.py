@@ -284,7 +284,10 @@ def shortlist(catalog: Catalog, owned: list[str], needs: dict[str, float], game_
         if it is not None and it.name.lower() not in owned_l and it not in picks:
             picks.append(it)
 
-    if game_min < 1.5 and not owned:
+    TRINKETS = ("stealth ward", "oracle lens", "farsight alteration")
+    if game_min < 1.5 and not [o for o in owned_l if o not in TRINKETS]:
+        # (The trinket everyone spawns with does not count: with it, no starter was ever offered
+        # and a jungler bought toward Eclipse instead of his pet.)
         for s in profile.starters:
             add(catalog.get(s))
     if not has_boots:
