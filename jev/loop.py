@@ -601,7 +601,11 @@ class Player:
             return
         if ch is None or getattr(self, "_near_enemy_tower", False):
             return
-        if ch.unit.hp < 0.25 and d < 650 and mi.hp_pct > 35:
+        recent = [h for t, h in ch.hist if now - t <= 0.5]
+        steady_low = len(recent) >= 3 and sorted(recent)[len(recent) // 2] < 0.25 and max(recent) < 0.4
+        # One low reading is not a kill window: an overlapped bar read Kayle at 15% while she had
+        # 79%, and the all-in cost Yasuo 30% HP (game 4). The median of half a second must agree.
+        if steady_low and d < 650 and mi.hp_pct > 35:
             mi.set_mode("all_in", now)
             self.log_lines.append(f"fight: kill window ({ch.unit.hp * 100:.0f}% at {d:.0f}u), all in")
             return
