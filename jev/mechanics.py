@@ -417,7 +417,9 @@ class Mechanics:
         HUD shop button, then either a recommended card or the search box plus the first result
         tile; a double-click on a tile is what buys (verified live, Enter and PURCHASE do not).
         Closed with the X. The search box needs typing, so it is used only while keys land."""
-        before = set(items_now()) if items_now else set()
+        import collections
+
+        before = collections.Counter(items_now()) if items_now else collections.Counter()
 
         def bought() -> bool:
             # The game API's inventory lags the shop by up to a couple of seconds: poll before
@@ -426,7 +428,7 @@ class Mechanics:
                 return False
             for _ in range(10):
                 time.sleep(0.25)
-                if set(items_now()) - before:
+                if collections.Counter(items_now()) - before:
                     return True
             return False
 

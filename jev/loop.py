@@ -1062,9 +1062,10 @@ class Player:
         return (gold - g0) > passive + 12 or cs > cs0
 
     def _items_now(self) -> list[str]:
+        """Item names, repeated by stack count (a second potion changes the list, not just the set)."""
         d = self.riot.all_game_data() or {}
         me = find_me(d) or {}
-        return [i.get("displayName", "") for i in me.get("items", [])]
+        return [i.get("displayName", "") for i in me.get("items", []) for _ in range(max(1, int(i.get("count", 1) or 1)))]
 
     def _shop_if_possible(self, gold: float) -> None:
         """Buy toward the build plan's target: the item if the gold covers what is left of its
