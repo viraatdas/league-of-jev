@@ -480,6 +480,12 @@ class Overlay:
         self.panel.orderFrontRegardless()
 
     def run_forever(self) -> None:
+        # Ctrl-C in the terminal quits: AppKit's run loop would otherwise swallow the interrupt.
+        # The 10 Hz timer keeps Python running, so the handler fires within 0.1 s.
+        import os
+        import signal
+
+        signal.signal(signal.SIGINT, lambda *_: os._exit(0))
         NSApp.run()
 
 
