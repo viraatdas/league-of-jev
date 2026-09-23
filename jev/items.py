@@ -294,6 +294,8 @@ def shortlist(catalog: Catalog, owned: list[str], needs: dict[str, float], game_
         # and a jungler bought toward Eclipse instead of his pet.)
         for s in profile.starters:
             add(catalog.get(s))
+        if pet_missing and picks:
+            return picks  # nothing else is offered until the pet is bought
     if not has_boots:
         for b in profile.boots[:3]:
             add(catalog.get(b))
