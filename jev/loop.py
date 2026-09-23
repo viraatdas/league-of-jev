@@ -1085,6 +1085,13 @@ class Player:
                 return p
 
         jdest = self.decision.destination if self.decision is not None else None
+        if self.jungle_state is not None and self.intent in ("go_to", "group"):
+            gt_now = float((data.get("gameData") or {}).get("gameTime", 0.0))
+            p_go = d0.intent_probabilities.get(self.intent, 0.0) if d0 is not None else 0.0
+            if int(ap.get("level", 1)) < 3 or gt_now < 195 or p_go < 0.5:
+                # First clear before any roam (level 1 Lee walked to mid at 1:51 with no camp taken),
+                # and later only a confident call pulls the jungler off his camps.
+                self.intent = "farm"
         if self.jungle_state is not None and self.intent in ("go_to", "group") and (
                 jdest in ("my_red_buff", "my_blue_buff") or not jdest or "jungle" in str(jdest)):
             # A jungler sent to its own buff (or nowhere in particular) clears camps rather than just
