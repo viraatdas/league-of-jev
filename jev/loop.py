@@ -518,6 +518,23 @@ class Player:
             mi.reacted("lasthit", view.ts)
         return ok
 
+    def _pause_guard(self, data: dict, now: float) -> None:
+        """Game time frozen for 10 s with the API alive: the game is paused (only possible in custom
+        games). Log it and type /unpause once per pause."""
+        gt = float((data.get("gameData") or {}).get("gameTime", 0.0))
+        if gt != getattr(self, "_gt_last", None):
+            self._gt_last, self._gt_changed_at, self._unpaused = gt, now, False
+            return
+        if now - self._gt_changed_at > 10.0 and not self._unpaused and self.ctl.keys_ok():
+            self._unpaused = True
+            self.log_lines.append("game paused: typing /unpause")
+            with self.ctl.slow():
+                self.ctl.key("return")
+                time.sleep(0.4)
+                self.ctl.type_text("/unpause", per_char_ms=90)
+                time.sleep(0.3)
+                self.ctl.key("return")
+
     def _smite_reflex(self, ctx, inp, now: float) -> bool:
         """Smite the camp's big monster when it is low (large monsters first, else the healthiest
         red bar there, since the big one outlasts the small ones)."""
@@ -768,6 +785,7 @@ class Player:
                         self.paused = False
                         if self.mech:
                             self.mech._last_move = 0.0
+                    self._pause_guard(data, t0)
                     perception = self._tick(data, t0)
                     self.state = self._full_state(data, perception)
                     self.dlog.resolve(self._metrics())
