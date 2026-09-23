@@ -77,6 +77,15 @@ def _front_window_pid() -> int | None:
     return None
 
 
+def session_on_console() -> bool:
+    """True when this process's login session is the one on the physical screen."""
+    try:
+        d = Quartz.CGSessionCopyCurrentDictionary()
+        return bool(d.get("kCGSSessionOnConsoleKey", True)) if d is not None else True
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def game_is_frontmost() -> bool:
     name = frontmost_app_name().lower()
     if name:
@@ -140,6 +149,10 @@ class Controller:
         self.to_pid = to_pid
         self.pid: int | None = game_pid() if to_pid else None
         self.blocked = 0
+        # On the console (your screen) input goes to the HID tap, the same path as a real keyboard.
+        # In a background session (offstage's helper account) the HID tap would land on the console
+        # user's screen, so input goes to this session's own tap instead.
+        self.tap = kCGHIDEventTap if session_on_console() else Quartz.kCGSessionEventTap
         # Fast timings for in-game orders; slow() switches to UI-safe timings (shop, menus).
         from jev import config
         self.fast = config.FAST
@@ -197,7 +210,7 @@ class Controller:
         if self.to_pid and self.pid is not None:
             CGEventPostToPid(self.pid, ev)
         else:
-            CGEventPost(kCGHIDEventTap, ev)
+            CGEventPost(self.tap, ev)
 
     # -- mouse -----------------------------------------------------------------
     def move(self, x: float, y: float) -> None:
