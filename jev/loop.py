@@ -970,6 +970,7 @@ class Player:
         self.mech = Mechanics(self.ctl, self.screen, self.kb, side, lane=self.lane, skill_order=self.kit.skill_order)
         self.mech.blind_q_enabled = self.vision is None
         self.micro = Micro(self.ctl, self.screen, self.kb, side)
+        self.micro.on_fight_order = lambda what: self.log_lines.append(f"order: {what}")
         self.jungle_state = JungleState(side) if getattr(self.kit, "jungle", False) else None
         if self.jungle_state is not None and "smite" not in actions.summoner_names(me):
             # The jungle pets need Smite; without it the pet buy fails and he left base empty-handed.

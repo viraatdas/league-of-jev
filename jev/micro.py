@@ -253,10 +253,16 @@ class Micro:
     def _can_order(self, now: float) -> bool:
         return now - self.last_order >= FAST.min_action_gap_s
 
+    FIGHT_WORDS = ("trade:", "all_in:", "R ", "ignite", "Q3 tornado", "E+Q", "escape", "Smite", "flash", "Flash", "W wind wall",
+                   "Sonic Wave", "Q2 dash", "R kick", "E Tempest")
+    on_fight_order = None  # the loop sets a callback that writes fight orders to the event log
+
     def _ordered(self, now: float, what: str) -> None:
         self.last_order = now
         self.last_action = what
         self.last_action_t = now
+        if self.on_fight_order is not None and any(k in what for k in self.FIGHT_WORDS):
+            self.on_fight_order(what)
         self.orders += 1
 
     def attack_ready(self, now: float, attack_speed: float) -> bool:
