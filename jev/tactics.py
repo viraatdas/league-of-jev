@@ -65,6 +65,11 @@ def tactical_state(inp: TacticInput, cands: dict) -> dict:
         "my_tower_is": actions.compass(-fx, -fy),
         "enemy_minions_on_screen": len(sc.minions),
         "ally_minions_on_screen": sc.allies,
+        # Trade context: dashing into the enemy's wave draws every minion's aggro, and levels decide
+        # early trades.
+        "enemy_minions_around_enemy_champion": kit.minions_near_champ(sc) if sc.champ is not None else None,
+        "my_level_minus_enemy_level": ((me.get("level") or 0) - ((inp.api.get("lane_opponent") or {}).get("level") or 0))
+                                      if inp.api.get("lane_opponent") else None,
     }
 
 
