@@ -194,22 +194,45 @@ class LCU:
                     return int(q["id"])
         return None
 
-    def set_spells(self, position: str, tries: int = 6) -> tuple[int, Any]:
+    SELECTION_PATHS = ("/lol-champ-select/v1/session/my-selection",
+                       "/lol-lobby-team-builder/champ-select/v1/session/my-selection",
+                       "/lol-champ-select-legacy/v1/session/my-selection")
+
+    def my_spells(self) -> tuple[int | None, int | None]:
+        c2, sess = self.req("GET", "/lol-champ-select/v1/session")
+        if c2 != 200 or not isinstance(sess, dict):
+            return None, None
+        cell = sess.get("localPlayerCellId")
+        me = next((p for p in sess.get("myTeam", []) if p.get("cellId") == cell), {})
+        return me.get("spell1Id"), me.get("spell2Id")
+
+    def set_spell_ids(self, s1: int, s2: int, tries: int = 2) -> tuple[bool, str]:
+        """PATCH each my-selection endpoint in turn until the session reads back the spells.
+        Returns (ok, what happened) for the log."""
+        notes = []
+        for _ in range(tries):
+            for path in self.SELECTION_PATHS:
+                code, body = self.req("PATCH", path, {"spell1Id": s1, "spell2Id": s2})
+                time.sleep(0.7)
+                got = self.my_spells()
+                notes.append(f"{path.split('/')[1]}:{code}->{got}")
+                if set(got) == {s1, s2}:
+                    return True, " ".join(notes)
+        return False, " ".join(notes)
+
+    def set_spells(self, position: str, tries: int = 2) -> tuple[int, Any]:
         """Set the summoner spells for the position and read them back (a 204 alone did not mean
         they stuck: a Lee Sin jungle game started with Flash + Ignite)."""
         s1, s2 = SPELLS_BY_POSITION.get((position or "").lower(), SPELLS_BY_POSITION[""])
-        code, body = 0, None
-        for _ in range(tries):
-            code, body = self.req("PATCH", "/lol-champ-select/v1/session/my-selection", {"spell1Id": s1, "spell2Id": s2})
-            time.sleep(0.6)
-            c2, sess = self.req("GET", "/lol-champ-select/v1/session")
-            if c2 == 200:
-                cell = sess.get("localPlayerCellId")
-                me = next((p for p in sess.get("myTeam", []) if p.get("cellId") == cell), {})
-                if {me.get("spell1Id"), me.get("spell2Id")} == {s1, s2}:
-                    return code, {"spells": [s1, s2]}
-            time.sleep(0.6)
-        return code, {"spells_not_confirmed": [s1, s2], "last": body}
+        ok, notes = self.set_spell_ids(s1, s2, tries)
+        return (204 if ok else 0), ({"spells": [s1, s2], "how": notes[-160:]} if ok else {"spells_not_confirmed": [s1, s2], "tried": notes})
+
+    def probe_spells(self) -> str:
+        """Diagnostic: switch to Flash + Smite and back, reporting what each endpoint did."""
+        before = self.my_spells()
+        ok1, n1 = self.set_spell_ids(4, 11, tries=1)
+        ok2, n2 = self.set_spell_ids(*(before if None not in before else (4, 14)), tries=1)
+        return f"probe before={before} to-smite ok={ok1} [{n1}] back ok={ok2} [{n2}]"
 
     def available_bots(self) -> list[dict]:
         code, bots = self.req("GET", "/lol-lobby/v2/lobby/custom/available-bots")
@@ -248,7 +271,12 @@ class LCU:
                                 # Spells before locking: set after the lock (finalization) they were
                                 # accepted with a 204 and silently ignored.
                                 self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": champion_id})
-                                c2, b2 = self.set_spells(position, tries=3)
+                                from pathlib import Path
+                                probe = Path("logs/night/PROBE_SPELLS")
+                                if probe.exists():
+                                    probe.unlink()
+                                    yield self.probe_spells()
+                                c2, b2 = self.set_spells(position)
                                 yield f"spells: {c2} {b2}"
                                 c1, b1 = self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": champion_id, "completed": True})
                                 yield f"pick {champion_id}: {c1} {b1 if c1 >= 400 else ''}"

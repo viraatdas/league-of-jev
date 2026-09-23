@@ -1,5 +1,6 @@
 """Lee Sin jungler in dry run: leaves base toward the first camp on the route (red buff on the
-blue side), and marks a camp cleared after standing there with no monsters in sight."""
+blue side), and marks a camp cleared after standing there 20 s with no monsters in sight
+(someone else took it)."""
 import time
 
 from jev.brain import Decision
@@ -28,10 +29,10 @@ print("heading to:", p.jungle_state.current, "|", p.mech.last_action)
 assert p.jungle_state.current == "red" and "jungle: to red" in p.mech.last_action
 red = camps("ORDER")["red"]
 p.mm_state = MinimapState(self_pos=red, ts=time.time())
-for i in range(1, 12):
+for i in range(1, 24):
     data["gameData"]["gameTime"] = 100.0 + i
     p.mm_state.ts = time.time()
     p._tick(data, now + i)
-print("cleared:", p.jungle_state.cleared, "next:", p.jungle_state.next_camp(red, 112.0))
-assert "red" in p.jungle_state.cleared and p.jungle_state.next_camp(red, 112.0) == "krugs"
+print("cleared:", p.jungle_state.cleared, "next:", p.jungle_state.next_camp(red, 124.0))
+assert "red" in p.jungle_state.cleared and p.jungle_state.next_camp(red, 124.0) == "krugs"
 print("JUNGLE OK")

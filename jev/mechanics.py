@@ -424,15 +424,21 @@ class Mechanics:
         def bought() -> bool:
             # The game API's inventory lags the shop by up to a couple of seconds: poll before
             # calling it a failure (a too-early check logged real purchases as failed and retried).
+            # A different item than wanted is undone (a Lee Sin without Smite could not buy the
+            # jungle pet and a fallback click bought a Doran's Blade, logged as the pet).
             if not items_now:
                 return False
             for _ in range(10):
                 time.sleep(0.25)
                 new = collections.Counter(items_now()) - before
                 if new:
-                    if item.lower() not in {n.lower() for n in new}:
-                        self.last_action = f"shop: wanted {item}, got {', '.join(new)}"
-                    return True
+                    if item.lower() in {n.lower() for n in new}:
+                        return True
+                    self.last_action = f"shop: wanted {item}, got {', '.join(new)}: undo"
+                    if self.geo.shop_undo:
+                        self.ctl.click(*self._pt(self.geo.shop_undo), "left")
+                        time.sleep(0.8)
+                    return False
             return False
 
         if self.geo.shop_button:

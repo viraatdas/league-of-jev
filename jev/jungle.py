@@ -39,7 +39,7 @@ class JungleState:
     last_seen_monster: float = 0.0
 
     def up(self, camp: str, gt: float) -> bool:
-        if gt < FIRST_SPAWN - 5:
+        if gt < FIRST_SPAWN:
             return False
         t = self.cleared.get(camp)
         return t is None or gt - t >= RESPAWN[camp]

@@ -178,10 +178,12 @@ def run(champion: str = "yasuo", minutes: float = 18.0, tag: str = "", difficult
 
 
 def night(rotation: str = "yasuo,leesin", minutes: float = 16.0, games: int = 30) -> None:
-    """Back-to-back games. The rotation is re-read before each game from logs/night/rotation.txt
-    when it exists (comma separated), so it can be changed while the loop runs; creating
-    logs/night/STOP ends the loop after the current game."""
+    """Back-to-back games, each in its own `jev session` process so every game runs the latest
+    code. The rotation is re-read before each game from logs/night/rotation.txt when it exists
+    (comma separated); creating logs/night/STOP ends the loop after the current game. A game
+    already running is supervised under its own tag first."""
     import re
+    import sys
 
     logs = Path("logs/night")
     logs.mkdir(parents=True, exist_ok=True)
@@ -191,18 +193,22 @@ def night(rotation: str = "yasuo,leesin", minutes: float = 16.0, games: int = 30
             _say("STOP file found: ending the night loop")
             stop.unlink()
             return
-        rot_file = logs / "rotation.txt"
-        rot = (rot_file.read_text().strip() if rot_file.exists() else rotation).split(",")
-        rot = [r.strip() for r in rot if r.strip()]
-        done = [int(m.group(1)) for f in logs.glob("g*_*.log") if (m := re.match(r"g(\d+)_", f.name))]
-        n = max(done, default=0) + 1
-        champ = rot[(n - 1) % len(rot)]
-        _say(f"=== game {n}: {champ} ===")
-        try:
-            r = run(champ, minutes, f"g{n:02d}_{champ}")
-            _say(f"=== game {n} ended: {r.get('ended')} ===")
-        except Exception as e:  # noqa: BLE001
-            _say(f"=== game {n} failed: {type(e).__name__}: {e} ===")
+        tags = sorted((f.stem for f in logs.glob("g*_*.log")), key=lambda t: int(re.match(r"g(\d+)_", t).group(1)))
+        if game_alive() and tags:
+            tag = tags[-1]
+            champ = tag.split("_", 1)[1]
+            _say(f"=== supervising the running game {tag} ===")
+        else:
+            rot_file = logs / "rotation.txt"
+            rot = [r.strip() for r in (rot_file.read_text() if rot_file.exists() else rotation).split(",") if r.strip()]
+            n = (int(re.match(r"g(\d+)_", tags[-1]).group(1)) if tags else 0) + 1
+            champ = rot[(n - 1) % len(rot)]
+            tag = f"g{n:02d}_{champ}"
+            _say(f"=== game {tag} ===")
+        r = subprocess.run(["uv", "run", "jev", "session", "--champion", champ, "--minutes", str(minutes), "--tag", tag],
+                           stdout=sys.stdout, stderr=subprocess.STDOUT)
+        _say(f"=== {tag} session exited with {r.returncode} ===")
+        if r.returncode != 0:
             stop_harness()
             if game_alive():
                 kill_game()

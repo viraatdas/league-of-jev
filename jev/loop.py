@@ -19,7 +19,7 @@ from jev.mechanics import Mechanics
 from jev.decisions import DecisionLog
 from jev.brain import legal_level_ups
 from jev.items import BuildPlan, ShopBrain, enemy_team
-from jev.jungle import BIG, JungleState, camps
+from jev.jungle import BIG, FIRST_SPAWN, JungleState, camps
 from jev import places as map_places
 from jev.kits import FIGHT_MODES, Kit, kit_for
 from jev.lanes import LANE_LETTER, Lane, lane_for
@@ -671,17 +671,20 @@ class Player:
             m.go_map(pt, now, attack=False, every=1.0)
             m.last_action = f"jungle: to {js.current}"
             return
-        if js.arrived_at is None:
-            js.arrived_at = gt
         if not js.up(js.current, gt):
             m.last_action = f"jungle: waiting for {js.current}"
             return
+        if js.arrived_at is None or js.arrived_at < FIRST_SPAWN:
+            js.arrived_at = max(gt, FIRST_SPAWN)
         sc_before = len(self.min_tracker.tracks)
         acted = self._micro_step(data, ap, stats, now, standing=True, camp_pt=pt, camp_big=big)
         if self.scene is not None and self.scene.minions:
             js.last_seen_monster = gt
             return
-        if gt - js.arrived_at > 5.0 and gt - js.last_seen_monster > 3.0:
+        # Cleared: monsters were seen here and none for 3 s; or none at all 20 s after arriving
+        # (someone else took the camp). "None seen for 3 s" alone marked red cleared before it spawned.
+        seen_here = js.last_seen_monster >= js.arrived_at
+        if (seen_here and gt - js.last_seen_monster > 3.0) or (not seen_here and gt - js.arrived_at > 20.0):
             js.mark_cleared(js.current, gt)
             self.log_lines.append(f"jungle: cleared {list(js.cleared)[-1]} at {int(gt)}s")
             return
