@@ -1125,6 +1125,7 @@ class Player:
             d_f = math.dist(mmp, fountain)
             if d_f > 3000:
                 self._fountain_shopped = False
+                self._shop_fails = {}
             elif (d_f < 2400 and not getattr(self, "_fountain_shopped", False) and float(ap.get("currentGold", 0)) >= 75
                   and (self.dry_run or self.ctl.keys_ok()) and now - getattr(self, "_fountain_try_t", 0.0) > 5.0):
                 # Retry every 5 s while in the fountain until something is bought (a first attempt
@@ -1337,21 +1338,21 @@ class Player:
             target = cat.get(self.build.target)
             if target is not None:
                 names = [b.name for b in cat.purchases(target, self._items_now(), gold)]
-            spent = sum(cat.get(n).price for n in names if cat.get(n))
-            game_min = float((self.data or {}).get("gameData", {}).get("gameTime", 0.0)) / 60
-            potions = sum(1 for i in self._items_now() if "potion" in i.lower())
-            if game_min < 12 and potions < 2 and gold - spent >= 50:
-                names.append("Health Potion")
+            # (No extra Health Potion: typing its name also matches every item mentioning health,
+            # so it failed 16 times in two games; the starting bundle already has one.)
         if not names:
             first = self.kit.items.starters[0] if self.kit.items.starters else "Doran's Blade"
             names = [first] if gold >= 400 else []
         bought_any = False
+        fails = self._shop_fails = getattr(self, "_shop_fails", {})  # reset when we leave the fountain
+        names = [n for n in names if fails.get(n, 0) < 2]  # an item that failed twice this visit is skipped
         for item in names:
             if self.mech.shop(item, self._items_now):
                 self.log_lines.append(f"shop: bought {item}")
                 bought_any = True
             else:
                 self.log_lines.append(f"shop: could not buy {item}")
+                fails[item] = fails.get(item, 0) + 1
                 break
         # Spend the rest: re-plan with the new inventory and gold, up to two more rounds.
         for _ in range(2):
