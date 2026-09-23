@@ -273,6 +273,7 @@ class Player:
                     if f.ts - getattr(self, "_dialog_checked", 0.0) >= 1.5:
                         self._dialog_checked = f.ts
                         self._dialog_ok = self._find_dialog_ok(frame)
+                        self._shop_seen = self._shop_panel_open(frame)
                     read_ms.append((time.perf_counter() - t0) * 1000)
                     self.perceive_ms = sorted(read_ms)[len(read_ms) // 2]
                     self.frame_age_ms = (time.time() - f.ts) * 1000
@@ -336,6 +337,41 @@ class Player:
             return None
         h, w = self._ok_tpl.shape[:2]
         return x0 + loc[0] + w / 2, y0 + loc[1] + h / 2
+
+    def _shop_panel_open(self, frame) -> bool:
+        """The shop's SELL / UNDO buttons are on screen (template match, about 1 ms)."""
+        import cv2
+        from pathlib import Path
+
+        if not hasattr(self, "_shop_tpl"):
+            t = cv2.imread(str(Path(__file__).parent / "assets" / "shop_sell_undo.png"))
+            self._shop_tpl = cv2.cvtColor(t, cv2.COLOR_BGR2GRAY) if t is not None else None
+        if self._shop_tpl is None:
+            return False
+        box = frame[790:880, 360:640]
+        g = cv2.cvtColor(box, cv2.COLOR_BGRA2GRAY if box.shape[2] == 4 else cv2.COLOR_BGR2GRAY)
+        return float(cv2.matchTemplate(g, self._shop_tpl, cv2.TM_CCOEFF_NORMED).max()) > 0.8
+
+    def _close_stray_shop(self, now: float) -> bool:
+        """A shop left open outside a purchase swallows every click and the level-up keys (Lee Sin
+        stood in the jungle with it open until the AFK warning, game 3): close it with its X."""
+        if not getattr(self, "_shop_seen", False) or getattr(self, "_shopping", False):
+            self._shop_open_since = None
+            return False
+        if getattr(self, "_shop_open_since", None) is None:
+            self._shop_open_since = now
+        if now - self._shop_open_since < 2.0 or now - getattr(self, "_shop_closed_t", 0.0) < 3.0:
+            return False
+        self._shop_closed_t = now
+        g = config.GEOMETRY
+        with self.ctl.slow():
+            if g.shop_close:
+                self.ctl.click(*self.screen.to_points(*g.shop_close), "left")
+            else:
+                self.ctl.press(self.kb.shop)
+        self._shop_seen = False
+        self.log_lines.append("shop: closed a shop left open")
+        return True
 
     def _dismiss_dialog(self, now: float) -> bool:
         pt = getattr(self, "_dialog_ok", None)
@@ -933,6 +969,7 @@ class Player:
                             self.mech._last_move = 0.0
                     self._pause_guard(data, t0)
                     self._dismiss_dialog(t0)
+                    self._close_stray_shop(t0)
                     self._lasthit_check(float((data.get("activePlayer") or {}).get("currentGold", 0.0)), t0)
                     perception = self._tick(data, t0)
                     self.state = self._full_state(data, perception)
@@ -1087,7 +1124,9 @@ class Player:
                 return p  # not in shop range yet (recall still landing): wait
             if not self.dry_run and not self.ctl.keys_ok():
                 return p  # input cannot reach the game yet (loading / not in front): shop once it can
-            if gold >= 50 and self._at_fountain() is not False:
+            if gold >= 50 and self._at_fountain() is True:
+                # Only where the minimap confirms the fountain: with the position unknown the shop
+                # opened in lane, queued an item, and stayed open over the game (game 2).
                 self._shop_if_possible(gold)
             self._base_shop_done = True
             del self._base_since
@@ -1250,6 +1289,14 @@ class Player:
         recipe, else its most valuable affordable components. Re-planned against current gold."""
         if self.mech is None:
             return
+        self._shopping = True
+        try:
+            self._shop_plan_and_buy(gold)
+        finally:
+            self._shopping = False
+            self._shop_open_since = None
+
+    def _shop_plan_and_buy(self, gold: float) -> None:
         names: list[str] = []
         if self.shop_brain is not None:
             # Re-plan right before buying: a plan made before the last purchase names items we now own.

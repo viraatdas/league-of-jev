@@ -689,7 +689,7 @@ class LeeSin(Kit):
                 return True
             if mi.attack_ready(now, aspd):
                 tgt = min(sc.minions, key=lambda t: (t.unit.hp, sc.dist(t)))
-                mi.attack(tgt, now, f"attack camp ({tgt.unit.kind} {int(tgt.unit.hp * 100)}% at {int(sc.dist(tgt))}u)")
+                mi.attack(tgt, now, f"attack camp ({tgt.unit.kind} {int(tgt.unit.hp * 100)}% at {int(sc.dist(tgt))}u)", right_click=True)
             return True
         return super().continuous(mi, sc, now, aspd, mode, pushing)
 

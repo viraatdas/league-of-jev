@@ -254,12 +254,17 @@ class Micro:
     def in_windup(self, now: float, attack_speed: float) -> bool:
         return now - self.last_attack < FAST.windup_frac / max(0.3, attack_speed) + 0.05
 
-    def attack(self, tr: Track, now: float, what: str) -> None:
+    def attack(self, tr: Track, now: float, what: str, right_click: bool = False) -> None:
         # Attack-move click on the unit (A, then left click): the game attacks the unit nearest the
         # cursor, so it lands even when the click point is a little off the model or the cursor has
         # not been registered over the unit yet (a bare right-click then becomes a move order).
+        # Jungle monsters get a right-click on the body: an attack-move does not start a fight with
+        # a camp that is not already fighting us.
         pt = self._pt(tr.unit.x, tr.unit.y)
-        self.ctl.attack_move(self.kb.attack_move, *pt)
+        if right_click:
+            self.ctl.click(*pt, "right")
+        else:
+            self.ctl.attack_move(self.kb.attack_move, *pt)
         self.last_attack = now
         self._ordered(now, what)
         self.last_exec = {"name": what, "what": what, "ts": now, "target": pt, "point": None}
