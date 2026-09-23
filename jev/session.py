@@ -196,6 +196,32 @@ def client_ready() -> bool:
         return False
 
 
+LOL_DIR = Path("/Applications/League of Legends.app/Contents/LoL")
+
+
+def refresh_patched_binaries(hours: float = 24.0) -> int:
+    """Copy every Mach-O file the patcher rewrote in the last `hours` onto a fresh inode.
+    A signed binary rewritten in place keeps the kernel's cached signature for that file, so it
+    is killed at launch ("load code signature error 2", exit 9 after 67 ms; patch 16.19 night)."""
+    cutoff = time.time() - hours * 3600
+    n = 0
+    for f in LOL_DIR.rglob("*"):
+        try:
+            if not f.is_file() or f.is_symlink() or f.stat().st_mtime < cutoff:
+                continue
+            with open(f, "rb") as fh:
+                magic = fh.read(4)
+            if magic not in (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xce\xfa\xed\xfe"):
+                continue
+            tmp = f.with_name(f.name + ".jevtmp")
+            subprocess.run(["cp", "-p", str(f), str(tmp)], check=True)
+            os.replace(tmp, f)
+            n += 1
+        except (OSError, subprocess.CalledProcessError):
+            continue
+    return n
+
+
 def relaunch_client() -> str:
     """Quit the League client and start it again through the Riot Client (an expired League
     token, or a login queue that was down, clears this way once the servers are back)."""
@@ -234,7 +260,10 @@ def night(rotation: str = "yasuo,leesin", minutes: float = 16.0, games: int = 30
         if not game_alive():
             waited = 0
             while not client_ready():
-                # Servers down (login queue), token expired, client gone: relaunch every 5 minutes.
+                # Servers down (login queue), token expired, client gone: relaunch every 5 minutes;
+                # from the second try on, also refresh binaries a patch rewrote in place.
+                if waited >= 5:
+                    _say(f"refreshed {refresh_patched_binaries()} patched binaries")
                 _say(f"client not ready ({waited} min): relaunching League: {relaunch_client()}")
                 for _ in range(10):
                     time.sleep(30)
