@@ -481,6 +481,9 @@ class Player:
             self.tactics.publish(inp)
         if not mi._can_order(now):
             return True
+        if self._escape_reflex(ctx, inp, now):
+            mi.reacted("reflex", view.ts)
+            return True
         if kit.reflex(mi, sc, now, plan):
             mi.reacted("reflex", view.ts)
             return True
@@ -506,6 +509,44 @@ class Player:
         if mi.orders > before and mi.last_action.startswith("last hit"):
             mi.reacted("lasthit", view.ts)
         return ok
+
+    def _escape_reflex(self, ctx, inp, now: float) -> bool:
+        """Burst incoming (a quarter of HP gone in the damage window, under 45% HP, an enemy
+        champion within 700 units): Flash toward our tower, else a defensive summoner, else a
+        potion. Frame-level, no Jev wait; once every 12 s."""
+        sc = ctx.sc
+        hp, lost = getattr(self, "_hp_now", 100.0), getattr(self, "_hp_lost", 0.0)
+        if not (lost >= 25 and hp < 45 and sc.champ is not None and (sc.champ_dist or 9e9) < 700):
+            return False
+        if now - getattr(self, "_escape_t", 0.0) < 12.0:
+            return False
+        self._escape_t = now
+        mi = ctx.mi
+        fx, fy = self.lane.screen_dir(self.mech.nav.progress) if self.mech else mi.fwd
+        mx, my = sc.me_xy
+        back = (mx - fx * 350 * config.VISION.px_per_unit, my - fy * 350 * config.VISION.px_per_unit)
+        for slot, (name, hud) in enumerate(zip(inp.summoners, "DF"), 1):
+            if name == "flash" and sc.ready.get(hud):
+                mi.ctl.cast(mi.kb.summoner(slot), *mi._pt(*back), mi.kb.quick(f"evtCastAvatarSpell{slot}"))
+                mi._ordered(now, "escape: Flash toward tower")
+                self.log_lines.append("escape: Flash toward tower")
+                return True
+        for slot, (name, hud) in enumerate(zip(inp.summoners, "DF"), 1):
+            if name in ("heal", "barrier", "ghost", "exhaust") and sc.ready.get(hud):
+                if name == "exhaust":
+                    mi.ctl.cast(mi.kb.summoner(slot), *mi._pt(sc.champ.unit.x, sc.champ.unit.y), mi.kb.quick(f"evtCastAvatarSpell{slot}"))
+                else:
+                    mi.ctl.press(mi.kb.summoner(slot))
+                mi._ordered(now, f"escape: {name}")
+                self.log_lines.append(f"escape: {name}")
+                return True
+        for it in inp.items:
+            if "potion" in str(it.get("displayName", "")).lower() and now - self._potion_at > 12:
+                mi.ctl.press(mi.kb.item(int(it.get("slot", 0)) + 1))
+                self._potion_at = now
+                mi._ordered(now, "escape: potion")
+                return True
+        return False
 
     def _go_to(self, data: dict, ap: dict, stats: dict, now: float) -> None:
         """Travel to Jev's destination through the minimap, answering fights on the way with
@@ -691,6 +732,7 @@ class Player:
         move_speed = min(float(cs.get("moveSpeed", 345)), config.TIMING.max_reckon_speed)
         me = find_me(data) or {}
         lost = self.hp.update(hp_pct, now)
+        self._hp_now, self._hp_lost = hp_pct, lost
         # Significant change: new damage, level, or death state -> wake the brain right away.
         sig = (int(ap.get("level", 1)), bool(me.get("isDead")), int(hp_pct // 10))
         if lost >= 8 or sig != self._last_sig:
