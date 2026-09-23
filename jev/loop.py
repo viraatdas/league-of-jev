@@ -386,7 +386,7 @@ class Player:
             ch = f"champ {int(sc.champ.unit.hp * 100)}% @{int(sc.champ_dist or 0)}u" if sc.champ else "no champ"
             rdy = "".join(k for k in "QWER" if sc.ready.get(k))
             out.append(f"screen: {len(sc.minions)} minions ({len(sc.killable_auto)} killable), {sc.allies} ally, {ch}, ready {rdy or '-'}"
-                       + (" Q3" if self.micro and self.micro.q.q3(time.time()) else ""))
+                       + (" Q3" if hasattr(self.kit, "q") and self.kit.q.q3(time.time()) else ""))
         dd = self.decision
         if dd is not None and (dd.destination or dd.level_up):
             top = sorted(dd.destination_probs.items(), key=lambda kv: -kv[1])[:2]
@@ -761,6 +761,8 @@ class Player:
 
         state = self.state or build_state(data, p, self.role)
         self.intent = choose_intent(self.decision, state, p, now, self.guards)
+        if self.kit.support and self.intent in ("go_to", "group", "trade", "all_in", "push_tower"):
+            self.intent = "farm"  # support: stay with the carry (shadow them) instead of roaming or engaging alone
         if self.intent == "recall" and now - self.guards.left_base_at < config.TIMING.no_recall_after_base_s:
             self.intent = "farm"
 
@@ -796,6 +798,20 @@ class Player:
             self._go_to(data, ap, cs, now)
             return p
         if self.intent in ("farm", "trade", "push_tower", "defend") and self._micro_step(data, ap, cs, now):
+            return p
+        if self.intent == "farm" and self.kit.support:
+            # Support macro: shadow the carry (the allied champion nearest this lane on the minimap),
+            # a little behind them and never past our side of the lane; hold at our tower without one.
+            ln, target = self.lane, self.lane.own_tower
+            mm = self.mm_state
+            if mm is not None and mm.ally_champions:
+                near = [(ln.project(a), a) for a in mm.ally_champions]
+                near = [pr for (pr, d), a in near if d < 1500]
+                if near:
+                    target = max(near) - ln.frac(250)
+            target = max(ln.own_tower - ln.frac(300), min(target, ln.center - ln.frac(300)))
+            m.go_progress(target, move_speed, now, attack=False)
+            m.last_action = f"support: shadow carry at lane {int(target * 100)}%"
             return p
         if self.intent == "farm":
             contact = self._income_contact(float(ap.get("currentGold", 0)), int(me.get("scores", {}).get("creepScore", 0)), now) \
