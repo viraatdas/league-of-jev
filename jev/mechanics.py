@@ -17,6 +17,11 @@ from jev.screen import Screen
 from jev.lanes import Lane
 from jev.minimap import Wave
 
+# Typing an item name into the shop search is off: in a live game the box lost focus after one
+# letter and the rest of the name went into the game as hotkeys (abilities, summoners, shop key).
+# It stays off until the typed text is verified in the box before continuing.
+TYPED_SEARCH = False
+
 YASUO_SKILL_ORDER = ["Q", "E", "Q", "W", "Q", "R", "Q", "E", "Q", "E", "R", "E", "E", "W", "W", "R", "W", "W"]
 ABILITY_INDEX = {"Q": 1, "W": 2, "E": 3, "R": 4}
 
@@ -422,7 +427,7 @@ class Mechanics:
             time.sleep(0.4)
             self.ctl.click(*self._pt(self.geo.purchase_button), "left")
             ok = bought()
-        if not ok and self.ctl.keys_ok() and self.geo.shop_search:
+        if not ok and TYPED_SEARCH and self.ctl.keys_ok() and self.geo.shop_search:
             # Search, select the first result tile, then PURCHASE ITEM (Enter does not buy).
             self.ctl.click(*self._pt(self.geo.shop_search), "left")
             time.sleep(0.3)
