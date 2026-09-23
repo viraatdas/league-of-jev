@@ -914,9 +914,16 @@ class Player:
             d_f = math.dist(mmp, fountain)
             if d_f > 3000:
                 self._fountain_shopped = False
-            elif d_f < 1700 and not getattr(self, "_fountain_shopped", False) and float(ap.get("currentGold", 0)) >= 75:
-                self._fountain_shopped = True
-                self._shop_if_possible(float(ap.get("currentGold", 0)))
+            elif (d_f < 1700 and not getattr(self, "_fountain_shopped", False) and float(ap.get("currentGold", 0)) >= 75
+                  and self.ctl.keys_ok() and now - getattr(self, "_fountain_try_t", 0.0) > 5.0):
+                # Retry every 5 s while in the fountain until something is bought (a first attempt
+                # during the loading hand-off failed and was never retried).
+                self._fountain_try_t = now
+                gold0 = float(ap.get("currentGold", 0))
+                self._shop_if_possible(gold0)
+                fresh = self.riot.all_game_data() or {}
+                if float((fresh.get("activePlayer") or {}).get("currentGold", gold0)) < gold0 - 40:
+                    self._fountain_shopped = True
                 self._base_shop_done = True
         # Shop once per visit to base: at game start, after respawn, after a recall.
         if self.phase == "base" and not self._base_shop_done:
@@ -929,9 +936,10 @@ class Player:
                 return p  # give the build head a moment to re-plan with the current gold
             if self._at_fountain() is False and now - self._base_since < 6.0:
                 return p  # not in shop range yet (recall still landing): wait
+            if not self.ctl.keys_ok():
+                return p  # input cannot reach the game yet (loading / not in front): shop once it can
             if gold >= 50 and self._at_fountain() is not False:
                 self._shop_if_possible(gold)
-                self._fountain_shopped = True
             self._base_shop_done = True
             del self._base_since
 
