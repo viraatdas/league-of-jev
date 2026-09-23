@@ -197,6 +197,16 @@ def session(champion: str = typer.Option("yasuo", help="yasuo | leesin | thresh"
 
 
 @app.command()
+def night(rotation: str = typer.Option("yasuo,leesin", help="Champions in turn (logs/night/rotation.txt overrides, re-read each game)"),
+          minutes: float = typer.Option(16.0, help="Surrender at this game time"),
+          games: int = typer.Option(30, help="Stop after this many games (or when logs/night/STOP appears)")) -> None:
+    """Back-to-back unattended bot games for the overnight improvement loop."""
+    from jev.session import night as run_night
+
+    run_night(rotation, minutes, games)
+
+
+@app.command()
 def watch_install(interval: float = 30.0) -> None:
     """Block until League of Legends.app appears in /Applications."""
     from jev.doctor import LEAGUE_APP

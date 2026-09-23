@@ -175,3 +175,35 @@ def run(champion: str = "yasuo", minutes: float = 18.0, tag: str = "", difficult
     _say(f"client phase after: {clear_post_game(c)}")
     c.close()
     return result
+
+
+def night(rotation: str = "yasuo,leesin", minutes: float = 16.0, games: int = 30) -> None:
+    """Back-to-back games. The rotation is re-read before each game from logs/night/rotation.txt
+    when it exists (comma separated), so it can be changed while the loop runs; creating
+    logs/night/STOP ends the loop after the current game."""
+    import re
+
+    logs = Path("logs/night")
+    logs.mkdir(parents=True, exist_ok=True)
+    for i in range(games):
+        stop = logs / "STOP"
+        if stop.exists():
+            _say("STOP file found: ending the night loop")
+            stop.unlink()
+            return
+        rot_file = logs / "rotation.txt"
+        rot = (rot_file.read_text().strip() if rot_file.exists() else rotation).split(",")
+        rot = [r.strip() for r in rot if r.strip()]
+        done = [int(m.group(1)) for f in logs.glob("g*_*.log") if (m := re.match(r"g(\d+)_", f.name))]
+        n = max(done, default=0) + 1
+        champ = rot[(n - 1) % len(rot)]
+        _say(f"=== game {n}: {champ} ===")
+        try:
+            r = run(champ, minutes, f"g{n:02d}_{champ}")
+            _say(f"=== game {n} ended: {r.get('ended')} ===")
+        except Exception as e:  # noqa: BLE001
+            _say(f"=== game {n} failed: {type(e).__name__}: {e} ===")
+            stop_harness()
+            if game_alive():
+                kill_game()
+            time.sleep(20)
