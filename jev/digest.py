@@ -31,7 +31,9 @@ def digest(play_log: str | Path, decisions: str | Path, since_s: float = 90.0) -
     blind = sum("pos=?" in l for l in rows) * 100 // len(rows)
     intents = collections.Counter(m.group(1) for l in rows if (m := re.search(r"intent=(\w+)", l)))
     out.append(f"paused {paused}%  minimap-blind {blind}%  intents " + ", ".join(f"{k} {v}" for k, v in intents.most_common(4)))
-    acts = collections.Counter(m.group(1).strip() for l in rows if (m := re.search(r"micro: ([^|]+?) \|", l)))
+    # The log repeats the last micro action every second: count changes, not lines.
+    seq = [m.group(1).strip() for l in rows if (m := re.search(r"micro: ([^|]+?) \|", l))]
+    acts = collections.Counter(a for i, a in enumerate(seq) if i == 0 or a != seq[i - 1])
     if acts:
         out.append("micro actions seen: " + ", ".join(f"{k} x{v}" for k, v in acts.most_common(6)))
     try:
