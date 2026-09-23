@@ -650,6 +650,12 @@ class Player:
             return
         if ch is None or getattr(self, "_near_enemy_tower", False):
             return
+        if mi.hp_pct < 55 and ch.unit.hp * 100 > mi.hp_pct + 20 and d < 900 and mi.mode != "back_off":
+            # Outmatched: half HP with a healthy champion walking up. Farming on cost the second
+            # death of g06 (50% -> 0 in five seconds, Flash at 23% too late). Back off now.
+            mi.set_mode("back_off", now)
+            self.log_lines.append(f"fight: outmatched ({mi.hp_pct:.0f}% vs {ch.unit.hp * 100:.0f}% at {d:.0f}u), backing off")
+            return
         recent = [h for t, h in ch.hist if now - t <= 0.5]
         steady_low = len(recent) >= 3 and sorted(recent)[len(recent) // 2] < 0.25 and max(recent) < 0.4
         # One low reading is not a kill window: an overlapped bar read Kayle at 15% while she had
