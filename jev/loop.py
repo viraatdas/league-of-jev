@@ -820,6 +820,13 @@ class Player:
         if (seen_here and gt - js.last_seen_monster > 3.0) or (not seen_here and gt - js.arrived_at > 20.0):
             js.mark_cleared(js.current, gt)
             self.log_lines.append(f"jungle: cleared {list(js.cleared)[-1]} at {int(gt)}s")
+            if self.logfile:
+                # Kept per game so a harness restart does not walk back to camps already taken.
+                try:
+                    with open(f"{self.logfile}.jungle.json", "w") as fh:
+                        json.dump({"cleared": js.cleared, "route_i": js.route_i}, fh)
+                except OSError:
+                    pass
             return
         if not acted:
             m.go_map(pt, now, attack=True, every=1.2)  # step onto the camp so it aggroes
@@ -990,6 +997,17 @@ class Player:
         self.micro = Micro(self.ctl, self.screen, self.kb, side)
         self.micro.on_fight_order = lambda what: self.log_lines.append(f"order: {what}")
         self.jungle_state = JungleState(side) if getattr(self.kit, "jungle", False) else None
+        if self.jungle_state is not None and self.logfile:
+            try:
+                with open(f"{self.logfile}.jungle.json") as fh:
+                    saved = json.load(fh)
+                gt0 = float((data.get("gameData") or {}).get("gameTime", 0.0))
+                if all(t <= gt0 + 5 for t in saved.get("cleared", {}).values()):  # same game, restarted
+                    self.jungle_state.cleared = {k: float(v) for k, v in saved["cleared"].items()}
+                    self.jungle_state.route_i = int(saved.get("route_i", 0))
+                    self.log_lines.append(f"jungle: resumed timers {self.jungle_state.cleared}")
+            except (OSError, ValueError, KeyError):
+                pass
         if self.jungle_state is not None and "smite" not in actions.summoner_names(me):
             # The jungle pets need Smite; without it the pet buy fails and he left base empty-handed.
             import dataclasses
