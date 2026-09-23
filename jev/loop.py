@@ -574,6 +574,13 @@ class Player:
         if self.kit.support:
             return
         ch, d = sc.champ, sc.champ_dist or 9e9
+        if ch is not None and not self._champ_on_minimap(now):
+            # A champion-sized bar with no enemy champion icon near us on the minimap is a monster
+            # (the dragon read as a champion at 8% and got an all-in and an ignite, game 3).
+            if mi.mode in FIGHT_MODES:
+                mi.set_mode("farm", now)
+                self.log_lines.append("fight: no enemy champion on the minimap near me, dropping the fight")
+            return
         if mi.mode in FIGHT_MODES:
             if ch is not None and mi.hp_pct < 25 and ch.unit.hp > mi.hp_pct / 100 + 0.15:
                 mi.set_mode("back_off", now)
@@ -619,6 +626,14 @@ class Player:
             self._lh_logged = now
             parts = [f"{k} {v[1]}/{v[0]}" for k, v in sorted(stats.items())]
             self.log_lines.append("lasthits paid: " + ", ".join(parts))
+
+    def _champ_on_minimap(self, now: float, radius: float = 1800.0) -> bool:
+        """An enemy champion icon within `radius` of us on a fresh minimap read (True when the
+        minimap is unavailable, so vision alone decides)."""
+        mm = self.mm_state
+        if mm is None or mm.pos is None or now - mm.ts > 1.0:
+            return True
+        return any(dist(mm.pos, e) <= radius for e in mm.enemy_champions)
 
     def _pause_guard(self, data: dict, now: float) -> None:
         """Game time frozen for 10 s with the API alive: the game is paused (only possible in custom
