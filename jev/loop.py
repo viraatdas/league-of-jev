@@ -781,6 +781,11 @@ class Player:
             return
         if not js.up(js.current, gt):
             m.last_action = f"jungle: waiting for {js.current}"
+            if now - getattr(self, "_wait_step_t", 0.0) > 15.0:
+                # A minute of standing still before the camps spawn drew an AFK warning (g07).
+                self._wait_step_t = now
+                sgn = 1 if int(now / 15) % 2 else -1
+                m.go_map((pt[0] + sgn * 250, pt[1] - 250), now, attack=False, every=0.0)
             return
         if js.arrived_at is None or js.arrived_at < FIRST_SPAWN:
             js.arrived_at = max(gt, FIRST_SPAWN)
