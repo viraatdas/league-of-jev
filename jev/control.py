@@ -308,7 +308,7 @@ class Controller:
                 ev = CGEventCreateKeyboardEvent(None, code, down)
                 CGEventKeyboardSetUnicodeString(ev, 1, ch)
                 self._post(ev)
-                time.sleep(0.015)
+                time.sleep(0.03)
             time.sleep(per_char_ms / 1000)
 
     # -- League verbs ------------------------------------------------------------

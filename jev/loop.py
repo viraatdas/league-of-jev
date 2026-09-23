@@ -66,6 +66,23 @@ def choose_intent(d: Decision | None, state: dict, p: Perception, now: float, gu
     return d.intent
 
 
+class _EventLog(collections.deque):
+    """The last few event lines for the terminal panel, also appended to a plain file."""
+
+    def __init__(self, maxlen: int, path: str | None) -> None:
+        super().__init__(maxlen=maxlen)
+        self.path = path
+
+    def append(self, x) -> None:  # noqa: D401
+        super().append(x)
+        if self.path:
+            try:
+                with open(self.path, "a") as f:
+                    f.write(f"{time.strftime('%H:%M:%S')} {x}\n")
+            except OSError:
+                pass
+
+
 class Guards:
     """Timers that keep code-level safety rules sticky across Jev ticks."""
 
@@ -109,7 +126,7 @@ class Player:
         self.logfile = logfile
         self._last_logged = 0.0
         self.role = role
-        self.log_lines: collections.deque[str] = collections.deque(maxlen=8)
+        self.log_lines: collections.deque[str] = _EventLog(maxlen=8, path=(str(logfile) + ".events") if logfile else None)
         self.ctl = Controller(dry_run=dry_run, log=self._log_action)
         self.screen = Screen()
         self.kb = keybinds.load()
@@ -417,7 +434,17 @@ class Player:
             return True  # a combo step fired this tick
         if view is None or mi is None or now - view.ts > 0.3:
             return False
-        minions = self.min_tracker.update(view.enemies("minion"), now)
+        raw_minions = view.enemies("minion")
+        mm = self.mm_state
+        if mm is not None and mm.pos is not None and view.me is not None:
+            # Jungle monsters have red bars like enemy minions: keep only units near the lane path.
+            ppu = config.VISION.px_per_unit
+            def near_lane(u) -> bool:
+                wx = mm.pos[0] + (u.x - view.me.x) / ppu
+                wy = mm.pos[1] - (u.y - view.me.y) / ppu
+                return self.lane.project((wx, wy))[1] < 900
+            raw_minions = [u for u in raw_minions if near_lane(u)]
+        minions = self.min_tracker.update(raw_minions, now)
         champs = self.champ_tracker.update(view.enemies("champion"), now)
         if not minions and not champs and not view.allies("champion"):
             self.scene = None

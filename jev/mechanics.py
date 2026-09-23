@@ -17,10 +17,10 @@ from jev.screen import Screen
 from jev.lanes import Lane
 from jev.minimap import Wave
 
-# Typing an item name into the shop search is off: in a live game the box lost focus after one
-# letter and the rest of the name went into the game as hotkeys (abilities, summoners, shop key).
-# It stays off until the typed text is verified in the box before continuing.
-TYPED_SEARCH = False
+# Typing an item name into the shop search is only done once a screen read confirms the shop panel
+# is open, and slowly: in a live game fast typing lost focus after one letter and the rest of the
+# name went into the game as hotkeys.
+TYPED_SEARCH = True
 
 YASUO_SKILL_ORDER = ["Q", "E", "Q", "W", "Q", "R", "Q", "E", "Q", "E", "R", "E", "E", "W", "W", "R", "W", "W"]
 ABILITY_INDEX = {"Q": 1, "W": 2, "E": 3, "R": 4}
@@ -390,6 +390,17 @@ class Mechanics:
                 return ab
         return None
 
+    def shop_open(self) -> bool:
+        """The shop is a large flat dark panel over the middle of the screen."""
+        import cv2
+
+        try:
+            img = self.screen.grab()
+            mid = cv2.cvtColor(img[150:850, 380:1350], cv2.COLOR_BGR2HSV)
+            return float((mid[:, :, 2] < 70).mean()) > 0.55
+        except Exception:  # noqa: BLE001
+            return False
+
     def shop(self, item: str, items_now=None) -> bool:
         with self.ctl.slow():
             return self._shop(item, items_now)
@@ -427,11 +438,11 @@ class Mechanics:
             time.sleep(0.4)
             self.ctl.click(*self._pt(self.geo.purchase_button), "left")
             ok = bought()
-        if not ok and TYPED_SEARCH and self.ctl.keys_ok() and self.geo.shop_search:
+        if not ok and TYPED_SEARCH and self.ctl.keys_ok() and self.geo.shop_search and self.shop_open():
             # Search, select the first result tile, then PURCHASE ITEM (Enter does not buy).
             self.ctl.click(*self._pt(self.geo.shop_search), "left")
             time.sleep(0.3)
-            self.ctl.type_text(item)
+            self.ctl.type_text(item, per_char_ms=90)
             time.sleep(0.8)
             if self.geo.search_result:
                 self.ctl.double_click(*self._pt(self.geo.search_result))
