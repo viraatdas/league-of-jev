@@ -259,28 +259,39 @@ class LCU:
         yield f"start champ select: {c} {b if c >= 400 else ''}"
         t0 = time.time()
         picked = False
+        tried_early = False
         while time.time() - t0 < timeout_s:
             phase = self.gameflow()
             if phase == "ChampSelect" and not picked:
                 code, sess = self.req("GET", "/lol-champ-select/v1/session")
                 if code == 200:
+                    if not tried_early:
+                        # Spells at three moments (before the hover, after it, after the lock): a
+                        # 204 alone never meant they stuck, and which moment works is not known.
+                        tried_early = True
+                        import subprocess
+                        subprocess.run(["screencapture", "-x", "logs/night/champselect.png"], check=False)
+                        ok, how = self.set_spell_ids(*SPELLS_BY_POSITION.get(position, SPELLS_BY_POSITION[""]), tries=1)
+                        yield f"spells before hover: ok={ok} [{how}] phase={(sess.get('timer') or {}).get('phase')}"
                     cell = sess.get("localPlayerCellId")
                     for g in sess.get("actions", []):
                         for a in g:
                             if a.get("actorCellId") == cell and a.get("type") == "pick" and not a.get("completed"):
-                                # Spells before locking: set after the lock (finalization) they were
-                                # accepted with a 204 and silently ignored.
                                 self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": champion_id})
-                                from pathlib import Path
-                                probe = Path("logs/night/PROBE_SPELLS")
-                                if probe.exists():
-                                    probe.unlink()
-                                    yield self.probe_spells()
                                 c2, b2 = self.set_spells(position)
-                                yield f"spells: {c2} {b2}"
+                                yield f"spells after hover: {c2} {b2}"
                                 c1, b1 = self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": champion_id, "completed": True})
                                 yield f"pick {champion_id}: {c1} {b1 if c1 >= 400 else ''}"
                                 picked = c1 < 400
+                                if picked:
+                                    want = set(SPELLS_BY_POSITION.get(position, SPELLS_BY_POSITION[""]))
+                                    for _ in range(4):
+                                        if set(self.my_spells()) == want:
+                                            break
+                                        ok, how = self.set_spell_ids(*sorted(want, key=lambda v: v != 4), tries=1)
+                                        _, s2 = self.req("GET", "/lol-champ-select/v1/session")
+                                        yield f"spells after lock: ok={ok} [{how}] phase={((s2 or {}).get('timer') or {}).get('phase')}"
+                                        time.sleep(1.0)
             elif phase in ("InProgress", "GameStart"):
                 yield "game starting"
                 return
