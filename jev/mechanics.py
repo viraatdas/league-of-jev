@@ -447,8 +447,15 @@ class Mechanics:
             self.ctl.type_text(item, per_char_ms=90)
             time.sleep(0.8)
             if self.geo.search_result:
-                self.ctl.double_click(*self._pt(self.geo.search_result))
-            ok = bought()
+                # Right-click buys an item in League's shop (a double-click queues it instead).
+                self.ctl.click(*self._pt(self.geo.search_result), "right")
+                ok = bought()
+                if not ok and self.geo.purchase_button:
+                    # Fallback: select the item, then the PURCHASE ITEM button.
+                    self.ctl.click(*self._pt(self.geo.search_result), "left")
+                    time.sleep(0.4)
+                    self.ctl.click(*self._pt(self.geo.purchase_button), "left")
+                    ok = bought()
         if self.geo.shop_close:
             self.ctl.click(*self._pt(self.geo.shop_close), "left")
         elif self.ctl.keys_ok():
