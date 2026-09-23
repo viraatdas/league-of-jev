@@ -709,8 +709,10 @@ class Player:
         mm = self.mm_state
         if mm is None or mm.pos is None or now - mm.ts > 1.0:
             return True
+        if self.jungle_state is None and self.lane.project(mm.pos)[1] < 700:
+            return True  # a laner on his lane: mid passes within 1300 of the raptors (a real fight was dropped, g06)
         pits = [map_places.places(self.side)[k][0] for k in ("dragon_pit", "baron_pit")]
-        monsters_near = any(dist(mm.pos, c) < 1300 for c in list(camps(self.side).values()) + pits)
+        monsters_near = any(dist(mm.pos, c) < 1000 for c in list(camps(self.side).values()) + pits)
         if not monsters_near:
             return True
         return any(dist(mm.pos, e) <= radius for e in mm.enemy_champions)

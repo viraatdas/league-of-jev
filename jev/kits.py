@@ -121,9 +121,17 @@ class Kit:
         return False
 
     def hit_or_chase(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, reach: float = 0.0) -> bool:
-        """Auto the champion when in range, otherwise walk onto them (orb-walk: move between autos)."""
+        """Auto the champion when in range, otherwise walk onto them (orb-walk: move between autos).
+        A trade does not chase: out of reach for 1.2 s it is over (walking after a ranged champion
+        into her wave cost HP for nothing, g06)."""
         ch, d = sc.champ, sc.champ_dist or 9e9
         rng = (reach or VC.auto_range) + 60
+        if d <= rng:
+            self._in_reach_t = now
+        elif mode == "trade" and now - max(getattr(self, "_in_reach_t", 0.0), mi.mode_since) > 1.2:
+            mi.set_mode("farm", now)
+            mi.last_action = "trade: out of reach, back to farming"
+            return False
         if d <= rng and mi.attack_ready(now, aspd):
             mi.attack(ch, now, f"{mode}: auto the champion")
             return True
@@ -346,6 +354,10 @@ class Yasuo(Kit):
             mi._ordered(now, f"{mode}: Q3 tornado")
             return True
         crowded = self.minions_near_champ(sc) >= 3 and not (mode == "all_in" and ch.unit.hp < 0.35)
+        if crowded and mode == "trade" and not (rdy.get("Q") and d <= VC.q_range + 30) and not (q3 and rdy.get("Q")):
+            mi.set_mode("farm", now)  # she stands in her wave and nothing reaches her from here: no trade
+            mi.last_action = "trade: she is in her wave, back to farming"
+            return False
         if rdy.get("E") and d <= VC.e_range and ch.e_marked_until <= now and not crowded:
             mi.cast(3, ch.unit.x, ch.unit.y)
             ch.e_marked_until = now + 10.0
