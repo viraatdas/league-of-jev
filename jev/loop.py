@@ -530,8 +530,10 @@ class Player:
             return
         m.go_map(pt, now, attack=arrived, every=1.5 if arrived else 1.0)
 
-    def _at_fountain(self, radius: float = 1800.0) -> bool | None:
-        """True/False from the minimap position, None when the position is unknown."""
+    def _at_fountain(self, radius: float = 2600.0) -> bool | None:
+        """True/False from the minimap position, None when the position is unknown. The radius is
+        wide because in the map corner the camera stops at the map edge, so the view box centre
+        (our position source) sits well away from the fountain even when we stand in it."""
         mmp = self.mm_state.pos if self.mm_state is not None else None
         if mmp is None:
             return None
@@ -828,7 +830,7 @@ class Player:
             if lost > 1.0:
                 m.cancel_recall()
                 self.intent = "retreat"
-            elif m.recall_done(now) and self._at_fountain() is not False:
+            elif m.recall_done(now) and (self._at_fountain() is not False or now - m.recall_started > 11.0):
                 m.cancel_recall()
                 m.nav.reset_to_base()
                 self._build_wake.set()
