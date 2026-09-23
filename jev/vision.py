@@ -133,8 +133,16 @@ class VisionReader:
             if kind == "champion":
                 # A champion bar has its level box just left of it: a dark block. Without one, a
                 # champion-height red bar is a large jungle monster (buffs, gromp, krugs, raptors...).
+                # Large monsters also sit in a gold frame (with their HP number above): the red
+                # buff's dark frame interior passed as a level box and it was read as a champion,
+                # and its fill was measured against a champion's width (g05).
                 box = dark[y:y + h, max(0, x - 20):max(0, x - 4)]
-                if box.size == 0 or box.mean() < 0.35:
+                gold = getattr(self, "_gold", None)
+                mid = y + h // 2
+                red_fill = np.count_nonzero(masks["enemy"][mid, x:x + w]) > np.count_nonzero(masks["ally"][mid, x:x + w])
+                framed = red_fill and gold is not None and max(
+                    (float((gold[r, x:x + max(w, 30)] > 0).mean()) for r in range(max(0, y - 5), max(1, y - 1))), default=0.0) >= 0.6
+                if framed or box.size == 0 or box.mean() < 0.35:
                     row = y + h // 2
                     if not masks["enemy"][row, x:x + w].any():
                         continue
@@ -179,6 +187,7 @@ class VisionReader:
         mx, my, _ = self.geo.minimap or (x1, y1, 0)
         hx0, hy0, hx1, hy1 = self.vc.hud_block
         masks = _masks(hsv)
+        self._gold = cv2.inRange(hsv, (12, 60, 110), (35, 255, 255))  # large monsters' bar frame
         for m in masks.values():
             m[max(0, my - 20 - y0):, max(0, mx - 20 - x0):] = 0
             m[max(0, hy0 - y0):, max(0, hx0 - x0):max(0, hx1 - x0)] = 0

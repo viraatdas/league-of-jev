@@ -747,10 +747,15 @@ class Player:
         slot = next((i for i, n in enumerate(inp.summoners, 1) if n == "smite"), None)
         if slot is None or not sc.ready.get("DF"[slot - 1]) or not sc.minions:
             return False
-        big = [t for t in sc.minions if t.unit.kind == "monster"] or sc.minions
+        if now - getattr(self, "_smite_t", 0.0) < 1.5:
+            return False  # one try at a time: a cast that did not land re-fired every tick (14 in 2 s, g05)
+        big = [t for t in sc.minions if t.unit.kind == "monster"]
+        if not big:
+            return False  # Smite is for the large monster; small ones were smitten at 3-6%
         tgt = min(big, key=lambda t: t.unit.hp)
-        if tgt.unit.hp > 0.22 or sc.dist(tgt) > 550:
+        if tgt.unit.hp > 0.25 or sc.dist(tgt) > 550:
             return False
+        self._smite_t = now
         mi.ctl.cast(mi.kb.summoner(slot), *mi._pt(tgt.unit.x, tgt.unit.y), mi.kb.quick(f"evtCastAvatarSpell{slot}"))
         mi._ordered(now, "Smite")
         self.log_lines.append(f"smite at {int(tgt.unit.hp * 100)}%")
