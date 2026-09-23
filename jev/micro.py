@@ -246,12 +246,18 @@ class Micro:
             tgt = min(sc.minions, key=lambda t: t.unit.hp)
             self.attack(tgt, now, "push: attack lowest minion")
             return True
-        # Stand an auto range behind the enemy minion nearest to us, on our side of the lane.
-        front = min(sc.minions, key=sc.dist)
-        back = (VC.auto_range + 20) * VC.px_per_unit  # in attack range of the front minion
+        # The wave's front line is the enemy minion furthest toward OUR side (smallest projection on
+        # the lane direction), not the one nearest to us: inside the wave, the nearest one is next to
+        # us and "behind" it is still inside. Stand an attack range behind the front line.
+        mx, my = sc.me_xy
+        along = lambda t: (t.unit.x - mx) * self.fwd[0] + (t.unit.y - my) * self.fwd[1]
+        front = min(sc.minions, key=along)
+        back = (VC.auto_range + 40) * VC.px_per_unit
         tx, ty = front.unit.x - self.fwd[0] * back, front.unit.y - self.fwd[1] * back
-        if math.hypot(tx - sc.me_xy[0], ty - sc.me_xy[1]) > 35:
-            self.move_screen(tx, ty, now, "farm: hold behind the wave", every=0.3)
+        ahead = along(front) < 0  # we are past the enemy front line: get out now
+        if ahead or math.hypot(tx - mx, ty - my) > 35:
+            self.move_screen(tx, ty, now, "farm: back out of the wave" if ahead else "farm: hold behind the wave",
+                             every=0.15 if ahead else 0.3)
         return True
 
     def back_off(self, sc: Scene, now: float) -> None:
