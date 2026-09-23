@@ -80,6 +80,10 @@ class Kit:
             return True
         return self.hit_or_chase(mi, sc, now, aspd, mode)
 
+    def escape(self, mi: Micro, sc: Scene, now: float, home: tuple[float, float]) -> bool:
+        """A kit move that gets us away (a dash toward `home`, a screen direction); False if none."""
+        return False
+
     def trade_window(self, mi: Micro, sc: Scene, now: float, level_diff: int) -> str | None:
         """A fight mode to enter on our own when the moment is clearly good (Jev picked farm 88%
         of the time with the enemy champion in view, game 4), else None."""
@@ -357,6 +361,28 @@ class Yasuo(Kit):
             mi._ordered(now, f"{mode}: E through a minion toward the champion")
             return True
         return self.hit_or_chase(mi, sc, now, aspd, mode)
+
+    def escape(self, mi: Micro, sc: Scene, now: float, home: tuple[float, float]) -> bool:
+        """E through a minion whose far side is toward home, when an enemy champion is near and
+        I am hurt (the dash outruns a chase; it is Yasuo's only escape before Flash)."""
+        if not sc.ready.get("E") or sc.champ is None or (sc.champ_dist or 9e9) > 900 or mi.hp_pct > 60:
+            return False
+        mx, my = sc.me_xy
+        best, gain = None, 120.0
+        for tr in sc.minions:
+            if tr.e_marked_until > now or sc.dist(tr) > VC.e_range:
+                continue
+            dx, dy = tr.unit.x - mx, tr.unit.y - my
+            n = math.hypot(dx, dy) or 1.0
+            along = (dx / n * home[0] + dy / n * home[1]) * VC.e_range  # units gained toward home
+            if along > gain:
+                best, gain = tr, along
+        if best is None:
+            return False
+        mi.cast(3, best.unit.x, best.unit.y)
+        best.e_marked_until = now + 10.0
+        mi._ordered(now, "escape: E through a minion toward home")
+        return True
 
     def trade_window(self, mi: Micro, sc: Scene, now: float, level_diff: int) -> str | None:
         """EQ (or the Q3 tornado) is up, the champion is in dash or tornado reach, I am at least

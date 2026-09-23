@@ -525,7 +525,7 @@ class Player:
         return out
 
     def _micro_step(self, data: dict, ap: dict, stats: dict, now: float, standing: bool = True,
-                    camp_pt: tuple[float, float] | None = None, camp_big: bool = False) -> bool:
+                    camp_pt: tuple[float, float] | None = None, camp_big: bool = False, escaping: bool = False) -> bool:
         """Screen-level play while units are on screen: Jev's tactical choice, the kit's reflexes,
         and (when `standing`) the kit's standing behaviour. Returns False when nothing was done
         this tick (macro movement takes over)."""
@@ -581,6 +581,19 @@ class Player:
         if self.tactics is not None:
             self.tactics.publish(inp)
         mi.summoners, mi.hp_pct = inp.summoners, inp.hp_pct
+        if escaping:
+            # Walking out: no fight entries; reflexes only (Flash, defensive summoners, potion,
+            # the kit's escape dash). Retreats used to skip this step entirely, so a Yasuo taking
+            # 80% in four seconds walked to his death with Flash up (game 4).
+            if mi.mode in FIGHT_MODES:
+                mi.set_mode("back_off", now)
+            if not mi._can_order(now):
+                return False
+            if self._escape_reflex(ctx, inp, now):
+                mi.reacted("reflex", view.ts)
+                return True
+            fx, fy = self.lane.screen_dir(self.mech.nav.progress) if self.mech else mi.fwd
+            return bool(kit.escape(mi, sc, now, (-fx, -fy)))
         self._fight_triggers(sc, mi, now)
         if not mi._can_order(now):
             return True
@@ -1240,7 +1253,8 @@ class Player:
         elif self.intent == "push_tower":
             m.push(move_speed, now)
         elif self.intent == "retreat":
-            m.retreat(move_speed, now)
+            if not self._micro_step(data, ap, cs, now, standing=False, escaping=True):
+                m.retreat(move_speed, now)
         elif self.intent == "step_back":
             m.step_back(move_speed, now)
         elif self.intent == "defend":
