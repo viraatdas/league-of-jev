@@ -83,10 +83,13 @@ class UnitTracker:
 
 
 def minion_max_hp(game_s: float) -> float:
-    """Melee minion HP (the larger of melee and caster): assuming the larger pool can only make
-    a last hit late, never early."""
-    base, per = FAST.melee_hp
-    return base + per * max(0.0, game_s) / 90.0
+    """Between caster and melee minion HP. Assuming the melee pool made every last hit too late
+    (allied minions took them first); the midpoint commits in time, at the cost of an occasional
+    early swing on a melee minion."""
+    mb, mp = FAST.melee_hp
+    cb, cp = FAST.caster_hp
+    t = max(0.0, game_s) / 90.0
+    return ((mb + mp * t) + (cb + cp * t)) / 2
 
 
 @dataclass
@@ -245,7 +248,7 @@ class Micro:
             return True
         # Stand an auto range behind the enemy minion nearest to us, on our side of the lane.
         front = min(sc.minions, key=sc.dist)
-        back = (VC.auto_range + 120) * VC.px_per_unit
+        back = (VC.auto_range + 20) * VC.px_per_unit  # in attack range of the front minion
         tx, ty = front.unit.x - self.fwd[0] * back, front.unit.y - self.fwd[1] * back
         if math.hypot(tx - sc.me_xy[0], ty - sc.me_xy[1]) > 35:
             self.move_screen(tx, ty, now, "farm: hold behind the wave", every=0.3)

@@ -528,6 +528,14 @@ class Player:
             return
         m.go_map(pt, now, attack=arrived, every=1.5 if arrived else 1.0)
 
+    def _at_fountain(self, radius: float = 1800.0) -> bool | None:
+        """True/False from the minimap position, None when the position is unknown."""
+        mmp = self.mm_state.pos if self.mm_state is not None else None
+        if mmp is None:
+            return None
+        fountain = config.BLUE_FOUNTAIN if self.side == "ORDER" else config.RED_FOUNTAIN
+        return math.dist(mmp, fountain) < radius
+
     def _switch_lane(self, name: str) -> None:
         self.lane = Lane(name, self.side)
         if self.mech is not None:
@@ -793,7 +801,9 @@ class Player:
             if self.shop_brain is not None and not fresh and now - self._base_since < 3.0:
                 self._build_wake.set()
                 return p  # give the build head a moment to re-plan with the current gold
-            if gold >= 50:
+            if self._at_fountain() is False and now - self._base_since < 6.0:
+                return p  # not in shop range yet (recall still landing): wait
+            if gold >= 50 and self._at_fountain() is not False:
                 self._shop_if_possible(gold)
                 self._fountain_shopped = True
             self._base_shop_done = True
@@ -810,7 +820,7 @@ class Player:
             if lost > 1.0:
                 m.cancel_recall()
                 self.intent = "retreat"
-            elif m.recall_done(now):
+            elif m.recall_done(now) and self._at_fountain() is not False:
                 m.cancel_recall()
                 m.nav.reset_to_base()
                 self._build_wake.set()

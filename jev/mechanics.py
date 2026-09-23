@@ -370,6 +370,8 @@ class Mechanics:
             self.last_action = "recalling"
 
     def recall_done(self, now: float) -> bool:
+        """Channel time has passed; the loop also requires the minimap to put us in the fountain,
+        because a recall that started late (walking first) lands later than the timer says."""
         return self.recall_started is not None and now - self.recall_started >= self.timing.recall_channel_s
 
     def cancel_recall(self) -> None:
