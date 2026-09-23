@@ -321,7 +321,13 @@ def resolve_point(ctx: Ctx, spec: Spec, cands, where_probs: dict[str, float] | N
 def execute(ctx: Ctx, spec: Spec, cands, target_probs, where_probs, distance) -> str:
     """Run one chosen action. Returns a short description, or '' when it could not run."""
     if spec.mode:
-        ctx.mi.mode = spec.mode
+        mi = ctx.mi
+        # A committed all-in is not dropped for farming within 2.5 s (Jev re-picks ~5 times a
+        # second and a flip-flop cancels the combo halfway); backing off is always allowed.
+        if (mi.mode == "all_in" and spec.mode in ("farm", "push", "hold_with_carry") and ctx.sc.champ is not None
+                and ctx.now - mi.mode_since < 2.5):
+            return ""
+        mi.set_mode(spec.mode, ctx.now)
         return f"mode {spec.mode}"
     tgt, pt = None, None
     if spec.target == UNIT:

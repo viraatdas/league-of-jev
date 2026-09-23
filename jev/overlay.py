@@ -21,6 +21,7 @@ the overlay pulls a snapshot dict from it ten times a second.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from pathlib import Path
@@ -492,6 +493,12 @@ class Overlay:
 def run_with_overlay(worker: Callable[[], None], snapshot: Callable[[], dict], corner: str = "tr", markers: bool = True,
                      game_active: Callable[[], bool] | None = None) -> None:
     """Start `worker` in a background thread and run the overlay on the main thread."""
-    t = threading.Thread(target=worker, daemon=True)
+    def work() -> None:
+        try:
+            worker()
+        finally:
+            os._exit(0)  # the game is over: close the overlay with it (a runner restarts us for the next one)
+
+    t = threading.Thread(target=work, daemon=True)
     t.start()
     Overlay(snapshot, corner=corner, markers=markers, game_active=game_active).run_forever()

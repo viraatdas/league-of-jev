@@ -20,6 +20,7 @@ VC = config.VISION
 FAST = config.FAST
 
 YASUO_ID, THRESH_ID = 157, 412
+FIGHT_MODES = ("trade", "all_in")
 
 
 class Kit:
@@ -50,6 +51,69 @@ class Kit:
         return {}
 
     def reflex(self, mi: Micro, sc: Scene, now: float, plan: dict) -> bool:
+        return False
+
+    # -- fighting ------------------------------------------------------------------------
+    # Jev decides whether to fight (the trade / all_in modes, or the strategy head's intent);
+    # the kit runs the combo at frame rate, one order per actor tick, from the HUD's readiness.
+    def fight_modes(self, sc: Scene) -> list[Spec]:
+        if sc.champ is None or (sc.champ_dist or 9e9) > 1400:
+            return []
+        return self.modes(
+            ("trade", "Short trade on the enemy champion: my burst combo and an auto or two, then step back before they answer."),
+            ("all_in", "Fight the enemy champion to the death: close the gap, full combo, ignite, and chase until they die."),
+        )
+
+    def step(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, pushing: bool) -> bool:
+        """Standing behaviour for this tick: the fight combo in a fight mode, else continuous()."""
+        if mode in FIGHT_MODES:
+            if sc.champ is not None:
+                self._fight_seen = now
+                return self.fight(mi, sc, now, aspd, mode)
+            if now - getattr(self, "_fight_seen", 0.0) > 1.5:
+                mi.set_mode("farm", now)
+                mode = "farm"
+        return self.continuous(mi, sc, now, aspd, mode, pushing)
+
+    def fight(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str) -> bool:
+        if mode == "trade" and self.trade_over(mi, sc, now):
+            return True
+        return self.hit_or_chase(mi, sc, now, aspd, mode)
+
+    def trade_over(self, mi: Micro, sc: Scene, now: float) -> bool:
+        """A trade ends 0.7 s after the burst (one more auto), or 2.5 s after it began; then walk
+        back for 1.2 s and return to farming. True while the trade is winding down."""
+        t0 = mi.mode_since
+        burst = getattr(self, "burst_at", 0.0)
+        end = (burst + 0.7) if burst >= t0 else (t0 + 2.5)
+        if now < end:
+            return False
+        if now < end + 1.2:
+            mi.back_off(sc, now)
+            mi.last_action = "trade: step back"
+            return True
+        mi.set_mode("farm", now)
+        return False
+
+    def hit_or_chase(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, reach: float = 0.0) -> bool:
+        """Auto the champion when in range, otherwise walk onto them (orb-walk: move between autos)."""
+        ch, d = sc.champ, sc.champ_dist or 9e9
+        rng = (reach or VC.auto_range) + 60
+        if d <= rng and mi.attack_ready(now, aspd):
+            mi.attack(ch, now, f"{mode}: auto the champion")
+            return True
+        if mi.in_windup(now, aspd):
+            return True
+        x, y = ch.lead(now, 0.25)
+        mi.move_screen(x, y, now, f"{mode}: stick to the champion" if d <= rng else f"{mode}: chase", every=0.12)
+        return True
+
+    def ignite_if_kill(self, mi: Micro, sc: Scene, now: float, mode: str) -> bool:
+        slot = mi.summoner_slot("ignite", sc.ready)
+        if slot and mode == "all_in" and sc.champ.unit.hp < 0.35 and (sc.champ_dist or 9e9) <= 600:
+            mi.cast_summoner(slot, sc.champ.unit.x, sc.champ.unit.y)
+            mi._ordered(now, "ignite the champion")
+            return True
         return False
 
     def continuous(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, pushing: bool) -> bool:
@@ -166,7 +230,7 @@ class Yasuo(Kit):
             ("farm", "Keep farming: last-hit minions about to die, otherwise hold just behind the wave."),
             ("push", "Shove the wave: attack minions freely, ignore last-hit timing."),
             ("back_off", "Walk back toward my tower, away from the enemy champion."),
-        )
+        ) + self.fight_modes(sc)
         not_marked = lambda k, u: getattr(u, "e_marked_until", 0.0) <= now  # E cannot reuse a unit for a while
         if sc.ready.get("Q"):
             if q3:
@@ -232,6 +296,61 @@ class Yasuo(Kit):
             mi.last_exec = {"name": "Q last hit", "what": "Q last hit", "ts": now, "target": mi._pt(tq.unit.x, tq.unit.y), "point": None}
             return True
         return super().continuous(mi, sc, now, aspd, mode, pushing)
+
+    def fight(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str) -> bool:
+        """Yasuo's combo, one order per tick: R on an airborne target; Q3 tornado from range (led
+        onto where they walk); E onto them with Q in the dash (EQ, a knock-up with Q3); Q in
+        melee range; ignite a kill; E through a minion toward them to close the gap; autos."""
+        if mode == "trade" and self.trade_over(mi, sc, now):
+            return True
+        if not mi._can_order(now):
+            return True
+        ch, d, rdy = sc.champ, sc.champ_dist or 9e9, sc.ready
+        q3 = self.q.q3(now)
+        if sc.r_lit and d <= VC.r_range:
+            mi.cast(4, ch.unit.x, ch.unit.y)
+            mi._ordered(now, f"{mode}: R Last Breath")
+            self.burst_at = now
+            return True
+        if rdy.get("Q") and q3 and d <= VC.q3_range * 0.92 and d > VC.e_range:
+            x, y = ch.lead(now, 0.3 + d / 1500)
+            mi.cast(1, x, y)
+            self.q.cast(True, now)
+            self.tornado_at = now
+            mi._ordered(now, f"{mode}: Q3 tornado")
+            return True
+        if rdy.get("E") and d <= VC.e_range and ch.e_marked_until <= now:
+            mi.cast(3, ch.unit.x, ch.unit.y)
+            ch.e_marked_until = now + 10.0
+            if rdy.get("Q"):
+                was_q3 = q3
+                mi.later(FAST.eq_delay_s, lambda: mi.ctl.press(mi.kb.ability(1)))
+                self.q.cast(True, now)
+                if was_q3:
+                    self.tornado_at = now + 0.15
+                self.burst_at = now
+                mi._ordered(now, f"{mode}: E+Q onto the champion" + (" (tornado)" if was_q3 else ""))
+            else:
+                mi._ordered(now, f"{mode}: E onto the champion")
+            return True
+        if rdy.get("Q") and d <= VC.q_range + 30:
+            x, y = ch.lead(now, 0.25)
+            mi.cast(1, x, y)
+            self.q.cast(True, now)
+            if q3:
+                self.tornado_at = now
+            self.burst_at = now
+            mi._ordered(now, f"{mode}: Q the champion")
+            return True
+        if self.ignite_if_kill(mi, sc, now, mode):
+            return True
+        if rdy.get("E") and d > VC.auto_range + 120 and sc.dash_options and (mode == "all_in" or rdy.get("Q")):
+            tr = sc.dash_options[0][0]
+            mi.cast(3, tr.unit.x, tr.unit.y)
+            tr.e_marked_until = now + 10.0
+            mi._ordered(now, f"{mode}: E through a minion toward the champion")
+            return True
+        return self.hit_or_chase(mi, sc, now, aspd, mode)
 
     def reflex(self, mi: Micro, sc: Scene, now: float, plan: dict) -> bool:
         """R the moment our own tornado lifts the target, if the fight read is favourable."""
@@ -418,7 +537,7 @@ class Generic(Kit):
                              ("push", "Help shove the wave."), ("back_off", "Walk back toward my tower."))
         else:
             out = self.modes(("farm", "Keep farming: last-hit minions about to die."), ("push", "Shove the wave."),
-                             ("back_off", "Walk back toward my tower."))
+                             ("back_off", "Walk back toward my tower.")) + self.fight_modes(sc)
         for i, k in enumerate("QWER"):
             if sc.ready.get(k):
                 nm = self.ability_names.get(k) or k
@@ -473,7 +592,7 @@ class LeeSin(Kit):
         out = self.modes(
             ("farm", "Keep clearing: attack the camp or wave in front of me."),
             ("back_off", "Walk away from the enemy champion toward safety."),
-        )
+        ) + self.fight_modes(sc)
         if self.q2_up(sc, now):
             out.append(Spec("Q2_dash", "Q again (Resonating Strike): dash to the unit my Sonic Wave hit and strike it.", NONE,
                             run=lambda c, s, t, p: (c.mi.ctl.press(c.mi.kb.ability(1)), "Q2 dash")[1]))
@@ -495,6 +614,54 @@ class LeeSin(Kit):
                             who="enemy_champion", range=self.R_RANGE,
                             run=lambda c, s, t, p: (c.mi.cast(4, t.unit.x, t.unit.y), "R kick")[1]))
         return out
+
+    def e2_up(self, sc: Scene, now: float) -> bool:
+        return bool(sc.ready.get("E")) and 0.35 < now - self.e_at < 3.0
+
+    def fight(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str) -> bool:
+        """Lee Sin's gank / skirmish combo, one order per tick: R to finish (or to peel when I am
+        losing); Q2 dash after a Sonic Wave hit; Q1 from range (led); E then E2 slow in melee;
+        W shield when hurt; autos between spells (the passive gives two fast ones); chase."""
+        if mode == "trade" and self.trade_over(mi, sc, now):
+            return True
+        if not mi._can_order(now):
+            return True
+        ch, d, rdy = sc.champ, sc.champ_dist or 9e9, sc.ready
+        if rdy.get("R") and d <= self.R_RANGE + 60 and (ch.unit.hp < 0.3 or (mode == "all_in" and mi.hp_pct < 35)):
+            mi.cast(4, ch.unit.x, ch.unit.y)
+            mi._ordered(now, f"{mode}: R kick")
+            self.burst_at = now
+            return True
+        if self.q2_up(sc, now) and d <= 1300 and now - self.q_at > 0.35:
+            mi.ctl.press(mi.kb.ability(1))
+            self.q_at = 0.0
+            mi._ordered(now, f"{mode}: Q2 dash to the champion")
+            self.burst_at = now
+            return True
+        if rdy.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE * 0.9 and now - self.q_at > 3.0:
+            x, y = ch.lead(now, 0.25 + d / 1800)
+            mi.cast(1, x, y)
+            self.q_at = now
+            mi._ordered(now, f"{mode}: Q Sonic Wave at the champion")
+            return True
+        if self.e2_up(sc, now) and d <= 500 and mode == "all_in":
+            mi.ctl.press(mi.kb.ability(3))
+            self.e_at = 0.0
+            mi._ordered(now, f"{mode}: E2 cripple")
+            return True
+        if rdy.get("E") and not self.e2_up(sc, now) and d <= self.E_RADIUS - 40 and now - self.e_at > 3.0:
+            mi.ctl.press(mi.kb.ability(3))
+            self.e_at = now
+            self.burst_at = now
+            mi._ordered(now, f"{mode}: E Tempest")
+            return True
+        if rdy.get("W") and mi.hp_pct < 45 and d <= 600:
+            mi.ctl.press(mi.kb.self_cast(2))
+            mi._ordered(now, f"{mode}: W shield")
+            return True
+        if self.ignite_if_kill(mi, sc, now, mode):
+            return True
+        return self.hit_or_chase(mi, sc, now, aspd, mode, reach=190.0)
 
     def me_state(self, sc: Scene, mi: Micro, now: float) -> dict:
         return {"Q": "Q2 dash available" if self.q2_up(sc, now) else self.ready_words(sc, "Q"),

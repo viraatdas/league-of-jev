@@ -21,7 +21,7 @@ from jev.brain import legal_level_ups
 from jev.items import BuildPlan, ShopBrain, enemy_team
 from jev.jungle import BIG, JungleState, camps
 from jev import places as map_places
-from jev.kits import Kit, kit_for
+from jev.kits import FIGHT_MODES, Kit, kit_for
 from jev.lanes import LANE_LETTER, Lane, lane_for
 from jev.micro import Micro, UnitTracker, build_scene
 from jev.minimap import MinimapReader, MinimapState, dist, lane_progress, lane_wave
@@ -308,7 +308,9 @@ class Player:
             self.api_ms = (time.time() - t0) * 1000
             if d is None:
                 fails += 1
-                if fails >= 4:
+                # Dead only after ~10 s of failures with the game gone: the API stalls for a few
+                # polls while the game finishes loading, and that ended the harness at 0:00.
+                if fails >= 60 and not self.riot.is_game_running():
                     self._api_dead = True
             else:
                 fails = 0
@@ -493,6 +495,8 @@ class Player:
         )
         if self.tactics is not None:
             self.tactics.publish(inp)
+        mi.summoners, mi.hp_pct = inp.summoners, inp.hp_pct
+        self._fight_triggers(sc, mi, now)
         if not mi._can_order(now):
             return True
         if camp_pt is not None and camp_big and self._smite_reflex(ctx, inp, now):
@@ -519,13 +523,37 @@ class Player:
             self.dlog.record(t, executed, self._metrics(), str(self.state.get("game", {}).get("time")))
             if executed:
                 return True
-        if not standing:
+        if not standing and mi.mode not in FIGHT_MODES:
             return False
         before = mi.orders
-        ok = kit.continuous(mi, sc, now, aspd, mi.mode, self.intent == "push_tower")
+        ok = kit.step(mi, sc, now, aspd, mi.mode, self.intent == "push_tower")
         if mi.orders > before and mi.last_action.startswith("last hit"):
             mi.reacted("lasthit", view.ts)
         return ok
+
+    def _fight_triggers(self, sc, mi, now: float) -> None:
+        """Code-level entries and exits around Jev's fight modes: a kill window (enemy champion
+        low and close, me healthy) goes all in at once; the strategy head's all_in intent does
+        too; a fight I am clearly losing backs off. Supports keep Jev's choice."""
+        if self.kit.support:
+            return
+        ch, d = sc.champ, sc.champ_dist or 9e9
+        if mi.mode in FIGHT_MODES:
+            if ch is not None and mi.hp_pct < 25 and ch.unit.hp > mi.hp_pct / 100 + 0.15:
+                mi.set_mode("back_off", now)
+                self.log_lines.append(f"fight: losing ({mi.hp_pct:.0f}% vs {ch.unit.hp * 100:.0f}%), backing off")
+            return
+        if ch is None or getattr(self, "_near_enemy_tower", False):
+            return
+        if ch.unit.hp < 0.25 and d < 650 and mi.hp_pct > 35:
+            mi.set_mode("all_in", now)
+            self.log_lines.append(f"fight: kill window ({ch.unit.hp * 100:.0f}% at {d:.0f}u), all in")
+            return
+        dd = self.decision
+        if (dd is not None and dd.intent == "all_in" and dd.intent_confidence >= 0.5 and d < 900 and mi.hp_pct > 40
+                and now - dd.ts < 2.0 and mi.mode != "back_off"):
+            mi.set_mode("all_in", now)
+            self.log_lines.append(f"fight: strategy says all in (p={dd.intent_confidence:.2f})")
 
     def _pause_guard(self, data: dict, now: float) -> None:
         """Game time frozen for 10 s with the API alive: the game is paused (only possible in custom
@@ -775,8 +803,11 @@ class Player:
                 while True:
                     t0 = time.time()
                     data = self.data if not self.dry_run else self.riot.all_game_data()
-                    if data is None or self._api_dead:
+                    if self._api_dead or (data is None and self.dry_run):
                         break
+                    if data is None:
+                        time.sleep(0.2)
+                        continue
                     if not self.dry_run and not self.ctl.keys_ok():
                         if self.keep_front and t0 - self._last_activate > 3.0:
                             self._last_activate = t0
@@ -858,6 +889,7 @@ class Player:
                     if dist(mm.pos, t) < config.TOWER_RANGE:
                         p.near_enemy_tower = True
                         break
+                self._near_enemy_tower = p.near_enemy_tower
                 # Q aim: nearest enemy champion, else nearest enemy minion, within reach.
                 targets = mm.enemy_champions or mm.enemy_minions
                 if targets:

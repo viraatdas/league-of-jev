@@ -30,6 +30,24 @@ class Track:
     seen: float
     hist: collections.deque = field(default_factory=lambda: collections.deque(maxlen=24))
     e_marked_until: float = 0.0   # Yasuo E cannot dash through the same unit again for a while
+    path: collections.deque = field(default_factory=lambda: collections.deque(maxlen=12))  # (t, x, y) screen px
+
+    def velocity(self, now: float, window: float = 0.35) -> tuple[float, float]:
+        """Screen px per second over the recent window (0, 0 with too little history)."""
+        pts = [(t, x, y) for t, x, y in self.path if now - t <= window]
+        if len(pts) < 3 or pts[-1][0] - pts[0][0] < 0.08:
+            return 0.0, 0.0
+        dt = pts[-1][0] - pts[0][0]
+        return (pts[-1][1] - pts[0][1]) / dt, (pts[-1][2] - pts[0][2]) / dt
+
+    def lead(self, now: float, delay_s: float) -> tuple[float, float]:
+        """Where the unit will be after `delay_s` if it keeps walking the same way (capped)."""
+        vx, vy = self.velocity(now)
+        cap = 420 * config.VISION.px_per_unit  # no faster than ~420 units/s
+        n = math.hypot(vx, vy)
+        if n > cap:
+            vx, vy = vx / n * cap, vy / n * cap
+        return self.unit.x + vx * delay_s, self.unit.y + vy * delay_s
 
     def hp_rate(self, now: float, window: float = 0.7) -> float:
         """HP fraction per second over the recent window (negative while taking damage)."""
@@ -75,6 +93,7 @@ class UnitTracker:
                 tr = Track(next(_ids), u, now)
                 self.tracks[tr.id] = tr
             tr.hist.append((now, u.hp))
+            tr.path.append((now, u.x, u.y))
             out.append(tr)
         for tid, tr in list(self.tracks.items()):
             if now - tr.seen > self.ttl:
@@ -162,12 +181,28 @@ class Micro:
         self.last_attack = 0.0
         self.last_move = 0.0
         self.mode = "farm"
+        self.mode_since = 0.0
+        self.summoners: list[str | None] = []   # set by the loop each tick (flash, ignite, ...)
+        self.hp_pct = 100.0                     # own HP, set by the loop each tick
         self.last_action = ""
         self.last_seq = 0
         self.orders = 0
         self.react_ms: collections.deque[tuple[str, float]] = collections.deque(maxlen=200)
         self._later: list[tuple[float, object]] = []
         self.last_exec: dict | None = None
+
+    def set_mode(self, mode: str, now: float) -> None:
+        if mode != self.mode:
+            self.mode, self.mode_since = mode, now
+
+    def summoner_slot(self, name: str, ready: dict) -> int | None:
+        for i, (n, hud) in enumerate(zip(self.summoners, "DF"), 1):
+            if n == name and ready.get(hud):
+                return i
+        return None
+
+    def cast_summoner(self, slot: int, x: float, y: float) -> None:
+        self.ctl.cast(self.kb.summoner(slot), *self._pt(x, y), self.kb.quick(f"evtCastAvatarSpell{slot}"))
 
     def later(self, delay_s: float, fn) -> None:
         """Queue a combo step to run `delay_s` from now (checked every actor tick)."""
