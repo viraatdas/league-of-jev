@@ -362,6 +362,13 @@ class Yasuo(Kit):
             self.burst_at = now
             mi._ordered(now, f"{mode}: Q the champion")
             return True
+        if (rdy.get("W") and 350 < d <= 1000 and getattr(mi, "hp_lost", 0.0) >= 10
+                and now - getattr(self, "_wall_at", 0.0) > 5.0):
+            # Losing HP fast to a champion out of melee range: their damage is projectiles, wall it.
+            mi.cast(2, ch.unit.x, ch.unit.y)
+            self._wall_at = now
+            mi._ordered(now, f"{mode}: W wind wall toward the champion")
+            return True
         if self.ignite_if_kill(mi, sc, now, mode):
             return True
         if rdy.get("E") and d > VC.auto_range + 120 and sc.dash_options and (mode == "all_in" or rdy.get("Q")) and not crowded:

@@ -581,6 +581,7 @@ class Player:
         if self.tactics is not None:
             self.tactics.publish(inp)
         mi.summoners, mi.hp_pct = inp.summoners, inp.hp_pct
+        mi.hp_lost = getattr(self, "_hp_lost", 0.0)  # HP% lost in the damage window
         if escaping:
             # Walking out: no fight entries; reflexes only (Flash, defensive summoners, potion,
             # the kit's escape dash). Retreats used to skip this step entirely, so a Yasuo taking

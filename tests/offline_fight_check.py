@@ -91,6 +91,14 @@ sc_open = scene(track(unit("champion", 380, 0, 0.8), now), [], "QE")
 assert Yasuo().trade_window(mi, sc_open, now, 0) == "trade"
 assert Yasuo().trade_window(mi, sc_open, now, -1) is None  # behind in levels: no trade
 
+# Wind wall: losing HP fast to a champion out of melee range.
+mi, log = micro()
+mi.hp_lost = 15
+sc = scene(track(unit("champion", 600, 0, 0.9), now), [], "W")
+Yasuo().fight(mi, sc, now, 0.7, "trade")
+print("yasuo wall:", mi.last_action)
+assert "W wind wall" in mi.last_action
+
 # Escape: hurt, enemy close, a minion toward home (down-left on screen for the blue side).
 mi, log = micro()
 mi.hp_pct = 25
