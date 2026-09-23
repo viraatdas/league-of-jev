@@ -124,6 +124,14 @@ def overlay_demo(markers: bool = typer.Option(True, help="Draw the marker layer 
 
 
 @app.command()
+def score(path: Path = typer.Argument(Path("/tmp/jev-helper/play.log"))) -> None:
+    """Per-game report from a play log: deaths and when, KDA, CS/min, time blind/paused/dead."""
+    from jev.score import report
+
+    console.print(report(path), markup=False)
+
+
+@app.command()
 def review(path: Path = typer.Argument(Path("logs/decisions.jsonl"))) -> None:
     """Summarise logged tactical decisions: outcome per action, menu gaps, near-ties."""
     from jev.decisions import review as run_review
