@@ -227,6 +227,12 @@ class LCU:
         ok, notes = self.set_spell_ids(s1, s2, tries)
         return (204 if ok else 0), ({"spells": [s1, s2], "how": notes[-160:]} if ok else {"spells_not_confirmed": [s1, s2], "tried": notes})
 
+    @staticmethod
+    def _my_position(sess: dict) -> str:
+        cell = sess.get("localPlayerCellId")
+        me = next((p for p in sess.get("myTeam", []) if p.get("cellId") == cell), {})
+        return str(me.get("assignedPosition") or "-")
+
     def probe_spells(self) -> str:
         """Diagnostic: switch to Flash + Smite and back, reporting what each endpoint did."""
         before = self.my_spells()
@@ -273,6 +279,15 @@ class LCU:
                         subprocess.run(["screencapture", "-x", "logs/night/champselect.png"], check=False)
                         ok, how = self.set_spell_ids(*SPELLS_BY_POSITION.get(position, SPELLS_BY_POSITION[""]), tries=1)
                         yield f"spells before hover: ok={ok} [{how}] phase={(sess.get('timer') or {}).get('phase')}"
+                        if not ok:
+                            # Is any spell change accepted, or only this pair refused (Smite may need an
+                            # assigned jungle position)? Try Heal, read back, restore.
+                            before = self.my_spells()
+                            ok_h, how_h = self.set_spell_ids(4, 7, tries=1)
+                            yield f"spells probe heal: ok={ok_h} [{how_h}] before={before}"
+                            _, dis = self.req("GET", "/lol-gameflow/v1/session/per-position-summoner-spells/disallowed")
+                            _, req = self.req("GET", "/lol-gameflow/v1/session/per-position-summoner-spells/required")
+                            yield f"spells rules: disallowed={dis} required={req} my position={self._my_position(sess)}"
                     cell = sess.get("localPlayerCellId")
                     for g in sess.get("actions", []):
                         for a in g:
