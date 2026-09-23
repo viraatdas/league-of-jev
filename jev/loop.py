@@ -645,6 +645,14 @@ class Player:
             mi.set_mode("all_in", now)
             self.log_lines.append(f"fight: kill window ({ch.unit.hp * 100:.0f}% at {d:.0f}u), all in")
             return
+        if not (self.jungle_state is not None and getattr(self, "_at_camp", False)):
+            me_lvl = int((self.state.get("me") or {}).get("level") or 1)
+            opp_lvl = int((self.state.get("lane_opponent") or {}).get("level") or me_lvl)
+            mode = self.kit.trade_window(mi, sc, now, me_lvl - opp_lvl)
+            if mode:
+                mi.set_mode(mode, now)
+                self.log_lines.append(f"fight: trade window, {mode} ({ch.unit.hp * 100:.0f}% at {d:.0f}u, me {mi.hp_pct:.0f}%)")
+                return
         dd = self.decision
         if (dd is not None and dd.intent == "all_in" and dd.intent_confidence >= 0.5 and d < 900 and mi.hp_pct > 40
                 and now - dd.ts < 2.0 and mi.mode != "back_off"):
@@ -751,7 +759,11 @@ class Player:
         if js.arrived_at is None or js.arrived_at < FIRST_SPAWN:
             js.arrived_at = max(gt, FIRST_SPAWN)
         sc_before = len(self.min_tracker.tracks)
-        acted = self._micro_step(data, ap, stats, now, standing=True, camp_pt=pt, camp_big=big)
+        self._at_camp = True
+        try:
+            acted = self._micro_step(data, ap, stats, now, standing=True, camp_pt=pt, camp_big=big)
+        finally:
+            self._at_camp = False
         if self.scene is not None and self.scene.minions:
             js.last_seen_monster = gt
             return

@@ -80,6 +80,11 @@ class Kit:
             return True
         return self.hit_or_chase(mi, sc, now, aspd, mode)
 
+    def trade_window(self, mi: Micro, sc: Scene, now: float, level_diff: int) -> str | None:
+        """A fight mode to enter on our own when the moment is clearly good (Jev picked farm 88%
+        of the time with the enemy champion in view, game 4), else None."""
+        return None
+
     def trade_over(self, mi: Micro, sc: Scene, now: float) -> bool:
         """A trade ends 0.7 s after the burst (one more auto), or 2.5 s after it began; then walk
         back for 1.2 s and return to farming. True while the trade is winding down."""
@@ -353,6 +358,21 @@ class Yasuo(Kit):
             return True
         return self.hit_or_chase(mi, sc, now, aspd, mode)
 
+    def trade_window(self, mi: Micro, sc: Scene, now: float, level_diff: int) -> str | None:
+        """EQ (or the Q3 tornado) is up, the champion is in dash or tornado reach, I am at least
+        as healthy and as high level: trade."""
+        ch, d, rdy = sc.champ, sc.champ_dist or 9e9, sc.ready
+        if now - getattr(self, "_last_window", 0.0) < 8.0 or level_diff < 0:
+            return None
+        if mi.hp_pct < 50 or mi.hp_pct < ch.unit.hp * 100 - 5:
+            return None
+        eq = rdy.get("E") and rdy.get("Q") and d <= VC.e_range + 150
+        tornado = rdy.get("Q") and self.q.q3(now) and d <= VC.q3_range * 0.85
+        if not (eq or tornado):
+            return None
+        self._last_window = now
+        return "all_in" if (ch.unit.hp < 0.45 and mi.hp_pct > 60) else "trade"
+
     def reflex(self, mi: Micro, sc: Scene, now: float, plan: dict) -> bool:
         """R the moment our own tornado lifts the target, if the fight read is favourable."""
         if sc.r_lit and sc.champ is not None and now - self.tornado_at < FAST.r_watch_s and plan.get("fight_favorable", 0.5) >= 0.45:
@@ -615,6 +635,16 @@ class LeeSin(Kit):
                             who="enemy_champion", range=self.R_RANGE,
                             run=lambda c, s, t, p: (c.mi.cast(4, t.unit.x, t.unit.y), "R kick")[1]))
         return out
+
+    def trade_window(self, mi: Micro, sc: Scene, now: float, level_diff: int) -> str | None:
+        """A gank: a champion in Sonic Wave reach, Q up, me healthy and not behind in levels."""
+        d = sc.champ_dist or 9e9
+        if now - getattr(self, "_last_window", 0.0) < 6.0 or level_diff < -1 or mi.hp_pct < 50:
+            return None
+        if sc.ready.get("Q") and d <= self.Q_RANGE * 0.9:
+            self._last_window = now
+            return "all_in"
+        return None
 
     def e2_up(self, sc: Scene, now: float) -> bool:
         return bool(sc.ready.get("E")) and 0.35 < now - self.e_at < 3.0
