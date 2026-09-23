@@ -948,9 +948,34 @@ class Player:
         if not names:
             first = self.kit.items.starters[0] if self.kit.items.starters else "Doran's Blade"
             names = [first] if gold >= 400 else []
+        bought_any = False
         for item in names:
             if self.mech.shop(item, self._items_now):
                 self.log_lines.append(f"shop: bought {item}")
+                bought_any = True
             else:
                 self.log_lines.append(f"shop: could not buy {item}")
                 break
+        # Spend the rest: re-plan with the new inventory and gold, up to two more rounds.
+        for _ in range(2):
+            if not bought_any or self.shop_brain is None:
+                break
+            data = self.riot.all_game_data() or {}
+            gold_left = float((data.get("activePlayer") or {}).get("currentGold", 0))
+            if gold_left < 300:
+                break
+            try:
+                self.build = self.shop_brain.decide(data, self.side)
+            except Exception:  # noqa: BLE001
+                break
+            cat = self.shop_brain.catalog
+            target = cat.get(self.build.target)
+            more = [b.name for b in cat.purchases(target, self._items_now(), gold_left)] if target else []
+            bought_any = False
+            for item in more:
+                if self.mech.shop(item, self._items_now):
+                    self.log_lines.append(f"shop: bought {item}")
+                    bought_any = True
+                else:
+                    self.log_lines.append(f"shop: could not buy {item}")
+                    break
