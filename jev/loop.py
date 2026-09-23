@@ -1172,6 +1172,14 @@ class Player:
         state = self.state or build_state(data, p, self.role)
         self.intent = choose_intent(self.decision, state, p, now, self.guards)
         d0 = self.decision
+        if self.intent == "retreat" and d0 is not None and d0.intent == "retreat" and now >= self.guards.retreat_until:
+            # Jev's own retreat call at high HP with nothing hitting us cost game 4 a quarter of its
+            # lane time (70% of retreat seconds were at 60-100% HP). Keep it only with real danger.
+            mm = self.mm_state
+            near = sum(1 for e in (mm.enemy_champions if mm is not None and mm.pos is not None else [])
+                       if dist(mm.pos, e) < 2000)
+            if hp_pct >= 55 and lost < 8 and d0.danger < 1.8 and near < 2:
+                self.intent = "farm"
         if self.intent in ("go_to", "group") and d0 is not None and d0.intent_probabilities.get(self.intent, 0.0) < 0.35:
             self.intent = "farm"  # a low-confidence roam costs a laner CS and exposes them; keep laning
         if self.kit.support and self.intent in ("go_to", "group", "trade", "all_in", "push_tower"):
