@@ -175,6 +175,19 @@ class Yasuo(Kit):
             else:
                 out.append(Spec("Q", "Q: stab along the chosen line: damages every enemy hit and builds a stack toward the tornado.",
                                 POINT, who="enemy", range=VC.q_range, run=self._q))
+        # Purpose-named Q moves: the same spell, but Jev weighs "last hit with Q" or "tornado the
+        # champion" far better than an abstract "Q along a line".
+        if sc.ready.get("Q") and sc.killable_q:
+            tq = sc.killable_q[0]
+            out.append(Spec("Q_lasthit", "Q the minions: kills the low minion Q can finish now and builds a Q stack.", NONE,
+                            run=lambda c, s, t, p, tq=tq: self._q(c, s, None, (tq.unit.x, tq.unit.y))))
+        if sc.ready.get("Q") and sc.champ is not None and sc.champ_dist is not None:
+            rng = VC.q3_range if q3 else VC.q_range
+            if sc.champ_dist <= rng:
+                ch = sc.champ
+                name, text = (("Q3_tornado", "Throw the Q3 tornado at the enemy champion: knocks them up, then R can follow.")
+                              if q3 else ("Q_poke", "Q the enemy champion: quick damage and a Q stack toward the tornado."))
+                out.append(Spec(name, text, NONE, run=lambda c, s, t, p, ch=ch: self._q(c, s, None, (ch.unit.x, ch.unit.y))))
         if sc.ready.get("W"):
             out.append(Spec("W", "W: raise a wind wall in the chosen direction: it blocks enemy projectiles.", POINT, range=400,
                             run=lambda c, s, t, p: (c.mi.cast(2, *p), "W wind wall")[1]))
@@ -202,6 +215,19 @@ class Yasuo(Kit):
             "W": self.ready_words(sc, "W"), "E": self.ready_words(sc, "E"),
             "R": "castable (enemy airborne)" if sc.r_lit else "not castable",
         }
+
+    def continuous(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, pushing: bool) -> bool:
+        # Farming Yasuo uses Q on cooldown on minions it can kill (standard play: CS and Q stacks).
+        if mode in ("farm", "push") and sc.ready.get("Q") and sc.killable_q and mi._can_order(now):
+            tq = sc.killable_q[0]
+            was_q3 = self.q.q3(now)
+            hit = _line_hits(sc, tq.unit.x, tq.unit.y, VC.q3_range if was_q3 else VC.q_range)
+            mi.cast(1, tq.unit.x, tq.unit.y)
+            self.q.cast(hit, now)
+            mi._ordered(now, "Q last hit")
+            mi.last_exec = {"name": "Q last hit", "what": "Q last hit", "ts": now, "target": mi._pt(tq.unit.x, tq.unit.y), "point": None}
+            return True
+        return super().continuous(mi, sc, now, aspd, mode, pushing)
 
     def reflex(self, mi: Micro, sc: Scene, now: float, plan: dict) -> bool:
         """R the moment our own tornado lifts the target, if the fight read is favourable."""
