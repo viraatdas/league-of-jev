@@ -428,12 +428,106 @@ class Generic(Kit):
         return super().continuous(mi, sc, now, aspd, mode, pushing)
 
 
-KITS = {"yasuo": Yasuo, "thresh": Thresh, "soraka": Soraka}
-BY_ID = {Yasuo.champ_id: Yasuo, Thresh.champ_id: Thresh, Soraka.champ_id: Soraka}
+# ---------------------------------------------------------------------------------------
+class LeeSin(Kit):
+    name = "Lee Sin"
+    champ_id = 64
+    default_role = "JUNGLE"
+    skill_order = ["Q", "W", "E", "Q", "Q", "R", "Q", "E", "Q", "E", "R", "E", "E", "W", "W", "R", "W", "W"]
+    items = ItemProfile(
+        champion="Lee Sin",
+        core=["Eclipse", "Black Cleaver", "Sterak's Gage", "Death's Dance", "Guardian Angel", "Maw of Malmortius"],
+        starters=["Gustwalker Hatchling", "Health Potion"],
+        boots=["Plated Steelcaps", "Mercury's Treads", "Ionian Boots of Lucidity"],
+        note="Lee Sin is a jungler who ganks early and plays skirmishes",
+    )
+    Q_RANGE, E_RADIUS, R_RANGE, W_RANGE = 1100.0, 430.0, 375.0, 700.0
+
+    def __init__(self, role: str = "") -> None:
+        super().__init__(role)
+        self.q_at = 0.0
+        self.e_at = 0.0
+
+    @property
+    def jungle(self) -> bool:
+        return self.role == "JUNGLE"
+
+    def role_text(self, lane_name: str) -> str:
+        return "a Lee Sin jungler" if self.jungle else f"a Lee Sin laner in the {lane_name} lane"
+
+    def q2_up(self, sc: Scene, now: float) -> bool:
+        # A Sonic Wave that hit re-lights Q (Resonating Strike) for about 3 s.
+        return bool(sc.ready.get("Q")) and 0.3 < now - self.q_at < 3.0
+
+    def _q(self, ctx: Ctx, spec: Spec, tgt, pt) -> str:
+        ctx.mi.cast(1, *pt)
+        self.q_at = ctx.now
+        return "Q sonic wave"
+
+    def specs(self, ctx: Ctx) -> list[Spec]:
+        sc, now = ctx.sc, ctx.now
+        out = self.modes(
+            ("farm", "Keep clearing: attack the camp or wave in front of me."),
+            ("back_off", "Walk away from the enemy champion toward safety."),
+        )
+        if self.q2_up(sc, now):
+            out.append(Spec("Q2_dash", "Q again (Resonating Strike): dash to the unit my Sonic Wave hit and strike it.", NONE,
+                            run=lambda c, s, t, p: (c.mi.ctl.press(c.mi.kb.ability(1)), "Q2 dash")[1]))
+        elif sc.ready.get("Q") and (sc.minions or sc.champ is not None):
+            out.append(Spec("Q", "Q Sonic Wave: skillshot along the chosen line; the first enemy hit is marked so Q2 can dash to it.",
+                            POINT, who="enemy", range=self.Q_RANGE, run=self._q))
+        if sc.ready.get("E") and (sc.minions or sc.champ is not None):
+            out.append(Spec("E", "E Tempest: damage every enemy within about 430 units of me (press again to slow them).", NONE,
+                            run=lambda c, s, t, p: (c.mi.ctl.press(c.mi.kb.ability(3)), "E tempest")[1]))
+        if sc.ready.get("W"):
+            out.append(Spec("W_self", "W Safeguard on myself: a shield now (and lifesteal on the recast).", NONE,
+                            run=lambda c, s, t, p: (c.mi.ctl.press(c.mi.kb.self_cast(2)), "W shield self")[1]))
+            if ctx.ally_units:
+                out.append(Spec("W_ally", "W Safeguard: dash to the chosen allied champion and shield us both.", UNIT,
+                                who="ally_champion", range=self.W_RANGE,
+                                run=lambda c, s, t, p: (c.mi.cast(2, t.x, t.y), "W to ally")[1]))
+        if sc.ready.get("R") and sc.champ is not None:
+            out.append(Spec("R", "R Dragon's Rage: kick the enemy champion hard away from me (and into anyone behind them).", UNIT,
+                            who="enemy_champion", range=self.R_RANGE,
+                            run=lambda c, s, t, p: (c.mi.cast(4, t.unit.x, t.unit.y), "R kick")[1]))
+        return out
+
+    def me_state(self, sc: Scene, mi: Micro, now: float) -> dict:
+        return {"Q": "Q2 dash available" if self.q2_up(sc, now) else self.ready_words(sc, "Q"),
+                "W": self.ready_words(sc, "W"), "E": self.ready_words(sc, "E"), "R": self.ready_words(sc, "R")}
+
+    def continuous(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, pushing: bool) -> bool:
+        if self.jungle and mode == "farm" and sc.minions:
+            # Clearing a camp: E when monsters are in reach, Q the healthiest one, otherwise attack.
+            near = [t for t in sc.minions if sc.dist(t) <= self.E_RADIUS]
+            if sc.ready.get("E") and near and now - self.e_at > 0.6 and mi._can_order(now):
+                mi.ctl.press(mi.kb.ability(3))
+                self.e_at = now
+                mi._ordered(now, "E on camp")
+                return True
+            if sc.ready.get("Q") and now - self.q_at > 3.5 and mi._can_order(now):
+                big = max(sc.minions, key=lambda t: t.unit.hp)
+                mi.cast(1, big.unit.x, big.unit.y)
+                self.q_at = now
+                mi._ordered(now, "Q on camp")
+                return True
+            if self.q2_up(sc, now) and mi._can_order(now):
+                mi.ctl.press(mi.kb.ability(1))
+                mi._ordered(now, "Q2 on camp")
+                return True
+            if mi.attack_ready(now, aspd):
+                tgt = min(sc.minions, key=lambda t: (t.unit.hp, sc.dist(t)))
+                mi.attack(tgt, now, "attack camp")
+            return True
+        return super().continuous(mi, sc, now, aspd, mode, pushing)
+
+
+KITS = {"yasuo": Yasuo, "thresh": Thresh, "soraka": Soraka, "leesin": LeeSin}
+BY_ID = {Yasuo.champ_id: Yasuo, Thresh.champ_id: Thresh, Soraka.champ_id: Soraka, LeeSin.champ_id: LeeSin}
 
 
 def kit_for(champion_name: str, role: str = "", ability_names: dict | None = None) -> Kit:
-    cls = KITS.get((champion_name or "").lower().replace(" ", ""))
+    cls = KITS.get((champion_name or "").lower().replace(" ", "").replace("'", ""))
     if cls is None:
         return Generic(champion_name, role, ability_names)
     return cls(role)

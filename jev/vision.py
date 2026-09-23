@@ -21,7 +21,7 @@ from jev import config
 
 @dataclass
 class Unit:
-    kind: str                 # minion | champion
+    kind: str                 # minion | champion | monster (large jungle monster)
     team: str                 # enemy | ally | self
     x: float                  # screen px of the unit's body (click here)
     y: float
@@ -129,13 +129,22 @@ class VisionReader:
                           & (st[:, 4] >= 0.7 * st[:, 2] * st[:, 3]) & (st[:, 1] >= 1) & (st[:, 1] + st[:, 3] < H))[0]
         for i in keep:
             x, y, w, h, _area = (int(v) for v in st[i])
+            unit_kind, unit_full = kind, full
             if kind == "champion":
-                # A champion bar has its level box just left of it: a dark block.
+                # A champion bar has its level box just left of it: a dark block. Without one, a
+                # champion-height red bar is a large jungle monster (buffs, gromp, krugs, raptors...).
                 box = dark[y:y + h, max(0, x - 20):max(0, x - 4)]
                 if box.size == 0 or box.mean() < 0.35:
-                    continue
+                    row = y + h // 2
+                    if not masks["enemy"][row, x:x + w].any():
+                        continue
+                    run = 0
+                    while x + w + run < W and dark[row, x + w + run] and run < 160:
+                        run += 1
+                    unit_kind, unit_full = "monster", max(w, w + run)
             # Frame check: the dark frame runs above and below the whole bar, not just the fill,
             # and closes on the left. Red damage numbers and scenery fail this.
+            full = unit_full
             x_end = min(W, x + full + 1)
             above = dark[y - 1, max(0, x - 1):x_end].mean()
             below = dark[y + h, max(0, x - 1):x_end].mean()
@@ -154,7 +163,7 @@ class VisionReader:
             if counts[team] == 0:
                 continue
             hp = min(1.0, w / full)
-            out.append(Unit(kind, team, ox + x + full / 2 + dx, oy + y + h / 2 + dy, hp, (ox + x, oy + y, w, h)))
+            out.append(Unit(unit_kind, team, ox + x + full / 2 + dx, oy + y + h / 2 + dy, hp, (ox + x, oy + y, w, h)))
         return out
 
     def read_units(self, frame: np.ndarray) -> tuple[list[Unit], Unit | None]:

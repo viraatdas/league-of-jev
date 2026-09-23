@@ -17,10 +17,11 @@ LOCKFILE_CANDIDATES = [
 ]
 YASUO = 157
 THRESH = 412
-CHAMPIONS = {"yasuo": YASUO, "thresh": THRESH}
-# Assigned position -> champions to try in order. Each falls back to the other.
-PICKS_BY_POSITION = {"middle": [YASUO, THRESH], "utility": [THRESH, YASUO]}
-DEFAULT_PICKS = [YASUO, THRESH]
+LEE_SIN = 64
+CHAMPIONS = {"yasuo": YASUO, "thresh": THRESH, "leesin": LEE_SIN}
+# Assigned position -> champions to try in order.
+PICKS_BY_POSITION = {"middle": [YASUO, LEE_SIN], "jungle": [LEE_SIN, YASUO], "utility": [THRESH, YASUO]}
+DEFAULT_PICKS = [YASUO, LEE_SIN]
 BANS = [238, 91, 7]  # Zed, Talon, LeBlanc: first one not already banned or hovered
 # Summoner spells per position (ids): Flash 4, Ignite 14, Smite 11, Exhaust 3, Heal 7, Teleport 12.
 SPELLS_BY_POSITION = {"middle": (4, 14), "jungle": (4, 11), "utility": (4, 3), "bottom": (4, 7), "top": (4, 12), "": (4, 14)}
@@ -247,7 +248,7 @@ class LCU:
         return set(ids) if code == 200 and isinstance(ids, list) else set()
 
     def play_normal(self, picks: dict[str, list[int]] | None = None, timeout_s: float = 900.0,
-                    first: str = "MIDDLE", second: str = "UTILITY"):
+                    first: str = "MIDDLE", second: str = "JUNGLE"):
         """Create a normal lobby (mid first, support second), queue, accept the ready check, ban,
         and pick by assigned position: mid -> Yasuo, support -> Thresh, each falling back to the
         other if banned, taken, or not owned. Yields progress lines until the game starts."""

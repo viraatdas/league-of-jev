@@ -30,6 +30,8 @@ from jev.places import places
 p.decision = Decision("go_to", 0.6, {"go_to": 0.6}, 0.8, 0.1, 0.5, 1.0, None, 0.0, 150, "jev-test", 1400,
                       destination="mid_lane", ts=now)
 p.guards = type(p.guards)()
+from jev.kits import Yasuo
+p.kit = Yasuo()  # supports stay with their carry; travel is tested with a laner
 t = now + 60
 p._tick(data, t)
 print("go_to while away:", p.intent, "|", p.mech.last_action)

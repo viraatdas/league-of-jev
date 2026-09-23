@@ -19,6 +19,7 @@ from jev.mechanics import Mechanics
 from jev.decisions import DecisionLog
 from jev.brain import legal_level_ups
 from jev.items import BuildPlan, ShopBrain, enemy_team
+from jev.jungle import BIG, JungleState, camps
 from jev import places as map_places
 from jev.kits import Kit, kit_for
 from jev.lanes import LANE_LETTER, Lane, lane_for
@@ -135,6 +136,7 @@ class Player:
         self.riot = RiotLiveClient()
         self.brain = Brain()
         self.decision: Decision | None = None
+        self.jungle_state: JungleState | None = None
         self.state: dict = {}
         self._stop = threading.Event()
         self._wake = threading.Event()
@@ -427,7 +429,8 @@ class Player:
         out.append(f"micro: {self.micro.last_action if self.micro else '-'}")
         return out
 
-    def _micro_step(self, data: dict, ap: dict, stats: dict, now: float, standing: bool = True) -> bool:
+    def _micro_step(self, data: dict, ap: dict, stats: dict, now: float, standing: bool = True,
+                    camp_pt: tuple[float, float] | None = None, camp_big: bool = False) -> bool:
         """Screen-level play while units are on screen: Jev's tactical choice, the kit's reflexes,
         and (when `standing`) the kit's standing behaviour. Returns False when nothing was done
         this tick (macro movement takes over)."""
@@ -438,14 +441,16 @@ class Player:
             return False
         raw_minions = view.enemies("minion")
         mm = self.mm_state
-        if mm is not None and mm.pos is not None and view.me is not None:
+        ppu = config.VISION.px_per_unit
+        world = (lambda u: (mm.pos[0] + (u.x - view.me.x) / ppu, mm.pos[1] - (u.y - view.me.y) / ppu)) \
+            if (mm is not None and mm.pos is not None and view.me is not None) else None
+        if camp_pt is not None:
+            # Clearing a camp: red units (small monsters look like minions) and large monsters near it.
+            cand = raw_minions + view.enemies("monster")
+            raw_minions = [u for u in cand if world is None or math.dist(world(u), camp_pt) < 1000]
+        elif world is not None:
             # Jungle monsters have red bars like enemy minions: keep only units near the lane path.
-            ppu = config.VISION.px_per_unit
-            def near_lane(u) -> bool:
-                wx = mm.pos[0] + (u.x - view.me.x) / ppu
-                wy = mm.pos[1] - (u.y - view.me.y) / ppu
-                return self.lane.project((wx, wy))[1] < 900
-            raw_minions = [u for u in raw_minions if near_lane(u)]
+            raw_minions = [u for u in raw_minions if self.lane.project(world(u))[1] < 900]
         minions = self.min_tracker.update(raw_minions, now)
         champs = self.champ_tracker.update(view.enemies("champion"), now)
         if not minions and not champs and not view.allies("champion"):
@@ -481,6 +486,9 @@ class Player:
             self.tactics.publish(inp)
         if not mi._can_order(now):
             return True
+        if camp_pt is not None and camp_big and self._smite_reflex(ctx, inp, now):
+            mi.reacted("reflex", view.ts)
+            return True
         if self._escape_reflex(ctx, inp, now):
             mi.reacted("reflex", view.ts)
             return True
@@ -509,6 +517,58 @@ class Player:
         if mi.orders > before and mi.last_action.startswith("last hit"):
             mi.reacted("lasthit", view.ts)
         return ok
+
+    def _smite_reflex(self, ctx, inp, now: float) -> bool:
+        """Smite the camp's big monster when it is low (large monsters first, else the healthiest
+        red bar there, since the big one outlasts the small ones)."""
+        sc, mi = ctx.sc, ctx.mi
+        slot = next((i for i, n in enumerate(inp.summoners, 1) if n == "smite"), None)
+        if slot is None or not sc.ready.get("DF"[slot - 1]) or not sc.minions:
+            return False
+        big = [t for t in sc.minions if t.unit.kind == "monster"] or sc.minions
+        tgt = min(big, key=lambda t: t.unit.hp)
+        if tgt.unit.hp > 0.22 or sc.dist(tgt) > 550:
+            return False
+        mi.ctl.cast(mi.kb.summoner(slot), *mi._pt(tgt.unit.x, tgt.unit.y), mi.kb.quick(f"evtCastAvatarSpell{slot}"))
+        mi._ordered(now, "Smite")
+        self.log_lines.append(f"smite at {int(tgt.unit.hp * 100)}%")
+        return True
+
+    def _jungle_step(self, data: dict, ap: dict, stats: dict, now: float) -> None:
+        """Clear camps along the route, then the nearest one that is up. Fights on the way are
+        answered with one-shot tactical moves; strategy sends the jungler elsewhere with go_to."""
+        js, m = self.jungle_state, self.mech
+        gt = float((data.get("gameData") or {}).get("gameTime", 0.0))
+        pos = self.mm_state.pos if self.mm_state is not None else None
+        if js.current is None:
+            js.current = js.next_camp(pos, gt)
+            self.log_lines.append(f"jungle: next camp {js.current}")
+        pt = camps(self.side)[js.current]
+        big = js.current in BIG
+        d = math.dist(pos, pt) if pos is not None else None
+        if d is None or d > 900:
+            if self._micro_step(data, ap, stats, now, standing=False):
+                return
+            m.go_map(pt, now, attack=False, every=1.0)
+            m.last_action = f"jungle: to {js.current}"
+            return
+        if js.arrived_at is None:
+            js.arrived_at = gt
+        if not js.up(js.current, gt):
+            m.last_action = f"jungle: waiting for {js.current}"
+            return
+        sc_before = len(self.min_tracker.tracks)
+        acted = self._micro_step(data, ap, stats, now, standing=True, camp_pt=pt, camp_big=big)
+        if self.scene is not None and self.scene.minions:
+            js.last_seen_monster = gt
+            return
+        if gt - js.arrived_at > 5.0 and gt - js.last_seen_monster > 3.0:
+            js.mark_cleared(js.current, gt)
+            self.log_lines.append(f"jungle: cleared {list(js.cleared)[-1]} at {int(gt)}s")
+            return
+        if not acted:
+            m.go_map(pt, now, attack=True, every=1.2)  # step onto the camp so it aggroes
+            m.last_action = f"jungle: pulling {js.current}"
 
     def _escape_reflex(self, ctx, inp, now: float) -> bool:
         """Burst incoming (a quarter of HP gone in the damage window, under 45% HP, an enemy
@@ -632,6 +692,7 @@ class Player:
         self.guards = Guards()
         self.hp = HpTracker(config.TIMING.damage_window_s)
         self.dead_enemy_mid_towers = set()
+        self.jungle_state = None
         self.mm_state = None
         self.view = None
         self.scene = None
@@ -657,6 +718,7 @@ class Player:
         self.lane = Lane(lane_for(self.kit.role, "bot" if self.kit.support else "mid"), side)
         self.mech = Mechanics(self.ctl, self.screen, self.kb, side, lane=self.lane, skill_order=self.kit.skill_order)
         self.micro = Micro(self.ctl, self.screen, self.kb, side)
+        self.jungle_state = JungleState(side) if getattr(self.kit, "jungle", False) else None
         if self.shop_brain is not None:
             self.shop_brain.profile = self.kit.items
         self.data = data
@@ -882,6 +944,13 @@ class Player:
             else:
                 return p
 
+        if self.jungle_state is not None and self.intent in ("farm", "trade", "push_tower", "defend"):
+            if self.phase == "base" and self._at_fountain() is False:
+                self.phase = "lane"
+                self.guards.left_base_at = now
+            p.position = "jungle"
+            self._jungle_step(data, ap, cs, now)
+            return p
         if self.phase == "base":
             m.go_lane(move_speed, now)
             if m.nav.progress >= self.lane.own_tower:
