@@ -66,6 +66,13 @@ class Kit:
 
     def step(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, pushing: bool) -> bool:
         """Standing behaviour for this tick: the fight combo in a fight mode, else continuous()."""
+        if sc.champ is not None:
+            self._champ_seen = now
+        if mode == "back_off" and now - getattr(self, "_champ_seen", 0.0) > 2.0:
+            # Nothing left to back off from: a back_off picked against a misread red buff stuck, and
+            # Lee walked away from his half-dead camp through the lane routine (g05).
+            mi.set_mode("farm", now)
+            mode = "farm"
         if mode in FIGHT_MODES:
             if sc.champ is not None:
                 self._fight_seen = now
