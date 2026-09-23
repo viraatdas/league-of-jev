@@ -146,8 +146,11 @@ class VisionReader:
             # and closes on the left. Red damage numbers and scenery fail this.
             full = unit_full
             x_end = min(W, x + full + 1)
-            above = dark[y - 1, max(0, x - 1):x_end].mean()
-            below = dark[y + h, max(0, x - 1):x_end].mean()
+            # The border may sit one row further out: the fill's last row can render dimmer than
+            # the colour threshold (4 px bars read as 3), so accept the darker of two rows each side.
+            xa = max(0, x - 1)
+            above = max(dark[y - 1, xa:x_end].mean(), dark[max(0, y - 2), xa:x_end].mean())
+            below = max(dark[y + h, xa:x_end].mean(), dark[min(H - 1, y + h + 1), xa:x_end].mean())
             # (The left edge of the frame renders lighter on some settings, so only above/below are checked.)
             if above < 0.55 or below < 0.55:
                 continue
