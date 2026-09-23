@@ -33,7 +33,8 @@ for line in open(log, errors="ignore"):
 
 episodes, cur = [], None
 for w, gt, hp, micro, kda in status:
-    fighting = micro.startswith(("trade:", "all_in:"))
+    fighting = micro.startswith(("trade:", "all_in:")) or any(k in micro for k in (
+        "ignite", "R Last Breath", "Q3 tornado", "E+Q", "the champion", "R kick", "Sonic Wave", "Q2 dash", "escape"))
     if fighting and (cur is None or w - cur["end"] > 3):
         cur = {"start": w, "end": w, "gt": gt, "hp0": hp, "kda0": kda, "orders": []}
         episodes.append(cur)
@@ -54,7 +55,7 @@ if os.path.exists(vp):
         hh, mm, ss = r["f"][0:2], r["f"][2:4], r["f"][4:6]
         vision.append((int(hh) * 3600 + int(mm) * 60 + int(ss), r))
 
-frames = sorted(f for f in os.listdir(fdir) if f.endswith((".jpg", ".png")))
+frames = sorted(f for f in os.listdir(fdir) if f.endswith((".jpg", ".png")) and f[:9].isdigit())
 
 
 def frame_secs(f: str) -> int:
@@ -67,7 +68,7 @@ for i, ep in enumerate(episodes, 1):
     ehp = [u[4] for r in win for u in r["units"] if u[0] == "champion" and u[1] == "enemy"]
     e0 = f"{ehp[0] * 100:.0f}%" if ehp else "?"
     e1 = f"{ehp[-1] * 100:.0f}%" if ehp else "?"
-    orders = "; ".join(o.split(": ", 1)[1] for o in ep["orders"])[:120]
+    orders = "; ".join(o.split(": ", 1)[-1] for o in ep["orders"])[:120]
     out.append(f"| {i} | {ep['gt']} | {ep['end'] - ep['start'] + 1}s | {orders} | {ep['hp0']}% -> {ep['hp1']}% | {e0} -> {e1} | {ep['kda0']} -> {ep['kda1']} |")
     fs = [f for f in frames if ep["start"] - 1 <= frame_secs(f) <= ep["end"] + 3]
     if fs:
