@@ -22,6 +22,8 @@ CHAMPIONS = {"yasuo": YASUO, "thresh": THRESH}
 PICKS_BY_POSITION = {"middle": [YASUO, THRESH], "utility": [THRESH, YASUO]}
 DEFAULT_PICKS = [YASUO, THRESH]
 BANS = [238, 91, 7]  # Zed, Talon, LeBlanc: first one not already banned or hovered
+# Summoner spells per position (ids): Flash 4, Ignite 14, Smite 11, Exhaust 3, Heal 7, Teleport 12.
+SPELLS_BY_POSITION = {"middle": (4, 14), "jungle": (4, 11), "utility": (4, 3), "bottom": (4, 7), "top": (4, 12), "": (4, 14)}
 
 
 def find_lockfile() -> Path | None:
@@ -187,6 +189,54 @@ class LCU:
                     return int(q["id"])
         return None
 
+    def set_spells(self, position: str) -> tuple[int, Any]:
+        s1, s2 = SPELLS_BY_POSITION.get((position or "").lower(), SPELLS_BY_POSITION[""])
+        return self.req("PATCH", "/lol-champ-select/v1/session/my-selection", {"spell1Id": s1, "spell2Id": s2})
+
+    def available_bots(self) -> list[dict]:
+        code, bots = self.req("GET", "/lol-lobby/v2/lobby/custom/available-bots")
+        return bots if code == 200 and isinstance(bots, list) else []
+
+    def bot_game(self, champion_id: int = YASUO, difficulty: str = "MEDIUM", timeout_s: float = 240.0):
+        """Custom 5v5 on Summoner's Rift: me plus four allied bots against five bots. Picks the
+        champion, sets the summoner spells, and yields progress lines until the game starts."""
+        self.delete_lobby()
+        time.sleep(1)
+        code, body = self.create_custom_vs_bots()
+        yield f"custom lobby: {code} {body if code >= 400 else ''}"
+        if code >= 400:
+            return
+        bots = [b.get("id") for b in self.available_bots() if b.get("id") and b.get("id") != champion_id]
+        yield f"{len(bots)} bot champions available"
+        for i, cid in enumerate(bots[:9]):
+            team = "100" if i < 4 else "200"
+            c, b = self.add_bot(cid, team, difficulty)
+            yield f"bot {cid} team {team}: {c} {b if c >= 400 else ''}"
+        c, b = self.start_champ_select()
+        yield f"start champ select: {c} {b if c >= 400 else ''}"
+        t0 = time.time()
+        picked = False
+        while time.time() - t0 < timeout_s:
+            phase = self.gameflow()
+            if phase == "ChampSelect" and not picked:
+                code, sess = self.req("GET", "/lol-champ-select/v1/session")
+                if code == 200:
+                    cell = sess.get("localPlayerCellId")
+                    for g in sess.get("actions", []):
+                        for a in g:
+                            if a.get("actorCellId") == cell and a.get("type") == "pick" and not a.get("completed"):
+                                c1, b1 = self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": champion_id, "completed": True})
+                                yield f"pick {champion_id}: {c1} {b1 if c1 >= 400 else ''}"
+                                picked = c1 < 400
+                    if picked:
+                        c2, _ = self.set_spells("middle")
+                        yield f"spells: {c2}"
+            elif phase in ("InProgress", "GameStart"):
+                yield "game starting"
+                return
+            time.sleep(1.5)
+        yield "timed out waiting for the game"
+
     def pickable(self) -> set[int]:
         code, ids = self.req("GET", "/lol-champ-select/v1/pickable-champion-ids")
         return set(ids) if code == 200 and isinstance(ids, list) else set()
@@ -269,7 +319,8 @@ class LCU:
                         c1, b1 = self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": cid, "completed": True})
                         yield f"pick {cid} for {position or 'no position'}: {c1} {b1 if c1 >= 400 else ''}"
                         if c1 < 400:
-                            yield f"picked {cid}"
+                            c2, _ = self.set_spells(position)
+                            yield f"picked {cid}; spells for {position or 'no position'}: {c2}"
                             return
                     if not options:
                         yield f"none of {order} available for {position or 'no position'}"
