@@ -132,6 +132,15 @@ def score(path: Path = typer.Argument(Path("/tmp/jev-helper/play.log"))) -> None
 
 
 @app.command()
+def digest(play_log: Path = typer.Option(Path("logs/play.log")), decisions: Path = typer.Option(Path("logs/decisions.jsonl")),
+           since: float = typer.Option(90.0, help="Seconds to look back")) -> None:
+    """Last N seconds of play: deaths, moves executed, hits landed, last hits, paused/blind share."""
+    from jev.digest import digest as run
+
+    console.print(run(play_log, decisions, since), markup=False)
+
+
+@app.command()
 def review(path: Path = typer.Argument(Path("logs/decisions.jsonl"))) -> None:
     """Summarise logged tactical decisions: outcome per action, menu gaps, near-ties."""
     from jev.decisions import review as run_review
