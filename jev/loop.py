@@ -745,6 +745,18 @@ class Player:
             note = m.ensure_camera_locked(self.mm)
             self.log_lines.append(note)
 
+        # Standing in our fountain with gold to spend (by the minimap, whatever the phase says):
+        # shop once per visit. Covers restarts mid-game, respawns and recalls alike.
+        mmp = self.mm_state.pos if self.mm_state is not None else None
+        fountain = config.BLUE_FOUNTAIN if self.side == "ORDER" else config.RED_FOUNTAIN
+        if mmp is not None:
+            d_f = math.dist(mmp, fountain)
+            if d_f > 3000:
+                self._fountain_shopped = False
+            elif d_f < 1700 and not getattr(self, "_fountain_shopped", False) and float(ap.get("currentGold", 0)) >= 75:
+                self._fountain_shopped = True
+                self._shop_if_possible(float(ap.get("currentGold", 0)))
+                self._base_shop_done = True
         # Shop once per visit to base: at game start, after respawn, after a recall.
         if self.phase == "base" and not self._base_shop_done:
             gold = float(ap.get("currentGold", 0))
@@ -756,6 +768,7 @@ class Player:
                 return p  # give the build head a moment to re-plan with the current gold
             if gold >= 50:
                 self._shop_if_possible(gold)
+                self._fountain_shopped = True
             self._base_shop_done = True
             del self._base_since
 

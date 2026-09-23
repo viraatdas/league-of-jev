@@ -139,8 +139,8 @@ class VisionReader:
             x_end = min(W, x + full + 1)
             above = dark[y - 1, max(0, x - 1):x_end].mean()
             below = dark[y + h, max(0, x - 1):x_end].mean()
-            left = dark[y:y + h, max(0, x - 1)].mean()
-            if above < 0.55 or below < 0.55 or left < 0.5:
+            # (The left edge of the frame renders lighter on some settings, so only above/below are checked.)
+            if above < 0.55 or below < 0.55:
                 continue
             if w < full - 1:
                 # The empty part of the bar is dark too.
@@ -168,6 +168,8 @@ class VisionReader:
         for m in masks.values():
             m[max(0, my - 20 - y0):, max(0, mx - 20 - x0):] = 0
             m[max(0, hy0 - y0):, max(0, hx0 - x0):max(0, hx1 - x0)] = 0
+            cx0, cy0, cx1, cy1 = self.vc.chat_block
+            m[max(0, cy0 - y0):max(0, cy1 - y0), max(0, cx0 - x0):max(0, cx1 - x0)] = 0
         found = self._bars(masks, dark, x0, y0)
         units = [u for u in found if u.team != "self"]
         mine = [u for u in found if u.team == "self" and u.kind == "champion"]
