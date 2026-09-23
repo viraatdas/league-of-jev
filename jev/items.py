@@ -422,7 +422,10 @@ class ShopBrain:
             instructions=(f"Which item should {champ} build next? Consider what the enemy team deals and does "
                           f"(damage type, crowd control, healing, who is fed), what {champ} already owns"
                           f"{', and that ' + self.profile.note if self.profile.note else ''}. "
-                          "Prices are full prices; components already owned count."),
+                          + ("" if self.profile.support else
+                             "A carry's first legendary item is usually a damage item; boots and defensive items "
+                             "come after it unless an enemy is already fed. ")
+                          + "Prices are full prices; components already owned count."),
             criteria={it.name: it.brief() for it in cands},
         )
         res = self.client.system_one(state, qs)
