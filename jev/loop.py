@@ -641,10 +641,16 @@ class Player:
             self.log_lines.append("lasthits paid: " + ", ".join(parts))
 
     def _champ_on_minimap(self, now: float, radius: float = 1800.0) -> bool:
-        """An enemy champion icon within `radius` of us on a fresh minimap read (True when the
-        minimap is unavailable, so vision alone decides)."""
+        """Where monsters live (a jungle camp, the dragon or baron pit), a champion-sized bar must
+        have an enemy champion icon within `radius` of us on the minimap to count. Elsewhere vision
+        alone decides: in lane the enemy icon hides under our own icon and camera box (real
+        champions at 300 units were dropped, game 4). True when the minimap is unavailable."""
         mm = self.mm_state
         if mm is None or mm.pos is None or now - mm.ts > 1.0:
+            return True
+        pits = [map_places.places(self.side)[k][0] for k in ("dragon_pit", "baron_pit")]
+        monsters_near = any(dist(mm.pos, c) < 1300 for c in list(camps(self.side).values()) + pits)
+        if not monsters_near:
             return True
         return any(dist(mm.pos, e) <= radius for e in mm.enemy_champions)
 
