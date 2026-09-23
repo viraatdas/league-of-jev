@@ -955,7 +955,7 @@ class Player:
             d_f = math.dist(mmp, fountain)
             if d_f > 3000:
                 self._fountain_shopped = False
-            elif (d_f < 1700 and not getattr(self, "_fountain_shopped", False) and float(ap.get("currentGold", 0)) >= 75
+            elif (d_f < 2400 and not getattr(self, "_fountain_shopped", False) and float(ap.get("currentGold", 0)) >= 75
                   and (self.dry_run or self.ctl.keys_ok()) and now - getattr(self, "_fountain_try_t", 0.0) > 5.0):
                 # Retry every 5 s while in the fountain until something is bought (a first attempt
                 # during the loading hand-off failed and was never retried).
