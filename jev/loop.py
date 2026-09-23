@@ -75,7 +75,7 @@ class _EventLog(collections.deque):
 
     def append(self, x) -> None:  # noqa: D401
         super().append(x)
-        if self.path:
+        if self.path and not str(x).startswith(("move(", "click_", "key(", "press(", "hold(", "shift_click", "type(")):
             try:
                 with open(self.path, "a") as f:
                     f.write(f"{time.strftime('%H:%M:%S')} {x}\n")
