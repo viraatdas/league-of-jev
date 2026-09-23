@@ -291,8 +291,21 @@ class Player:
                             d = Path(self.frames_dir)
                             d.mkdir(parents=True, exist_ok=True)
                             gt = float(((self.data or {}).get("gameData") or {}).get("gameTime", 0.0))
-                            name = f"{time.strftime('%H%M%S')}{int(f.ts * 1000) % 1000:03d}_t{int(gt // 60):02d}{int(gt % 60):02d}.jpg"
-                            cv2.imwrite(str(d / name), frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                            name = f"{time.strftime('%H%M%S')}{int(f.ts * 1000) % 1000:03d}_t{int(gt // 60):02d}{int(gt % 60):02d}"
+                            if f.ts - getattr(self, "_last_png", 0.0) >= 10.0:
+                                # Lossless now and then: vision thresholds do not survive JPEG.
+                                self._last_png = f.ts
+                                cv2.imwrite(str(d / f"{name}.png"), frame, [cv2.IMWRITE_PNG_COMPRESSION, 1])
+                            else:
+                                cv2.imwrite(str(d / f"{name}.jpg"), frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                            if v is not None:
+                                # What vision saw on this frame, for review next to the image.
+                                u2 = lambda u: [u.kind, u.team, int(u.x), int(u.y), round(u.hp, 2), list(u.bar)]
+                                rec = {"f": name, "t": round(gt, 1), "me": u2(v.me) if v.me else None,
+                                       "units": [u2(u) for u in v.units], "mode": self.micro.mode if self.micro else None,
+                                       "act": self.micro.last_action if self.micro else None}
+                                with open(d / "vision.jsonl", "a") as fh:
+                                    fh.write(json.dumps(rec) + "\n")
                 except Exception as e:  # noqa: BLE001
                     self.log_lines.append(f"perception error: {e}")
                     time.sleep(0.05)

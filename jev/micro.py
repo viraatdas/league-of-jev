@@ -143,6 +143,7 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
         sc.champ = min(champs, key=sc.dist)
         sc.champ_dist = sc.dist(sc.champ)
     hp_max = minion_max_hp(game_s)
+    melee_max = FAST.melee_hp[0] + FAST.melee_hp[1] * max(0.0, game_s) / 90.0
     q_dmg = (FAST.q_base[max(0, min(q_rank, 5) - 1)] + FAST.q_ad * ad) if q_rank else 0.0
     windup = FAST.windup_frac / max(0.3, aspd)
     for tr in minions:
@@ -152,12 +153,15 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
         # minions had taken the kill ("last hit (3%)" on a dying minion, game 2).
         walk = max(0.0, d - VC.auto_range) / max(250.0, move_speed)
         at_hit = tr.predict_hp(now, FAST.lasthit_lead_s + walk + windup) * hp_max
-        if d <= VC.auto_range + 250 and 0 < at_hit <= ad * FAST.lasthit_margin:
+        # The forecast may bring the minion down by about one allied hit, no more: counting on
+        # more, Q at 25-45% HP paid 0/5 and autos at 20-30% 0/3 (game 4), against 6/6 at 10-20%.
+        now_abs = tr.unit.hp * melee_max
+        if d <= VC.auto_range + 250 and 0 < at_hit <= ad * FAST.lasthit_margin and now_abs - ad <= FAST.forecast_cap:
             sc.killable_auto.append(tr)
         if tr not in sc.killable_auto and tr.hp_rate(now) < 0 and 0 < tr.predict_hp(now, 1.2) * hp_max <= ad * 1.1:
             sc.soon_killable.append(tr)
         at_q = tr.predict_hp(now, FAST.lasthit_lead_s + FAST.q_cast_s) * hp_max
-        if q_rank and d <= VC.q_range and 0 < at_q <= q_dmg:
+        if q_rank and d <= VC.q_range and 0 < at_q <= q_dmg and now_abs - q_dmg <= FAST.forecast_cap:
             sc.killable_q.append(tr)
     sc.killable_auto.sort(key=lambda t: t.unit.hp)
     sc.soon_killable.sort(key=lambda t: t.predict_hp(now, 1.2))

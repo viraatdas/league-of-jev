@@ -124,6 +124,7 @@ class Fast:
     lasthit_margin: float = 1.0        # predicted HP must be below damage * margin
     lasthit_lead_s: float = 0.1        # input to the game; walk and wind-up are added per minion
     q_cast_s: float = 0.3              # Yasuo Q cast time (shortened by attack speed; approximate)
+    forecast_cap: float = 40.0         # HP the forecast may count on others taking off before our hit lands
     melee_hp: tuple[float, float] = (477.0, 22.0)   # base, per 90 s (approximate)
     caster_hp: tuple[float, float] = (296.0, 8.0)
     q_base: tuple[float, ...] = (20.0, 45.0, 70.0, 95.0, 120.0)  # plus 105% AD (approximate)
