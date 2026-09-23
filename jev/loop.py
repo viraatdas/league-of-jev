@@ -6,6 +6,7 @@ import json
 import math
 import threading
 import time
+from typing import Any
 
 from rich.console import Console
 from rich.live import Live
@@ -30,6 +31,7 @@ from jev.screen import Screen
 from jev.state import Perception, build_state, find_me
 from jev import actions
 from jev.tactics import TacticalBrain, TacticInput, menu
+from jev.fight import FightBrain, FightRead
 from jev.vision import View, VisionReader
 
 console = Console()
@@ -179,6 +181,8 @@ class Player:
         self.frame_age_ms = 0.0
         self._last_logged_seq = 0
         self.tactics: TacticalBrain | None = None
+        self.fights: FightBrain | None = None
+        self._self_trail: collections.deque[tuple[float, float]] = collections.deque(maxlen=60)  # (t, hp%) every 0.1 s
         self.micro: Micro | None = None
         self.scene = None
         self.data: dict | None = None
@@ -464,6 +468,11 @@ class Player:
                     react[kind] = lat
         out["perf"] = {"apm": self.ctl.apm(), "capture": "sck" if self.capture_name == "screencapturekit" else self.capture_name,
                        "fps": self.perceive_fps, "read_ms": self.perceive_ms, "api_ms": self.api_ms, "react": react}
+        fr = self.fights.read if self.fights is not None else None
+        if fr is not None and now - fr.ts < 4.0:
+            out["fight"] = {"plan": fr.plan, "p": fr.plan_probs.get(fr.plan, 0.0), "win": fr.win_all_in, "trade": fr.trade_worth,
+                            "danger": fr.in_danger, "gank": fr.gank_coming, "latency": fr.latency_ms, "age": now - fr.ts,
+                            "rate": self.fights.rate(), "focus": fr.focus}
         mi = self.micro
         if mi is not None:
             # What the frame-rate layer is doing: its mode (farm / trade / all_in / back_off) and the
@@ -577,6 +586,11 @@ class Player:
         )
         if self.tactics is not None:
             self.tactics.publish(inp)
+        if self.fights is not None and (sc.champ is not None or self._enemies_near_on_map(2500)):
+            try:
+                self.fights.publish(self._fight_features(sc, champs, now, data), view.ts)
+            except Exception as e:  # noqa: BLE001  a features bug must not stop the micro layer
+                self.log_lines.append(f"fight features error: {e}")
         mi.summoners, mi.hp_pct = inp.summoners, inp.hp_pct
         mi.hp_lost = getattr(self, "_hp_lost", 0.0)  # HP% lost in the damage window
         if escaping:
@@ -634,6 +648,10 @@ class Player:
         low and close, me healthy) goes all in at once; the strategy head's all_in intent does
         too; a fight I am clearly losing backs off. Supports keep Jev's choice."""
         if self.kit.support:
+            return
+        fr = self.fights.read if self.fights is not None else None
+        if fr is not None and fr.age(now) < 0.9 and (sc.champ is not None or fr.plan in ("back_off", "escape")):
+            self._apply_fight_read(fr, sc, mi, now)
             return
         ch, d = sc.champ, sc.champ_dist or 9e9
         if ch is not None and not self._champ_on_minimap(now):
@@ -716,6 +734,124 @@ class Player:
             self._lh_logged = now
             parts = [f"{k} {v[1]}/{v[0]}" for k, v in sorted(stats.items())]
             self.log_lines.append("lasthits paid: " + ", ".join(parts))
+
+    # -- the fight head -----------------------------------------------------------------------
+    def _enemies_near_on_map(self, radius: float) -> list[tuple[float, float]]:
+        mm = self.mm_state
+        if mm is None or mm.pos is None:
+            return []
+        return [e for e in mm.enemy_champions if dist(mm.pos, e) <= radius]
+
+    def _trail_change(self, seconds: float, now: float) -> float | None:
+        old = [h for t, h in self._self_trail if now - t >= seconds - 0.05]
+        return (self._self_trail[-1][1] - old[-1]) if old and self._self_trail else None
+
+    def _fight_features(self, sc, champs, now: float, data: dict) -> dict:
+        """What the fight head sees: both sides' HP and its movement, what is ready, levels, items,
+        minions, towers, and who else is close on the minimap."""
+        ppu = config.VISION.px_per_unit
+        ap = data.get("activePlayer", {})
+        cs = ap.get("championStats", {})
+        me_p = find_me(data) or {}
+        st = self.state or {}
+        mi = self.micro
+        rnd = lambda v, k=25: None if v is None else int(round(v / k) * k)
+        pct = lambda v: None if v is None else round(v * 100)
+        mx, my = sc.me_xy
+        enemies = {}
+        for tr in sorted(champs, key=sc.dist)[:3]:
+            d = sc.dist(tr)
+            vx, vy = tr.velocity(now)
+            dx, dy = mx - tr.unit.x, my - tr.unit.y
+            n = math.hypot(dx, dy) or 1.0
+            approach = (vx * dx + vy * dy) / n / ppu  # units/s toward me
+            around = sum(1 for t in sc.minions if math.hypot(t.unit.x - tr.unit.x, t.unit.y - tr.unit.y) <= 500 * ppu)
+            info = {
+                "hp_percent": pct(tr.unit.hp), "hp_last_1s": pct(tr.hp_change(now, 1.0)), "hp_last_3s": pct(tr.hp_change(now, 3.0)),
+                "distance": rnd(d), "direction": actions.compass(tr.unit.x - mx, tr.unit.y - my),
+                "moving": "toward me" if approach > 90 else ("away from me" if approach < -90 else "holding"),
+                "enemy_minions_around_them": around,
+            }
+            info["describe"] = (f"enemy champion at {info['hp_percent']}% HP, {info['distance']} units {info['direction']}, "
+                                f"{info['moving']}")
+            enemies[f"enemy_champion_{tr.id}"] = info
+        my_around = sum(1 for t in sc.minions if sc.dist(t) <= 500)
+        summ = {n: ("ready" if sc.ready.get(k) else "not ready") for n, k in zip(mi.summoners, "DF") if n}
+        me = {
+            "champion": self.kit.name, "level": ap.get("level"), "hp_percent": round(mi.hp_pct),
+            "hp": f"{int(cs.get('currentHealth', 0))}/{int(cs.get('maxHealth', 0))}",
+            "hp_last_1s": None if self._trail_change(1.0, now) is None else round(self._trail_change(1.0, now)),
+            "hp_last_3s": None if self._trail_change(3.0, now) is None else round(self._trail_change(3.0, now)),
+            "abilities": self.kit.me_state(sc, mi, now), "summoner_spells": summ,
+            "attack_damage": round(float(cs.get("attackDamage", 0))), "armor": round(float(cs.get("armor", 0))),
+            "magic_resist": round(float(cs.get("magicResist", 0))),
+            "items": [i.get("displayName") for i in me_p.get("items", []) if i.get("displayName")],
+            "enemy_minions_around_me": my_around, "ally_minions_on_screen": sc.allies,
+            "allied_champions_on_screen": len(sc.ally_champs),
+        }
+        mm = self.mm_state
+        where: dict[str, Any] = {"inside_enemy_tower_range": bool(getattr(self, "_near_enemy_tower", False))}
+        mapinfo: dict[str, Any] = {}
+        if mm is not None and mm.pos is not None:
+            own = config.BLUE_TOWERS if self.side == "ORDER" else config.RED_TOWERS
+            theirs = config.RED_TOWERS if self.side == "ORDER" else config.BLUE_TOWERS
+            where["distance_to_my_nearest_tower"] = rnd(min(dist(mm.pos, t) for t in own), 100)
+            where["distance_to_their_nearest_tower"] = rnd(min(dist(mm.pos, t) for t in theirs), 100)
+            near = lambda pts: [{"distance": rnd(dist(mm.pos, e), 100), "direction": actions.compass(e[0] - mm.pos[0], mm.pos[1] - e[1])}
+                                for e in sorted(pts, key=lambda e: dist(mm.pos, e)) if dist(mm.pos, e) <= 4000]
+            mapinfo = {"enemy_champions_within_4000": near(mm.enemy_champions),
+                       "allied_champions_within_4000": near(mm.ally_champions),
+                       "enemy_champions_not_on_the_minimap": max(0, 5 - len(mm.enemy_champions))}
+        # Derived numbers: Jev read a two-on-one at half HP, losing 14% a second, as danger 0.27 when it
+        # had to infer these from the raw fields.
+        loss1 = me["hp_last_1s"]
+        on_map_close = lambda pts: sum(1 for e in pts if mm is not None and mm.pos is not None and dist(mm.pos, e) <= 1000)
+        them = max(sum(1 for v in enemies.values() if (v["distance"] or 9e9) <= 1000), on_map_close(mm.enemy_champions) if mm else 0)
+        us = 1 + max(len(sc.ally_champs), on_map_close(mm.ally_champions) if mm else 0)
+        numbers = {
+            "enemy_champions_within_1000": them, "our_champions_within_1000_including_me": us,
+            "seconds_i_last_at_this_rate": (round(mi.hp_pct / -loss1, 1) if loss1 is not None and loss1 < -1 else None),
+            "their_hp_total_percent_on_screen": sum(v["hp_percent"] or 0 for v in enemies.values()),
+        }
+        return {"numbers": numbers, "me": me, "enemies_on_screen": enemies, "where": where, "map": mapinfo,
+                "lane_opponent": st.get("lane_opponent"), "enemy_team": st.get("enemy_lineup"),
+                "game_time": (st.get("game") or {}).get("time")}
+
+    def _apply_fight_read(self, fr: FightRead, sc, mi, now: float) -> None:
+        """Jev's plan becomes the combo layer's mode. Code keeps three floors: no fight two on one
+        without an ally unless Jev is sure, no tower dive unless the target is nearly dead and Jev
+        is sure, and an escape when Jev says I am about to die."""
+        if fr.focus and sc.champ is not None:
+            tid = fr.focus.rsplit("_", 1)[-1]
+            pick = next((t for t in self.champ_tracker.tracks.values() if str(t.id) == tid), None)
+            if pick is not None:
+                sc.champ, sc.champ_dist = pick, sc.dist(pick)
+        ch = sc.champ
+        plan = fr.plan
+        if fr.in_danger >= 0.75 and plan not in ("escape", "back_off"):
+            plan = "escape" if fr.in_danger >= 0.85 else "back_off"
+        if plan in ("all_in", "trade") and ch is None:
+            plan = "farm"
+        if plan == "all_in" and fr.win_all_in < 0.55:
+            plan = "trade" if fr.trade_worth >= 0.55 else "farm"
+        if plan == "trade" and fr.trade_worth < 0.45:
+            plan = "poke"
+        outnumbered = sc.enemy_champs >= 2 and not sc.ally_champs
+        if plan in ("all_in", "trade") and outnumbered and fr.win_all_in < 0.8:
+            plan = "back_off"
+        if plan in ("all_in", "trade") and getattr(self, "_near_enemy_tower", False) and not (
+                ch is not None and ch.unit.hp < 0.25 and fr.win_all_in >= 0.8):
+            plan = "poke"
+        mode = {"all_in": "all_in", "trade": "trade", "poke": "poke", "farm": "farm", "back_off": "back_off", "escape": "back_off"}[plan]
+        if mi.mode != mode and not (mode == "trade" and mi.mode == "trade"):
+            if not (mi.mode == "trade" and mode in ("poke", "farm") and now - mi.mode_since < 2.0):  # let a started trade finish
+                mi.set_mode(mode, now)
+                self.log_lines.append(f"fight(jev): {plan} <- {fr.summary()}")
+        mi.fight_owned_until = now + 0.9  # the tactical head's mode picks stand down meanwhile
+        mi.flash_in_ok = plan == "all_in" and fr.win_all_in >= 0.75 and ch is not None and ch.unit.hp < 0.3
+        if plan == "escape":
+            self._force_escape_until = now + 1.0
+        self.fights.log.record(fr, plan, self._metrics())
 
     def _champ_on_minimap(self, now: float, radius: float = 1800.0) -> bool:
         """Where monsters live (a jungle camp, the dragon or baron pit), a champion-sized bar must
@@ -862,8 +998,11 @@ class Player:
         potion. Frame-level, no Jev wait; once every 12 s."""
         sc = ctx.sc
         hp, lost = getattr(self, "_hp_now", 100.0), getattr(self, "_hp_lost", 0.0)
-        if not (lost >= 25 and hp < 45 and sc.champ is not None and (sc.champ_dist or 9e9) < 700):
+        forced = now < getattr(self, "_force_escape_until", 0.0) and hp < 50 and sc.champ is not None
+        if not forced and not (lost >= 25 and hp < 45 and sc.champ is not None and (sc.champ_dist or 9e9) < 700):
             return False
+        if forced and self.kit.escape(ctx.mi, sc, now, tuple(-v for v in (self.lane.screen_dir(self.mech.nav.progress) if self.mech else ctx.mi.fwd))):
+            return True  # the kit's dash first; Flash stays for the next tick if still in trouble
         if now - getattr(self, "_escape_t", 0.0) < 12.0:
             return False
         self._escape_t = now
@@ -1047,6 +1186,9 @@ class Player:
                 self.tactics = TacticalBrain(max_hz=self.tactic_hz, explore=self.explore)
                 self.tactics.on_answer = self._wake_actor.set
                 threading.Thread(target=self.tactics.run, daemon=True).start()
+                self.fights = FightBrain(self.kit.role_text(self.lane.name),
+                                         log_path=f"{self.logfile}.fights.jsonl" if self.logfile else None)
+                threading.Thread(target=self.fights.run, daemon=True).start()
         tick = 1 / (config.FAST.act_hz if not self.dry_run else config.TIMING.tick_hz)
         perception = Perception()
         try:
@@ -1083,6 +1225,8 @@ class Player:
                     perception = self._tick(data, t0)
                     self.state = self._full_state(data, perception)
                     self.dlog.resolve(self._metrics())
+                    if self.fights is not None:
+                        self.fights.log.resolve(self._metrics())
                     if t0 - self._last_table > 0.25:
                         self._last_table = t0
                         live.update(self._table(perception))
@@ -1094,6 +1238,8 @@ class Player:
             self._stop.set()
             if self.tactics is not None:
                 self.tactics.stop()
+            if self.fights is not None:
+                self.fights.stop()
         console.print("game over")
 
     def _tick(self, data: dict, now: float) -> Perception:
@@ -1106,6 +1252,8 @@ class Player:
         move_speed = min(float(cs.get("moveSpeed", 345)), config.TIMING.max_reckon_speed)
         me = find_me(data) or {}
         lost = self.hp.update(hp_pct, now)
+        if not self._self_trail or now - self._self_trail[-1][0] >= 0.1:
+            self._self_trail.append((now, hp_pct))
         self._hp_now, self._hp_lost = hp_pct, lost
         # Significant change: new damage, level, or death state -> wake the brain right away.
         sig = (int(ap.get("level", 1)), bool(me.get("isDead")), int(hp_pct // 10))

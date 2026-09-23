@@ -31,6 +31,14 @@ class Track:
     hist: collections.deque = field(default_factory=lambda: collections.deque(maxlen=24))
     e_marked_until: float = 0.0   # Yasuo E cannot dash through the same unit again for a while
     path: collections.deque = field(default_factory=lambda: collections.deque(maxlen=12))  # (t, x, y) screen px
+    trail: collections.deque = field(default_factory=lambda: collections.deque(maxlen=50))  # (t, hp) every 0.1 s, 5 s
+
+    def hp_change(self, now: float, seconds: float) -> float | None:
+        """HP fraction gained (+) or lost (-) over the last `seconds`, from the slow trail."""
+        old = [h for t, h in self.trail if now - t >= seconds - 0.05]
+        if not old or not self.trail:
+            return None
+        return self.trail[-1][1] - old[-1]
 
     def velocity(self, now: float, window: float = 0.35) -> tuple[float, float]:
         """Screen px per second over the recent window (0, 0 with too little history)."""
@@ -94,6 +102,8 @@ class UnitTracker:
                 self.tracks[tr.id] = tr
             tr.hist.append((now, u.hp))
             tr.path.append((now, u.x, u.y))
+            if not tr.trail or now - tr.trail[-1][0] >= 0.1:
+                tr.trail.append((now, u.hp))
             out.append(tr)
         for tid, tr in list(self.tracks.items()):
             if now - tr.seen > self.ttl:
@@ -216,6 +226,8 @@ class Micro:
         self.last_exec: dict | None = None
         self.lh_pending: list[tuple[float, str, float]] = []   # (time, kind, minion HP fraction) awaiting a gold check
         self.at_camp = False                                   # the loop sets it while clearing a jungle camp
+        self.fight_owned_until = 0.0                           # the fight head owns the mode until then
+        self.flash_in_ok = False                               # the fight head says a Flash-in kill is on
 
     def set_mode(self, mode: str, now: float) -> None:
         if mode != self.mode:

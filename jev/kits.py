@@ -20,7 +20,7 @@ VC = config.VISION
 FAST = config.FAST
 
 YASUO_ID, THRESH_ID = 157, 412
-FIGHT_MODES = ("trade", "all_in")
+FIGHT_MODES = ("trade", "all_in", "poke")
 
 
 class Kit:
@@ -83,9 +83,15 @@ class Kit:
         return self.continuous(mi, sc, now, aspd, mode, pushing)
 
     def fight(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str) -> bool:
+        if mode == "poke":
+            return self.poke(mi, sc, now, aspd)
         if mode == "trade" and self.trade_over(mi, sc, now):
             return True
         return self.hit_or_chase(mi, sc, now, aspd, mode)
+
+    def poke(self, mi: Micro, sc: Scene, now: float, aspd: float) -> bool:
+        """What reaches from here and nothing that walks or dashes in; farm otherwise."""
+        return self.continuous(mi, sc, now, aspd, "farm", False)
 
     def escape(self, mi: Micro, sc: Scene, now: float, home: tuple[float, float]) -> bool:
         """A kit move that gets us away (a dash toward `home`, a screen direction); False if none."""
@@ -137,6 +143,14 @@ class Kit:
             return True
         if mi.in_windup(now, aspd):
             return True
+        if mode == "all_in" and mi.flash_in_ok and d > rng and d <= rng + 380:
+            slot = mi.summoner_slot("flash", sc.ready)
+            if slot:
+                # Jev reads the kill as on and they are just out of reach: Flash onto them, auto next tick.
+                mi.cast_summoner(slot, ch.unit.x, ch.unit.y)
+                mi._ordered(now, f"{mode}: Flash in for the kill")
+                mi.flash_in_ok = False
+                return True
         x, y = ch.lead(now, 0.25)
         mi.move_screen(x, y, now, f"{mode}: stick to the champion" if d <= rng else f"{mode}: chase", every=0.12)
         return True
@@ -331,10 +345,26 @@ class Yasuo(Kit):
             return True
         return super().continuous(mi, sc, now, aspd, mode, pushing)
 
+    def poke(self, mi: Micro, sc: Scene, now: float, aspd: float) -> bool:
+        ch, d, rdy = sc.champ, sc.champ_dist or 9e9, sc.ready
+        if mi._can_order(now) and rdy.get("Q"):
+            q3 = self.q.q3(now)
+            if (q3 and d <= VC.q3_range * 0.9) or (not q3 and d <= VC.q_range + 20):
+                x, y = ch.lead(now, 0.3 + (d / 1500 if q3 else 0))
+                mi.cast(1, x, y)
+                self.q.cast(True, now)
+                if q3:
+                    self.tornado_at = now
+                mi._ordered(now, "poke: Q3 tornado" if q3 else "poke: Q the champion")
+                return True
+        return self.continuous(mi, sc, now, aspd, "farm", False)
+
     def fight(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str) -> bool:
         """Yasuo's combo, one order per tick: R on an airborne target; Q3 tornado from range (led
         onto where they walk); E onto them with Q in the dash (EQ, a knock-up with Q3); Q in
         melee range; ignite a kill; E through a minion toward them to close the gap; autos."""
+        if mode == "poke":
+            return self.poke(mi, sc, now, aspd)
         if mode == "trade" and self.trade_over(mi, sc, now):
             return True
         if not mi._can_order(now):
@@ -714,6 +744,16 @@ class LeeSin(Kit):
             return "all_in"
         return None
 
+    def poke(self, mi: Micro, sc: Scene, now: float, aspd: float) -> bool:
+        d = sc.champ_dist or 9e9
+        if mi._can_order(now) and sc.ready.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE * 0.9 and now - self.q_at > 3.0:
+            x, y = sc.champ.lead(now, 0.25 + d / 1800)
+            mi.cast(1, x, y)
+            self.q_at = now
+            mi._ordered(now, "poke: Q Sonic Wave")
+            return True
+        return self.continuous(mi, sc, now, aspd, "farm", False)
+
     def e2_up(self, sc: Scene, now: float) -> bool:
         return bool(sc.ready.get("E")) and 0.35 < now - self.e_at < 3.0
 
@@ -721,6 +761,8 @@ class LeeSin(Kit):
         """Lee Sin's gank / skirmish combo, one order per tick: R to finish (or to peel when I am
         losing); Q2 dash after a Sonic Wave hit; Q1 from range (led); E then E2 slow in melee;
         W shield when hurt; autos between spells (the passive gives two fast ones); chase."""
+        if mode == "poke":
+            return self.poke(mi, sc, now, aspd)
         if mode == "trade" and self.trade_over(mi, sc, now):
             return True
         if not mi._can_order(now):

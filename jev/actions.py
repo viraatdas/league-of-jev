@@ -327,6 +327,8 @@ def execute(ctx: Ctx, spec: Spec, cands, target_probs, where_probs, distance) ->
     """Run one chosen action. Returns a short description, or '' when it could not run."""
     if spec.mode:
         mi = ctx.mi
+        if ctx.now < getattr(mi, "fight_owned_until", 0.0):
+            return ""  # the fight head is planning this fight; the tactical head's mode picks stand down
         # A committed all-in is not dropped for farming within 2.5 s (Jev re-picks ~5 times a
         # second and a flip-flop cancels the combo halfway); backing off is always allowed.
         if (mi.mode == "all_in" and spec.mode in ("farm", "push", "hold_with_carry") and ctx.sc.champ is not None

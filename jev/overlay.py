@@ -187,6 +187,7 @@ class PanelView(NSView):
                 y += 16
             _text("double-click to expand", 12, y, 9, DIM)
             return y + 18
+        y = self._fight(y, d.get("fight") or {})
         y = self._tactics(y, t)
         y = self._micro(y, d.get("micro") or {})
         y = self._strategy(y, d.get("strategy") or {})
@@ -248,6 +249,27 @@ class PanelView(NSView):
             _text(f"{t.get('exec_age', 0):.1f} s ago", W - 80, y, 10, DIM)
             y += 15
         return y + 2
+
+    @objc.python_method
+    def _fight(self, y: float, f: dict) -> float:
+        """Jev's fight head: its plan and the four reads behind it."""
+        if not f:
+            return y
+        y = self._section(y + 4, "FIGHT  ·  jev reads the fight", f"{f.get('latency', 0):.0f} ms  {f.get('rate', 0):.1f}/s")
+        plan = str(f.get("plan", ""))
+        col = BAD if plan in ("all_in", "trade") else (WARN if plan in ("back_off", "escape") else ACCENT)
+        wdt = _text(plan.upper(), 12, y, 13, col, bold=True)
+        _text(f"p {f.get('p', 0):.2f}" + (f"   focus {f['focus']}" if f.get("focus") else ""), 20 + wdt, y + 2, 10, DIM)
+        y += 19
+        for i, (name, v, c) in enumerate((("win", f.get("win", 0), GOOD), ("trade", f.get("trade", 0), GOOD),
+                                           ("danger", f.get("danger", 0), BAD), ("gank", f.get("gank", 0), WARN))):
+            x = 12 + (i % 2) * 198
+            if i % 2 == 0 and i:
+                y += 15
+            _text(name, x, y, 10, DIM)
+            _bar(x + 52, y + 3, 90, v, c, 6)
+            _text(f"{v:.2f}", x + 148, y, 10, DIM)
+        return y + 19
 
     @objc.python_method
     def _micro(self, y: float, m: dict) -> float:

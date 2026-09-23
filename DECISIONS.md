@@ -37,3 +37,8 @@ Shared, agent-authored log of cross-cutting decisions the fleet must honor. The 
 - **Interfaces:** uv run jev play [--tactic-hz 8] [--explore 0.1] [--capture sck|mss] [--capture-fps 60] [--save-frames N] [--champion yasuo|thresh] [--role MIDDLE|UTILITY]; uv run jev review; new modules jev/actions.py, jev/places.py, jev/capture.py; kits expose specs(ctx).
 - **By:** worker · 2026-09-22T23:43:56.264Z
 
+## worker: Overnight unattended bot-game loop (jev night / jev session)
+- **Did:** Overnight unattended bot-game loop (jev night / jev session) ran 8 games (Yasuo mid, Lee Sin jungle) with ~65 commits of fixes between and during games: harness/runner robustness, AFK and shop dialogs, vision phantoms (HUD panels, screen-edge bars, red-buff flicker, gold-framed monsters), last-hit timing (Q ~35% -> 55-70%), trade/all-in fight modes with frame-rate combos (EQ3 -> R landed), escapes during retreats, outmatched/outnumbered back-off, Lee Sin Smite (lobby position), pet purchase and camp clearing. Patch 16.19 downtime handled; loop stopped at 06:35 when Claude Code reaped background tasks for low memory.
+- **Interfaces:** CLI: jev session, jev night; scripts/night_report.py, scripts/fight_review.py, scripts/watch_night.py; overlay MICRO section; logs/night/, snapshots/night/
+- **By:** worker · 2026-09-23T13:37:44.514Z
+
