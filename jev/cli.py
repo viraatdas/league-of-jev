@@ -97,6 +97,7 @@ def play(
     save_frames: float = typer.Option(0.0, help="Save a raw frame to snapshots/live every N seconds (calibration)"),
     capture: str = typer.Option("sck", help="Screen capture: sck (ScreenCaptureKit stream) | mss (blocking grab)"),
     capture_fps: int = typer.Option(60, help="ScreenCaptureKit frame rate cap; 120 on a 120 Hz display halves the frame wait"),
+    markers: bool = typer.Option(True, help="Draw Jev's last move (target ring, aim line) over the game"),
 ) -> None:
     """Play the current game with Jev driving strategy (1/s), tactics (~7/s) and the build."""
     from jev.loop import Player
@@ -107,14 +108,19 @@ def play(
     if not overlay:
         player.run()
         return
-    from jev.overlay import format_snapshot, run_with_overlay
+    from jev.control import game_is_frontmost
+    from jev.overlay import run_with_overlay
 
-    def snapshot() -> str:
-        return format_snapshot(player.state, player.decision, player.intent, player._mm_summary(),
-                               player.mech.last_action if player.mech else "", player.ctl.keys_ok(),
-                               extra=player.fast_summary())
+    run_with_overlay(player.run, player.overlay_data, corner=overlay_corner, markers=markers, game_active=game_is_frontmost)
 
-    run_with_overlay(player.run, snapshot, corner=overlay_corner)
+
+@app.command()
+def overlay_demo(markers: bool = typer.Option(True, help="Draw the marker layer too")) -> None:
+    """Show the overlay with a replayed fight (no game needed): move it, resize, try compact mode."""
+    from jev.overlay import Overlay
+    from jev.overlay_demo import DemoFeed
+
+    Overlay(DemoFeed().snapshot, markers=markers, game_active=lambda: False).run_forever()
 
 
 @app.command()

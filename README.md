@@ -80,6 +80,15 @@ API, walks to lane, farms, fires Q, retreats on damage, recalls when Jev says so
 abilities in the standard Yasuo order, and buys the item Jev picks once the shop search box has
 been calibrated (see below). Every second's state and Jev's answers are recorded to `fixtures/`.
 
+The overlay (on by default, `--no-overlay` to hide) shows every head's answers: the tactical
+menu with a probability bar per move, the chosen move, target, where and distance; the plan,
+danger, recall, fight, aggression, map destination and level-up pick; the build and its needs;
+APM and screen-to-input latency. A marker layer draws the last move over the game (target
+ring, aim line, killable minions, enemy HP); `--no-markers` turns it off. Drag the panel with
+Cmd held (or freely while the game is not the active app); double-click for a compact view.
+The position is remembered. `uv run jev overlay-demo` shows it with a replayed fight, no game
+needed.
+
 Stop it with Ctrl-C in the terminal. It never takes over the mouse permanently; each click is a
 single event, so you can grab the mouse back at any time.
 
@@ -105,7 +114,8 @@ single event, so you can grab the mouse back at any time.
 - `jev/vision.py` health bars (units and HP) and HUD icons (cooldowns) from each frame, ~5 ms
 - `jev/minimap.py` minimap reader: own position, minions, champions
 - `jev/micro.py` unit tracking, last-hit prediction, Q-stack count, combo executor, reflexes
-- `jev/overlay.py` click-through panel with every head's answers and probabilities
+- `jev/overlay.py` movable panel with every head's answers and probabilities, plus the marker layer
+- `jev/overlay_demo.py` replayed fight for `jev overlay-demo`
 - `jev/keybinds.py` reads League's input config
 - `jev/control.py` Quartz CGEvent mouse and keyboard
 - `jev/mechanics.py` macro behaviours: travel, lane position, retreat, recall, level, shop

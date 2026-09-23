@@ -164,6 +164,7 @@ class Micro:
         self.orders = 0
         self.react_ms: collections.deque[tuple[str, float]] = collections.deque(maxlen=200)
         self._later: list[tuple[float, object]] = []
+        self.last_exec: dict | None = None
 
     def later(self, delay_s: float, fn) -> None:
         """Queue a combo step to run `delay_s` from now (checked every actor tick)."""
@@ -200,9 +201,11 @@ class Micro:
         return now - self.last_attack < FAST.windup_frac / max(0.3, attack_speed) + 0.05
 
     def attack(self, tr: Track, now: float, what: str) -> None:
-        self.ctl.move_to(*self._pt(tr.unit.x, tr.unit.y))
+        pt = self._pt(tr.unit.x, tr.unit.y)
+        self.ctl.move_to(*pt)
         self.last_attack = now
         self._ordered(now, what)
+        self.last_exec = {"name": what, "what": what, "ts": now, "target": pt, "point": None}
 
     def move_screen(self, x: float, y: float, now: float, what: str, every: float = 0.25) -> None:
         if now - self.last_move < every:

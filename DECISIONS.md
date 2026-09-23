@@ -32,3 +32,8 @@ Shared, agent-authored log of cross-cutting decisions the fleet must honor. The 
 - **Interfaces:** uv run jev play [--tactic-hz 8] [--overlay-corner tr] [--forever] [--logfile logs/play.log]; new modules jev/vision.py, jev/micro.py, jev/tactics.py, jev/items.py; config.Vision and config.FAST in jev/config.py; Controller.slow(), Controller.apm(), Controller.tap(); Player.fast_summary() feeds the overlay.
 - **By:** worker · 2026-09-22T22:09:30.286Z
 
+## worker: Full action space for Jev (offline-verified, no live game
+- **Did:** Full action space for Jev (offline-verified, no live game this round). Tactical head (jev/actions.py + jev/kits.py): every ability and combo per kit (Yasuo Q/Q3, W, E, E-then-Q, beyblade, R; Thresh hook, fly, fly-then-pull, flash hook, lantern, flay any direction/pull/push, box), summoner spells from the API (Flash, Ignite, Exhaust, Heal, Barrier, Ghost, Cleanse, Smite), item actives, potions, wards, move/attack/attack-move/stop/hold, standing modes; target/where/distance heads masked per action (Five-style factorisation). Strategy head: go_to/group/defend over 19 map places with map awareness, Jev-chosen level-ups (legal ranks only). Build head: Control Wards, Oracle Lens, elixirs. Also ScreenCaptureKit capture (frame-to-text ~9 ms), quick-cast binds now read from [Quickbinds] (casts are one keypress). Checks pass: offline_loop/lanes/actions/micro.
+- **Interfaces:** uv run jev play [--tactic-hz 8] [--explore 0.1] [--capture sck|mss] [--capture-fps 60] [--save-frames N] [--champion yasuo|thresh] [--role MIDDLE|UTILITY]; uv run jev review; new modules jev/actions.py, jev/places.py, jev/capture.py; kits expose specs(ctx).
+- **By:** worker · 2026-09-22T23:43:56.264Z
+

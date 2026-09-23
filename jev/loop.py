@@ -308,6 +308,67 @@ class Player:
         }
         return st
 
+    def overlay_data(self) -> dict:
+        """Everything the overlay shows, as plain data (read from the main thread)."""
+        now = time.time()
+        st = self.state or {}
+        me, g = st.get("me", {}), st.get("game", {})
+        out: dict = {"header": {
+            "title": f"{self.kit.name} {'support' if self.kit.support else self.kit.role.lower()} · {self.lane.name} lane"
+                     if self.mech else "waiting for a game",
+            "stats": (f"{g.get('time', '-')}  L{me.get('level', '-')}  HP {me.get('hp_percent', '-')}%  gold {me.get('gold', '-')}  "
+                      f"cs {me.get('cs', '-')}  {me.get('kda', '')}") if me else "",
+            "input": "dry run" if self.dry_run else ("live" if self.ctl.keys_ok() else "paused"),
+        }}
+        byp = lambda d, n: sorted(d.items(), key=lambda kv: -kv[1])[:n]
+        t = self.tactics.tactic if self.tactics else None
+        ex = self.micro.last_exec if self.micro else None
+        if t is not None and now - t.state_ts < 3.0:
+            units = t.state.get("visible_units", {})
+            out["tactics"] = {
+                "action": t.action, "p": t.probabilities.get(t.action, t.confidence), "explored": t.explored,
+                "fits": t.menu_fits, "latency": t.latency_ms, "rate": self.tactics.rate() if self.tactics else 0.0,
+                "menu": sorted(((n, t.probabilities.get(n, 0.0)) for n in t.menu), key=lambda kv: -kv[1]),
+                "target": [(l, p, units.get(l, "")) for l, p in byp(t.target_probs, 3)],
+                "where": [(w, p) for w, p in byp(t.where_probs, 3)],
+                "distance": t.distance,
+                "executed": ex.get("what") if ex else None, "exec_age": (now - ex["ts"]) if ex else 0.0,
+            }
+        d = self.decision
+        if d is not None:
+            out["strategy"] = {
+                "intent": self.intent, "jev_intent": d.intent, "p": d.intent_confidence, "latency": d.latency_ms,
+                "probs": byp(d.intent_probabilities, 4), "danger": d.danger, "aggr": d.aggression,
+                "recall": d.should_recall, "fight": d.fight_favorable,
+                "destination": byp(d.destination_probs, 3), "level_up": d.level_up,
+            }
+        b = self.build
+        if b is not None:
+            short = {"need_armor": "armor", "need_magic_resist": "mr", "need_tenacity": "tenacity",
+                     "need_antiheal": "antiheal", "need_defense_first": "defense"}
+            out["build"] = {"target": b.target, "p": b.confidence, "buy_now": b.buy_now,
+                            "needs": {short.get(k, k): v for k, v in b.needs.items()}}
+        react = {}
+        if self.micro is not None:
+            for kind in ("reflex", "lasthit", "jev"):
+                lat = self.micro.latency(kind)
+                if lat:
+                    react[kind] = lat
+        out["perf"] = {"apm": self.ctl.apm(), "capture": "sck" if self.capture_name == "screencapturekit" else self.capture_name,
+                       "fps": self.perceive_fps, "read_ms": self.perceive_ms, "api_ms": self.api_ms, "react": react}
+        out["log"] = list(self.log_lines)[-3:]
+        sc = self.scene
+        if sc is not None:
+            pts = self.screen.to_points
+            mk: dict = {"me": pts(*sc.me_xy), "killable": [pts(k.unit.x, k.unit.y) for k in sc.killable_auto]}
+            if sc.champ is not None:
+                opp = (st.get("lane_opponent") or {}).get("champion") or "enemy"
+                mk["champ"] = (*pts(sc.champ.unit.x, sc.champ.unit.y), sc.champ.unit.hp * 100, opp)
+            if ex:
+                mk["exec"] = {"name": ex.get("what", ""), "target": ex.get("target"), "point": ex.get("point"), "age": now - ex["ts"]}
+            out["markers"] = mk
+        return out
+
     def fast_summary(self) -> list[str]:
         """Overlay lines for the fast path."""
         out = []

@@ -332,6 +332,9 @@ def execute(ctx: Ctx, spec: Spec, cands, target_probs, where_probs, distance) ->
     what = spec.run(ctx, spec, tgt, pt) if spec.run else ""
     if what:
         ctx.mi._ordered(ctx.now, what)
+        ctx.mi.last_exec = {"name": spec.name, "what": what, "ts": ctx.now,
+                            "target": ctx.mi._pt(*unit_xy(tgt)) if tgt is not None else None,
+                            "point": ctx.mi._pt(*pt) if pt is not None else None}
     return what
 
 
