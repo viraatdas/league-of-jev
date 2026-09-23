@@ -285,7 +285,11 @@ def shortlist(catalog: Catalog, owned: list[str], needs: dict[str, float], game_
             picks.append(it)
 
     TRINKETS = ("stealth ward", "oracle lens", "farsight alteration")
-    if game_min < 1.5 and not [o for o in owned_l if o not in TRINKETS]:
+    PETS = ("hatchling", "seedling", "pup")
+    pet_missing = any(any(k in st.lower() for k in PETS) for st in profile.starters) and not any(
+        any(k in o for k in PETS) or "jungle" in o for o in owned_l)
+    if pet_missing or (game_min < 1.5 and not [o for o in owned_l if o not in TRINKETS]):
+        # A jungler without his pet buys it first whenever he is in base.
         # (The trinket everyone spawns with does not count: with it, no starter was ever offered
         # and a jungler bought toward Eclipse instead of his pet.)
         for s in profile.starters:
