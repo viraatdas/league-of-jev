@@ -209,6 +209,7 @@ class Micro:
         self._later: list[tuple[float, object]] = []
         self.last_exec: dict | None = None
         self.lh_pending: list[tuple[float, str, float]] = []   # (time, kind, minion HP fraction) awaiting a gold check
+        self.at_camp = False                                   # the loop sets it while clearing a jungle camp
 
     def set_mode(self, mode: str, now: float) -> None:
         if mode != self.mode:
@@ -264,7 +265,7 @@ class Micro:
         # Jungle monsters get a right-click on the body: an attack-move does not start a fight with
         # a camp that is not already fighting us.
         pt = self._pt(tr.unit.x, tr.unit.y)
-        if right_click:
+        if right_click or self.at_camp or tr.unit.kind == "monster":
             self.ctl.click(*pt, "right")
         else:
             self.ctl.attack_move(self.kb.attack_move, *pt)

@@ -772,11 +772,11 @@ class Player:
         if js.arrived_at is None or js.arrived_at < FIRST_SPAWN:
             js.arrived_at = max(gt, FIRST_SPAWN)
         sc_before = len(self.min_tracker.tracks)
-        self._at_camp = True
+        self._at_camp = self.micro.at_camp = True
         try:
             acted = self._micro_step(data, ap, stats, now, standing=True, camp_pt=pt, camp_big=big)
         finally:
-            self._at_camp = False
+            self._at_camp = self.micro.at_camp = False
         if self.scene is not None and self.scene.minions:
             js.last_seen_monster = gt
             return
