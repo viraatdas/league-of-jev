@@ -120,6 +120,7 @@ class Scene:
     allies: int = 0
     ally_champs: list[Unit] = field(default_factory=list)     # allied champions on screen (the carry, for a support)
     champ: Track | None = None                                # nearest enemy champion
+    enemy_champs: int = 0                                     # enemy champions on screen
     champ_dist: float | None = None
     killable_auto: list[Track] = field(default_factory=list)
     killable_q: list[Track] = field(default_factory=list)
@@ -139,6 +140,7 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
     sc = Scene(me_xy=me_xy, minions=minions, allies=len(view.allies("minion")), ally_champs=view.allies("champion"))
     sc.ready = dict(view.hud.ready)
     sc.r_lit = bool(view.hud.ready.get("R"))
+    sc.enemy_champs = len(champs)
     if champs:
         sc.champ = min(champs, key=sc.dist)
         sc.champ_dist = sc.dist(sc.champ)

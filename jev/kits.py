@@ -686,6 +686,8 @@ class LeeSin(Kit):
         d = sc.champ_dist or 9e9
         if now - getattr(self, "_last_window", 0.0) < 6.0 or level_diff < -1 or mi.hp_pct < 50:
             return None
+        if sc.enemy_champs >= 2 and not sc.ally_champs:
+            return None  # alone against two: not a gank
         if sc.ready.get("Q") and d <= self.Q_RANGE * 0.9:
             self._last_window = now
             return "all_in"
