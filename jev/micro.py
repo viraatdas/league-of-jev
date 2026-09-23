@@ -157,13 +157,16 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
         # more, Q at 25-45% HP paid 0/5 and autos at 20-30% 0/3 (game 4), against 6/6 at 10-20%.
         now_abs = tr.unit.hp * melee_max
         if d <= VC.auto_range + 250 and 0 < at_hit <= ad * FAST.lasthit_margin and now_abs - ad <= FAST.forecast_cap:
+            tr.at_hit = at_hit
             sc.killable_auto.append(tr)
         if tr not in sc.killable_auto and tr.hp_rate(now) < 0 and 0 < tr.predict_hp(now, 1.2) * hp_max <= ad * 1.1:
             sc.soon_killable.append(tr)
         at_q = tr.predict_hp(now, FAST.lasthit_lead_s + FAST.q_cast_s) * hp_max
         if q_rank and d <= VC.q_range and 0 < at_q <= q_dmg and now_abs - q_dmg <= FAST.forecast_cap:
             sc.killable_q.append(tr)
-    sc.killable_auto.sort(key=lambda t: t.unit.hp)
+    # Most HP left at the moment of our hit first: the nearly dead ones are the ones allied minions
+    # finish before the hit lands (autos at 0-5% paid 1 in 5, game 4).
+    sc.killable_auto.sort(key=lambda t: (-getattr(t, "at_hit", 0.0), sc.dist(t)))
     sc.soon_killable.sort(key=lambda t: t.predict_hp(now, 1.2))
     if sc.champ is not None and sc.champ_dist is not None and sc.champ_dist > VC.e_range * 0.8:
         # A minion within E range whose far side is closer to the champion than we are now.
