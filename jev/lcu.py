@@ -254,6 +254,10 @@ class LCU:
         yield f"custom lobby: {code} {body if code >= 400 else ''}"
         if code >= 400:
             return
+        # Our position, in case champ select only allows Smite with an assigned jungle position.
+        pc, pb = self.req("PUT", "/lol-lobby/v2/lobby/members/localMember/position-preferences",
+                          {"firstPreference": position.upper(), "secondPreference": "FILL"})
+        yield f"position preference {position.upper()}: {pc} {pb if pc >= 400 else ''}"
         bots = [b.get("id") for b in self.available_bots() if b.get("id") and b.get("id") != champion_id]
         yield f"{len(bots)} bot champions available"
         allies = [p for p in ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY") if p != position.upper()][:4]
