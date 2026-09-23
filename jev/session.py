@@ -59,7 +59,7 @@ def surrender(riot: RiotLiveClient) -> bool:
             ctl.key("return")
         for _ in range(20):
             time.sleep(1.0)
-            if not riot.is_game_running():
+            if not game_alive():
                 return True
             ev = (riot.event_data() or {}).get("Events", [])
             if any(e.get("EventName") == "GameEnd" for e in ev):
@@ -69,6 +69,19 @@ def surrender(riot: RiotLiveClient) -> bool:
 
 def kill_game() -> None:
     subprocess.run(["pkill", "-x", "LeagueofLegends"], check=False)
+
+
+def game_alive() -> bool:
+    """The game process exists (the live API alone stalls for seconds under load)."""
+    return subprocess.run(["pgrep", "-x", "LeagueofLegends"], capture_output=True).returncode == 0
+
+
+def harness_alive() -> bool:
+    return subprocess.run(["pgrep", "-f", "jev pla[y]"], capture_output=True).returncode == 0
+
+
+def stop_harness() -> None:
+    subprocess.run(["pkill", "-f", "jev pla[y]"], check=False)
 
 
 def run(champion: str = "yasuo", minutes: float = 18.0, tag: str = "", difficulty: str = "RSINTERMEDIATE",
@@ -82,46 +95,53 @@ def run(champion: str = "yasuo", minutes: float = 18.0, tag: str = "", difficult
     frames = f"snapshots/night/{tag}"
     c = LCU()
     riot = RiotLiveClient()
-    phase = clear_post_game(c)
-    _say(f"client phase {phase}")
-    if riot.is_game_running():
-        _say("a game is already running: leaving it first")
-        if not surrender(riot):
-            kill_game()
-            time.sleep(5)
-        clear_post_game(c)
-    # The harness first, so it is ready (and waiting) when the game window appears.
     cmd = ["uv", "run", "jev", "play", "--logfile", str(log), "--decision-log", str(logs / f"{tag}_decisions.jsonl"),
            "--save-frames", "2", "--frames-dir", frames, "--champion", champion, "--role", ROLE[pos]] + (extra_args or [])
-    console = open(logs / f"{tag}.console", "w")
-    harness = subprocess.Popen(cmd, stdout=console, stderr=subprocess.STDOUT, start_new_session=True)
-    _say(f"harness pid {harness.pid}: {' '.join(cmd)}")
-    started = False
-    for line in c.bot_game(CHAMPIONS.get(champion, YASUO), difficulty=difficulty, position=pos):
-        _say(f"lcu: {line}")
-        started = started or line == "game starting"
+
+    def start_harness() -> None:
+        console = open(logs / f"{tag}.console", "a")
+        h = subprocess.Popen(cmd, stdout=console, stderr=subprocess.STDOUT, start_new_session=True)
+        _say(f"harness pid {h.pid}: {' '.join(cmd)}")
+
     result = {"tag": tag, "champion": champion, "log": str(log), "frames": frames, "ended": "?"}
-    try:
+    if game_alive():
+        _say("a game is already running: supervising it")  # attach (e.g. after a runner restart)
+    else:
+        phase = clear_post_game(c)
+        _say(f"client phase {phase}")
+        # The harness first, so it is ready (and waiting) when the game window appears.
+        if not harness_alive():
+            start_harness()
+        started = False
+        for line in c.bot_game(CHAMPIONS.get(champion, YASUO), difficulty=difficulty, position=pos):
+            _say(f"lcu: {line}")
+            started = started or line == "game starting"
         if not started:
             result["ended"] = "no game"
+            stop_harness()
             return result
         t0 = time.time()
-        while not riot.is_game_running() and time.time() - t0 < 240:
+        while not game_alive() and time.time() - t0 < 240:
             time.sleep(2)
-        last_note = 0.0
+    if not harness_alive():
+        start_harness()
+    last_note, gone, gt = 0.0, 0, 0.0
+    try:
         while True:
-            d = riot.all_game_data()
-            if d is None:
-                time.sleep(3)
-                if not riot.is_game_running():
+            time.sleep(5)
+            if not game_alive():
+                gone += 1
+                if gone >= 3:
                     result["ended"] = "game over"
                     break
                 continue
-            gt = float((d.get("gameData") or {}).get("gameTime", 0.0))
-            if harness.poll() is not None:
-                _say(f"harness exited with {harness.returncode}: restarting it")
-                console = open(logs / f"{tag}.console", "a")
-                harness = subprocess.Popen(cmd, stdout=console, stderr=subprocess.STDOUT, start_new_session=True)
+            gone = 0
+            d = riot.all_game_data()
+            if d is not None:
+                gt = float((d.get("gameData") or {}).get("gameTime", 0.0))
+            if not harness_alive():
+                _say("harness not running: restarting it")
+                start_harness()
             if time.time() - last_note > 60:
                 last_note = time.time()
                 try:
@@ -132,12 +152,8 @@ def run(champion: str = "yasuo", minutes: float = 18.0, tag: str = "", difficult
             if gt >= minutes * 60:
                 result["ended"] = "time limit"
                 break
-            time.sleep(5)
     finally:
-        try:
-            os.killpg(harness.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        stop_harness()
         time.sleep(2)
     if result["ended"] == "time limit":
         ok = surrender(riot)
@@ -145,6 +161,12 @@ def run(champion: str = "yasuo", minutes: float = 18.0, tag: str = "", difficult
         if not ok:
             kill_game()
             time.sleep(8)
+    t0 = time.time()
+    while game_alive() and time.time() - t0 < 45:
+        time.sleep(2)
+    if game_alive():
+        kill_game()  # the victory / defeat screen waits for a click; closing the game is the same
+        time.sleep(8)
     from jev.score import report
 
     result["score"] = report(log)
