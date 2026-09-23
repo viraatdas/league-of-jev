@@ -409,6 +409,8 @@ class Yasuo(Kit):
             return None
         if mi.hp_pct < 50 or mi.hp_pct < ch.unit.hp * 100 - 5:
             return None
+        if sc.enemy_champs >= 2 and not sc.ally_champs:
+            return None  # two of them in view and none of us: not a trade
         if self.minions_near_champ(sc) >= 3 and ch.unit.hp > 0.35:
             return None  # trading into her full wave: Yasuo took the minions' aggro and lost 78% -> 59% (g04)
         eq = rdy.get("E") and rdy.get("Q") and d <= VC.e_range + 150
