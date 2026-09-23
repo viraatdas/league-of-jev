@@ -191,14 +191,18 @@ class Yasuo(Kit):
         if sc.ready.get("W"):
             out.append(Spec("W", "W: raise a wind wall in the chosen direction: it blocks enemy projectiles.", POINT, range=400,
                             run=lambda c, s, t, p: (c.mi.cast(2, *p), "W wind wall")[1]))
-        if sc.ready.get("E") and (sc.minions or sc.champ is not None):
+        # Dashes are gated: with the enemy champion close and the fight read unfavourable, dashing
+        # forward is how the lane gets lost (5 E's in game 2 took no HP off the enemy, then a death).
+        safe_to_dash = (sc.champ is None or (sc.champ_dist or 9e9) > 700
+                        or float(ctx.plan.get("fight_favorable", 0.5)) >= 0.5)
+        if sc.ready.get("E") and (sc.minions or sc.champ is not None) and safe_to_dash:
             out.append(Spec("E", "E: dash through the chosen enemy unit (not one dashed through in the last few seconds).",
                             UNIT, who="enemy", range=VC.e_range, accept=not_marked, run=self._e))
             if sc.ready.get("Q"):
                 out.append(Spec("E_then_Q", "E through the chosen enemy unit and Q during the dash (circle Q: hits everything around me).",
                                 UNIT, who="enemy", range=VC.e_range, accept=not_marked,
                                 run=lambda c, s, t, p: self._e(c, s, t, p, then_q=True)))
-        if sc.ready.get("E") and sc.ready.get("Q") and ctx.flash_slot() and sc.champ is not None:
+        if sc.ready.get("E") and sc.ready.get("Q") and ctx.flash_slot() and sc.champ is not None and safe_to_dash:
             out.append(Spec("beyblade", "E through the chosen enemy unit, Q during the dash, and Flash onto the enemy champion "
                             "during the Q: the circle Q (a knock-up with the tornado) lands on them from out of range.",
                             UNIT, who="enemy", range=VC.e_range, accept=not_marked, run=self._beyblade))

@@ -39,6 +39,7 @@ class TacticInput:
 def menu(inp: TacticInput) -> list[Spec]:
     ctx = inp.ctx
     ctx.summoners = inp.summoners
+    ctx.plan = inp.plan
     specs = ctx.kit.specs(ctx) + actions.universal(ctx) + actions.summoner_specs(ctx, inp.summoners)
     specs += actions.item_specs(ctx, inp.items, inp.items_ready, inp.hp_pct, inp.potion_used_at)
     seen, out = set(), []

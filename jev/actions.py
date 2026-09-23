@@ -67,6 +67,7 @@ class Ctx:
     ally_units: list[Unit] = field(default_factory=list)
     lane_progress: float = 0.5
     summoners: list[str | None] = field(default_factory=list)
+    plan: dict = field(default_factory=dict)
 
     def flash_slot(self) -> int | None:
         """1 or 2 when Flash is equipped and ready, else None."""

@@ -937,6 +937,9 @@ class Player:
 
         state = self.state or build_state(data, p, self.role)
         self.intent = choose_intent(self.decision, state, p, now, self.guards)
+        d0 = self.decision
+        if self.intent in ("go_to", "group") and d0 is not None and d0.intent_probabilities.get(self.intent, 0.0) < 0.35:
+            self.intent = "farm"  # a low-confidence roam costs a laner CS and exposes them; keep laning
         if self.kit.support and self.intent in ("go_to", "group", "trade", "all_in", "push_tower"):
             self.intent = "farm"  # support: stay with the carry (shadow them) instead of roaming or engaging alone
         if self.intent == "recall" and now - self.guards.left_base_at < config.TIMING.no_recall_after_base_s:
