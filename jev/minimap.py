@@ -114,25 +114,30 @@ class MinimapReader:
                 if best is None or area > best[2]:
                     best = (cx, cy, area, w, h_)
         if best is None:
-            # Box clipped at the minimap edge: its top and bottom edges show as two separate
-            # horizontal lines. Pair them; if one side touches the edge, use the box's usual width.
-            lines = [c for c in self._components(white, 20, 1500) if c[3] >= 25 and c[4] <= 9]
+            # The outline can be broken: clipped at the minimap edge, or cut by a champion icon on
+            # one edge (which then merges with the icon into a taller blob). Pair any two box-wide
+            # horizontal pieces that line up at about the box's height apart, using their outer
+            # edges; if one end touches the minimap edge, use the box's usual width.
+            n, _, stats, _ = cv2.connectedComponentsWithStats(white, connectivity=8)
+            pieces = [tuple(int(v) for v in stats[i][:4]) for i in range(1, n)
+                      if 55 <= stats[i][2] <= 140 and stats[i][3] <= 26]
             pair = None
-            for a in lines:
-                for b in lines:
-                    if b[1] - a[1] >= 25 and b[1] - a[1] <= 120 and abs(a[0] - b[0]) < 12 and abs(a[3] - b[3]) < 16:
-                        if pair is None or a[3] > pair[0][3]:
+            for a in pieces:
+                for b in pieces:
+                    gap = (b[1] + b[3]) - a[1]
+                    if b[1] > a[1] and 30 <= gap <= 90 and abs(a[0] - b[0]) < 10 and abs(a[2] - b[2]) < 14:
+                        if pair is None or a[2] + b[2] > pair[0][2] + pair[1][2]:
                             pair = (a, b)
             if pair is not None:
                 a, b = pair
-                w = max(a[3], b[3])
-                cx = a[0]
-                left, right = cx - w / 2, cx + w / 2
+                left, right = min(a[0], b[0]), max(a[0] + a[2], b[0] + b[2])
+                top, bottom = a[1], b[1] + b[3]
+                cx = (left + right) / 2
                 if right >= self.side - 3:
                     cx = left + 47
                 elif left <= 3:
                     cx = right - 47
-                best = (cx, (a[1] + b[1]) / 2, 0, w, b[1] - a[1])
+                best = (cx, (top + bottom) / 2, 0, right - left, bottom - top)
         if best is not None:
             st.self_pos = self.px_to_map(best[0], best[1])
             # The own icon sits inside the camera box; drop it from the ally champion list.
