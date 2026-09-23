@@ -159,7 +159,8 @@ def lcu(action: str = typer.Argument("status", help="status | practice | custom 
         for line in c.play_normal():
             console.print(line, markup=False)
     elif action == "botgame":
-        for line in c.bot_game(CHAMPIONS.get(champion.lower(), YASUO)):
+        pos = {"leesin": "jungle", "thresh": "utility"}.get(champion.lower(), "middle")
+        for line in c.bot_game(CHAMPIONS.get(champion.lower(), YASUO), position=pos):
             console.print(line, markup=False)
     elif action == "queues":
         for q in c.available_queues():

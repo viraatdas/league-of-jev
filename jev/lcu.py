@@ -202,7 +202,8 @@ class LCU:
         code, bots = self.req("GET", "/lol-lobby/v2/lobby/custom/available-bots")
         return bots if code == 200 and isinstance(bots, list) else []
 
-    def bot_game(self, champion_id: int = YASUO, difficulty: str = "RSINTERMEDIATE", timeout_s: float = 240.0):
+    def bot_game(self, champion_id: int = YASUO, difficulty: str = "RSINTERMEDIATE", timeout_s: float = 240.0,
+                 position: str = "middle"):
         """Custom 5v5 on Summoner's Rift: me plus four allied bots against five bots. Picks the
         champion, sets the summoner spells, and yields progress lines until the game starts."""
         self.delete_lobby()
@@ -213,8 +214,8 @@ class LCU:
             return
         bots = [b.get("id") for b in self.available_bots() if b.get("id") and b.get("id") != champion_id]
         yield f"{len(bots)} bot champions available"
-        slots = [("100", p) for p in ("TOP", "JUNGLE", "BOTTOM", "UTILITY")] + \
-                [("200", p) for p in ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY")]
+        allies = [p for p in ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY") if p != position.upper()][:4]
+        slots = [("100", p) for p in allies] + [("200", p) for p in ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY")]
         for (team, pos), cid in zip(slots, bots):
             c, b = self.add_bot(cid, team, difficulty, pos)
             yield f"bot {cid} {team} {pos}: {c} {b if c >= 400 else ''}"
@@ -235,7 +236,7 @@ class LCU:
                                 yield f"pick {champion_id}: {c1} {b1 if c1 >= 400 else ''}"
                                 picked = c1 < 400
                     if picked:
-                        c2, _ = self.set_spells("middle")
+                        c2, _ = self.set_spells(position)
                         yield f"spells: {c2}"
             elif phase in ("InProgress", "GameStart"):
                 yield "game starting"
