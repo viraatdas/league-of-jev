@@ -938,6 +938,7 @@ class Player:
         self.role = self.kit.role
         self.lane = Lane(lane_for(self.kit.role, "bot" if self.kit.support else "mid"), side)
         self.mech = Mechanics(self.ctl, self.screen, self.kb, side, lane=self.lane, skill_order=self.kit.skill_order)
+        self.mech.blind_q_enabled = self.vision is None
         self.micro = Micro(self.ctl, self.screen, self.kb, side)
         self.jungle_state = JungleState(side) if getattr(self.kit, "jungle", False) else None
         if self.jungle_state is not None and "smite" not in actions.summoner_names(me):

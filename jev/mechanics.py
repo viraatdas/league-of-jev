@@ -188,8 +188,12 @@ class Mechanics:
 
     aim_dir: tuple[float, float] | None = None  # screen-space unit vector toward the nearest enemy unit
 
+    blind_q_enabled = True  # the loop turns it off when screen vision runs (then Q follows what is seen)
+
     def blind_q(self, now: float) -> None:
-        if now - self._last_q < self.timing.q_period_s:
+        # v0 behaviour from before vision: Q up the lane on a timer. With vision it only put Q on
+        # cooldown before real last hits and bypassed Yasuo's Q-stack count.
+        if not self.blind_q_enabled or now - self._last_q < self.timing.q_period_s:
             return
         self._last_q = now
         if self.aim_dir is not None:
