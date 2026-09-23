@@ -609,6 +609,8 @@ class Player:
         if self._escape_reflex(ctx, inp, now):
             mi.reacted("reflex", view.ts)
             return True
+        if self._potion_reflex(inp, now):
+            return True
         if kit.reflex(mi, sc, now, plan):
             mi.reacted("reflex", view.ts)
             return True
@@ -800,6 +802,20 @@ class Player:
         if not acted:
             m.go_map(pt, now, attack=True, every=1.2)  # step onto the camp so it aggroes
             m.last_action = f"jungle: pulling {js.current}"
+
+    def _potion_reflex(self, inp, now: float) -> bool:
+        """Drink a potion under 45% HP (every 15 s at most, not in base): Jev's potion one-shot is
+        one option among twenty and was rarely picked while the HP bled out in lane and camps."""
+        if inp.hp_pct >= 45 or now - self._potion_at < 15 or self._at_fountain():
+            return False
+        for it in inp.items:
+            if any(p in str(it.get("displayName", "")).lower() for p in actions.POTIONS):
+                self.micro.ctl.press(self.micro.kb.item(int(it.get("slot", 0)) + 1))
+                self._potion_at = now
+                self.micro._ordered(now, "potion")
+                self.log_lines.append(f"potion at {inp.hp_pct:.0f}% HP")
+                return True
+        return False
 
     def _escape_reflex(self, ctx, inp, now: float) -> bool:
         """Burst incoming (a quarter of HP gone in the damage window, under 45% HP, an enemy

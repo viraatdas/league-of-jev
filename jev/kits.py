@@ -761,6 +761,11 @@ class LeeSin(Kit):
         if self.jungle and mode == "farm" and sc.minions:
             # Clearing a camp: E when monsters are in reach, Q the healthiest one, otherwise attack.
             near = [t for t in sc.minions if sc.dist(t) <= self.E_RADIUS]
+            if sc.ready.get("W") and near and mi.hp_pct < 60 and now - getattr(self, "_w_at", 0.0) > 4 and mi._can_order(now):
+                mi.ctl.press(mi.kb.self_cast(2))  # shield, and the recast's lifesteal, while the camp hits back
+                self._w_at = now
+                mi._ordered(now, "W shield on camp")
+                return True
             if sc.ready.get("E") and near and now - self.e_at > 0.6 and mi._can_order(now):
                 mi.ctl.press(mi.kb.ability(3))
                 self.e_at = now
