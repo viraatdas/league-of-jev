@@ -281,7 +281,7 @@ class Player:
                         # Every N seconds, and 4 per second while an enemy champion is on screen
                         # (fights are what reviews look at). JPEG keeps a night of games small.
                         v = self.view
-                        fighting = v is not None and bool(v.enemies("champion"))
+                        fighting = v is not None and (bool(v.enemies("champion")) or bool(v.enemies("monster")))
                         gap = min(self.save_frames_s, 0.25) if fighting else self.save_frames_s
                         if f.ts - getattr(self, "_last_saved", 0.0) >= gap:
                             import cv2
