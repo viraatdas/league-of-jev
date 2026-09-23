@@ -84,6 +84,15 @@ class Kit:
         """A kit move that gets us away (a dash toward `home`, a screen direction); False if none."""
         return False
 
+    @staticmethod
+    def minions_near_champ(sc: Scene, radius_units: float = 500.0) -> int:
+        """Enemy minions around the enemy champion: dashing in there draws the whole wave's aggro."""
+        if sc.champ is None:
+            return 0
+        cx, cy = sc.champ.unit.x, sc.champ.unit.y
+        r = radius_units * VC.px_per_unit
+        return sum(1 for t in sc.minions if math.hypot(t.unit.x - cx, t.unit.y - cy) <= r)
+
     def trade_window(self, mi: Micro, sc: Scene, now: float, level_diff: int) -> str | None:
         """A fight mode to enter on our own when the moment is clearly good (Jev picked farm 88%
         of the time with the enemy champion in view, game 4), else None."""
@@ -329,7 +338,8 @@ class Yasuo(Kit):
             self.tornado_at = now
             mi._ordered(now, f"{mode}: Q3 tornado")
             return True
-        if rdy.get("E") and d <= VC.e_range and ch.e_marked_until <= now:
+        crowded = self.minions_near_champ(sc) >= 3 and not (mode == "all_in" and ch.unit.hp < 0.35)
+        if rdy.get("E") and d <= VC.e_range and ch.e_marked_until <= now and not crowded:
             mi.cast(3, ch.unit.x, ch.unit.y)
             ch.e_marked_until = now + 10.0
             if rdy.get("Q"):
@@ -354,7 +364,7 @@ class Yasuo(Kit):
             return True
         if self.ignite_if_kill(mi, sc, now, mode):
             return True
-        if rdy.get("E") and d > VC.auto_range + 120 and sc.dash_options and (mode == "all_in" or rdy.get("Q")):
+        if rdy.get("E") and d > VC.auto_range + 120 and sc.dash_options and (mode == "all_in" or rdy.get("Q")) and not crowded:
             tr = sc.dash_options[0][0]
             mi.cast(3, tr.unit.x, tr.unit.y)
             tr.e_marked_until = now + 10.0
@@ -392,6 +402,8 @@ class Yasuo(Kit):
             return None
         if mi.hp_pct < 50 or mi.hp_pct < ch.unit.hp * 100 - 5:
             return None
+        if self.minions_near_champ(sc) >= 3 and ch.unit.hp > 0.35:
+            return None  # trading into her full wave: Yasuo took the minions' aggro and lost 78% -> 59% (g04)
         eq = rdy.get("E") and rdy.get("Q") and d <= VC.e_range + 150
         tornado = rdy.get("Q") and self.q.q3(now) and d <= VC.q3_range * 0.85
         if not (eq or tornado):
