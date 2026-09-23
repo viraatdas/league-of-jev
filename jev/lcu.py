@@ -194,9 +194,22 @@ class LCU:
                     return int(q["id"])
         return None
 
-    def set_spells(self, position: str) -> tuple[int, Any]:
+    def set_spells(self, position: str, tries: int = 6) -> tuple[int, Any]:
+        """Set the summoner spells for the position and read them back (a 204 alone did not mean
+        they stuck: a Lee Sin jungle game started with Flash + Ignite)."""
         s1, s2 = SPELLS_BY_POSITION.get((position or "").lower(), SPELLS_BY_POSITION[""])
-        return self.req("PATCH", "/lol-champ-select/v1/session/my-selection", {"spell1Id": s1, "spell2Id": s2})
+        code, body = 0, None
+        for _ in range(tries):
+            code, body = self.req("PATCH", "/lol-champ-select/v1/session/my-selection", {"spell1Id": s1, "spell2Id": s2})
+            time.sleep(0.6)
+            c2, sess = self.req("GET", "/lol-champ-select/v1/session")
+            if c2 == 200:
+                cell = sess.get("localPlayerCellId")
+                me = next((p for p in sess.get("myTeam", []) if p.get("cellId") == cell), {})
+                if {me.get("spell1Id"), me.get("spell2Id")} == {s1, s2}:
+                    return code, {"spells": [s1, s2]}
+            time.sleep(0.6)
+        return code, {"spells_not_confirmed": [s1, s2], "last": body}
 
     def available_bots(self) -> list[dict]:
         code, bots = self.req("GET", "/lol-lobby/v2/lobby/custom/available-bots")

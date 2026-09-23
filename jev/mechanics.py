@@ -428,7 +428,10 @@ class Mechanics:
                 return False
             for _ in range(10):
                 time.sleep(0.25)
-                if collections.Counter(items_now()) - before:
+                new = collections.Counter(items_now()) - before
+                if new:
+                    if item.lower() not in {n.lower() for n in new}:
+                        self.last_action = f"shop: wanted {item}, got {', '.join(new)}"
                     return True
             return False
 
@@ -457,7 +460,7 @@ class Mechanics:
             self.ctl.click(*self._pt(self.geo.shop_search), "left")
             time.sleep(0.3)
             self.ctl.type_text(item, per_char_ms=90)
-            time.sleep(0.8)
+            time.sleep(1.3)  # let the results list update before clicking its first tile
             if self.geo.search_result:
                 # Right-click buys an item in League's shop (a double-click queues it instead).
                 self.ctl.click(*self._pt(self.geo.search_result), "right")

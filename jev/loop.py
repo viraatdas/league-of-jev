@@ -986,6 +986,12 @@ class Player:
             self.intent = "resync"
             return p
         dest = self.decision.destination if self.decision is not None else None
+        if self.jungle_state is not None and dest in ("my_red_buff", "my_blue_buff") and self.intent in ("go_to", "group"):
+            # A jungler sent to its own buff clears that camp rather than just walking to it.
+            want = "red" if dest == "my_red_buff" else "blue"
+            if self.jungle_state.current != want and self.jungle_state.up(want, float((data.get("gameData") or {}).get("gameTime", 0.0))):
+                self.jungle_state.current, self.jungle_state.arrived_at = want, None
+            self.intent = "farm"
         if dest and (self.intent in ("go_to", "group") or (self.intent == "defend" and dest.startswith("my_"))):
             self._go_to(data, ap, cs, now)
             return p
