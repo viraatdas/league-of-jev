@@ -59,7 +59,9 @@ def choose_intent(d: Decision | None, state: dict, p: Perception, now: float, gu
         return "farm"
     if d.danger >= 2.5:
         return "retreat"
-    if d.intent == "recall" or (d.should_recall >= 0.8 and since_dmg > 6):
+    gold = float(me.get("gold") or 0)
+    recall_bar = 0.65 if gold >= 1200 else 0.8  # a pile of unspent gold is worth a trip home sooner
+    if d.intent == "recall" or (d.should_recall >= recall_bar and since_dmg > 6):
         return "recall"
     if d.intent in ("trade", "all_in"):
         return "trade"
