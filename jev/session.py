@@ -177,6 +177,44 @@ def run(champion: str = "yasuo", minutes: float = 18.0, tag: str = "", difficult
     return result
 
 
+RIOT_LOCKFILE = Path.home() / "Library/Application Support/Riot Games/Riot Client/Config/lockfile"
+
+
+def client_ready() -> bool:
+    """Logged in to League (the summoner resolves) and a lobby can be made."""
+    try:
+        c = LCU()
+        code, _ = c.req("GET", "/lol-summoner/v1/current-summoner")
+        if code != 200:
+            return False
+        if c.gameflow() in ("InProgress", "GameStart", "ChampSelect"):
+            return True
+        code, _ = c.create_custom_vs_bots()
+        c.delete_lobby()
+        return code < 400
+    except Exception:  # noqa: BLE001  (no lockfile, client down)
+        return False
+
+
+def relaunch_client() -> str:
+    """Quit the League client and start it again through the Riot Client (an expired League
+    token, or a login queue that was down, clears this way once the servers are back)."""
+    import httpx
+
+    try:
+        LCU().req("POST", "/process-control/v1/process/quit")
+    except Exception:  # noqa: BLE001
+        pass
+    time.sleep(10)
+    try:
+        _, _, port, pw, _ = RIOT_LOCKFILE.read_text().split(":")
+        r = httpx.post(f"https://127.0.0.1:{port}/product-launcher/v1/products/league_of_legends/patchlines/live",
+                       auth=("riot", pw), verify=False, timeout=10)
+        return f"launch {r.status_code}"
+    except Exception as e:  # noqa: BLE001
+        return f"launch failed: {e}"
+
+
 def night(rotation: str = "yasuo,leesin", minutes: float = 16.0, games: int = 30) -> None:
     """Back-to-back games, each in its own `jev session` process so every game runs the latest
     code. The rotation is re-read before each game from logs/night/rotation.txt when it exists
@@ -193,6 +231,18 @@ def night(rotation: str = "yasuo,leesin", minutes: float = 16.0, games: int = 30
             _say("STOP file found: ending the night loop")
             stop.unlink()
             return
+        if not game_alive():
+            waited = 0
+            while not client_ready():
+                # Servers down (login queue), token expired, client gone: relaunch every 5 minutes.
+                _say(f"client not ready ({waited} min): relaunching League: {relaunch_client()}")
+                for _ in range(10):
+                    time.sleep(30)
+                    if client_ready():
+                        break
+                waited += 5
+                if (logs / "STOP").exists():
+                    break
         tags = sorted((f.stem for f in logs.glob("g*_*.log")), key=lambda t: int(re.match(r"g(\d+)_", t).group(1)))
         if game_alive() and tags:
             tag = tags[-1]
@@ -208,6 +258,8 @@ def night(rotation: str = "yasuo,leesin", minutes: float = 16.0, games: int = 30
         r = subprocess.run(["uv", "run", "jev", "session", "--champion", champ, "--minutes", str(minutes), "--tag", tag],
                            stdout=sys.stdout, stderr=subprocess.STDOUT)
         _say(f"=== {tag} session exited with {r.returncode} ===")
+        if not (logs / f"{tag}.log").exists():
+            time.sleep(60)  # no game was played (lobby or pick failed): do not spin
         if r.returncode != 0:
             stop_harness()
             if game_alive():
