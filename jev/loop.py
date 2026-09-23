@@ -817,6 +817,12 @@ class Player:
             self.intent = "farm"  # support: stay with the carry (shadow them) instead of roaming or engaging alone
         if self.intent == "recall" and now - self.guards.left_base_at < config.TIMING.no_recall_after_base_s:
             self.intent = "farm"
+        if self.intent == "recall" and self._at_fountain():
+            # Already home: recalling again is a loop. Shop (at most every 10 s) and head out.
+            self.intent = "farm"
+            if now - getattr(self, "_fountain_retry_t", 0.0) > 10.0 and float(ap.get("currentGold", 0)) >= 300:
+                self._fountain_retry_t = now
+                self._shop_if_possible(float(ap.get("currentGold", 0)))
 
         if m.recall_started is not None:
             if lost > 1.0:
@@ -935,6 +941,14 @@ class Player:
         if self.mech is None:
             return
         names: list[str] = []
+        if self.shop_brain is not None:
+            # Re-plan right before buying: a plan made before the last purchase names items we now own.
+            try:
+                fresh = self.riot.all_game_data() or self.data or {}
+                self.build = self.shop_brain.decide(fresh, self.side)
+                gold = float((fresh.get("activePlayer") or {}).get("currentGold", gold))
+            except Exception as e:  # noqa: BLE001
+                self.log_lines.append(f"build error: {e}")
         if self.build is not None and self.shop_brain is not None:
             cat = self.shop_brain.catalog
             target = cat.get(self.build.target)
