@@ -397,13 +397,23 @@ class Mechanics:
         return None
 
     def shop_open(self) -> bool:
-        """The shop is a large flat dark panel over the middle of the screen."""
+        """The shop's SELL / UNDO buttons are on screen (template match). The earlier test, "a large
+        flat dark panel", failed on the patch 16.19 shop, so the search was never typed (g05)."""
         import cv2
+        from pathlib import Path
 
         try:
-            img = self.screen.grab()
-            mid = cv2.cvtColor(img[150:850, 380:1350], cv2.COLOR_BGR2HSV)
-            return float((mid[:, :, 2] < 70).mean()) > 0.55
+            if not hasattr(self, "_shop_tpl"):
+                t = cv2.imread(str(Path(__file__).parent / "assets" / "shop_sell_undo.png"))
+                self._shop_tpl = cv2.cvtColor(t, cv2.COLOR_BGR2GRAY)
+            for _ in range(3):
+                img = self.screen.grab()
+                box = img[790:880, 360:640]
+                g = cv2.cvtColor(box, cv2.COLOR_BGRA2GRAY if box.shape[2] == 4 else cv2.COLOR_BGR2GRAY)
+                if float(cv2.matchTemplate(g, self._shop_tpl, cv2.TM_CCOEFF_NORMED).max()) > 0.8:
+                    return True
+                time.sleep(0.3)
+            return False
         except Exception:  # noqa: BLE001
             return False
 
