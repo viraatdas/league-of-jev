@@ -176,6 +176,14 @@ class VisionReader:
             if counts[team] == 0:
                 continue
             hp = min(1.0, w / full)
+            if unit_kind == "champion" and team != "self" and hp < 0.3:
+                # A low champion bar must carry its name above it: red-buff flicker and other small
+                # red shapes read as champions at 3-12% and drew kill windows (g07); none had text.
+                white = getattr(self, "_white", None)
+                if white is not None:
+                    reg = white[max(0, y - 22):max(0, y - 5), x:x + full]
+                    if reg.size and float((reg > 0).mean()) <= 0.002:
+                        continue
             out.append(Unit(unit_kind, team, ox + x + full / 2 + dx, oy + y + h / 2 + dy, hp, (ox + x, oy + y, w, h)))
         return out
 
@@ -188,6 +196,7 @@ class VisionReader:
         hx0, hy0, hx1, hy1 = self.vc.hud_block
         masks = _masks(hsv)
         self._gold = cv2.inRange(hsv, (12, 60, 110), (35, 255, 255))  # large monsters' bar frame
+        self._white = cv2.inRange(hsv, (0, 0, 190), (180, 70, 255))   # champion name text above a bar
         for m in masks.values():
             m[max(0, my - 20 - y0):, max(0, mx - 20 - x0):] = 0
             m[max(0, hy0 - y0):, max(0, hx0 - x0):max(0, hx1 - x0)] = 0
