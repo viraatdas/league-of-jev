@@ -21,6 +21,7 @@ from jev.minimap import Wave
 # is open, and slowly: in a live game fast typing lost focus after one letter and the rest of the
 # name went into the game as hotkeys.
 TYPED_SEARCH = True
+PETS = ("hatchling", "seedling", "pup")  # jungle pets (Gustwalker Hatchling, Mosstomper Seedling, Scorchclaw Pup)
 
 YASUO_SKILL_ORDER = ["Q", "E", "Q", "W", "Q", "R", "Q", "E", "Q", "E", "R", "E", "E", "W", "W", "R", "W", "W"]
 ABILITY_INDEX = {"Q": 1, "W": 2, "E": 3, "R": 4}
@@ -427,6 +428,7 @@ class Mechanics:
         import collections
 
         before = collections.Counter(items_now()) if items_now else collections.Counter()
+        is_pet = any(k in item.lower() for k in PETS)
 
         def bought() -> bool:
             # The game API's inventory lags the shop by up to a couple of seconds: poll before
@@ -439,7 +441,8 @@ class Mechanics:
                 time.sleep(0.25)
                 new = collections.Counter(items_now()) - before
                 if new:
-                    if item.lower() in {n.lower() for n in new}:
+                    got = {n.lower() for n in new}
+                    if item.lower() in got or (is_pet and any(k in g for g in got for k in PETS)):
                         return True
                     self.last_action = f"shop: wanted {item}, got {', '.join(new)}: undo"
                     if self.geo.shop_undo:
@@ -458,7 +461,9 @@ class Mechanics:
         ok = False
         low = item.lower()
         card = None
-        if low == "doran's blade" and self.geo.starter_card:
+        if (low == "doran's blade" or is_pet) and self.geo.starter_card:
+            # The first recommended card: Doran's Blade Start for a laner, the jungle pets for a
+            # jungler with Smite (any pet will do; the search route kept failing on them, g05).
             card = self.geo.starter_card
         elif low == "boots" and self.geo.boots_card:
             card = self.geo.boots_card
