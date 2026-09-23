@@ -397,20 +397,13 @@ class Mechanics:
         return None
 
     def shop_open(self) -> bool:
-        """The shop's SELL / UNDO buttons are on screen (template match). The earlier test, "a large
-        flat dark panel", failed on the patch 16.19 shop, so the search was never typed (g05)."""
-        import cv2
-        from pathlib import Path
-
+        """The shop is on screen (tab bar or SELL / UNDO templates). The earlier test, "a large flat
+        dark panel", failed on the patch 16.19 shop, so the search was never typed (g05)."""
         try:
-            if not hasattr(self, "_shop_tpl"):
-                t = cv2.imread(str(Path(__file__).parent / "assets" / "shop_sell_undo.png"))
-                self._shop_tpl = cv2.cvtColor(t, cv2.COLOR_BGR2GRAY)
+            from jev.uiscan import shop_visible
+
             for _ in range(3):
-                img = self.screen.grab()
-                box = img[790:880, 360:640]
-                g = cv2.cvtColor(box, cv2.COLOR_BGRA2GRAY if box.shape[2] == 4 else cv2.COLOR_BGR2GRAY)
-                if float(cv2.matchTemplate(g, self._shop_tpl, cv2.TM_CCOEFF_NORMED).max()) > 0.8:
+                if shop_visible(self.screen.grab()):
                     return True
                 time.sleep(0.3)
             return False

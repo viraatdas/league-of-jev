@@ -339,18 +339,10 @@ class Player:
         return x0 + loc[0] + w / 2, y0 + loc[1] + h / 2
 
     def _shop_panel_open(self, frame) -> bool:
-        """The shop's SELL / UNDO buttons are on screen (template match, about 1 ms)."""
-        import cv2
-        from pathlib import Path
+        """The shop is on screen (its tab bar or its SELL / UNDO buttons)."""
+        from jev.uiscan import shop_visible
 
-        if not hasattr(self, "_shop_tpl"):
-            t = cv2.imread(str(Path(__file__).parent / "assets" / "shop_sell_undo.png"))
-            self._shop_tpl = cv2.cvtColor(t, cv2.COLOR_BGR2GRAY) if t is not None else None
-        if self._shop_tpl is None:
-            return False
-        box = frame[790:880, 360:640]
-        g = cv2.cvtColor(box, cv2.COLOR_BGRA2GRAY if box.shape[2] == 4 else cv2.COLOR_BGR2GRAY)
-        return float(cv2.matchTemplate(g, self._shop_tpl, cv2.TM_CCOEFF_NORMED).max()) > 0.8
+        return shop_visible(frame)
 
     def _close_stray_shop(self, now: float) -> bool:
         """A shop left open outside a purchase swallows every click and the level-up keys (Lee Sin
