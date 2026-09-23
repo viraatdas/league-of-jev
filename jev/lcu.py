@@ -245,12 +245,14 @@ class LCU:
                     for g in sess.get("actions", []):
                         for a in g:
                             if a.get("actorCellId") == cell and a.get("type") == "pick" and not a.get("completed"):
+                                # Spells before locking: set after the lock (finalization) they were
+                                # accepted with a 204 and silently ignored.
+                                self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": champion_id})
+                                c2, b2 = self.set_spells(position, tries=3)
+                                yield f"spells: {c2} {b2}"
                                 c1, b1 = self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": champion_id, "completed": True})
                                 yield f"pick {champion_id}: {c1} {b1 if c1 >= 400 else ''}"
                                 picked = c1 < 400
-                    if picked:
-                        c2, _ = self.set_spells(position)
-                        yield f"spells: {c2}"
             elif phase in ("InProgress", "GameStart"):
                 yield "game starting"
                 return
@@ -336,11 +338,13 @@ class LCU:
                         yield f"ban {ban}: {c1} {b1 if c1 >= 400 else ''}"
                 elif a.get("type") == "pick":
                     for cid in options:
+                        # Hover, set spells, then lock (spells set after the lock were ignored).
+                        self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": cid})
+                        c2, b2 = self.set_spells(position, tries=3)
                         c1, b1 = self.req("PATCH", f"/lol-champ-select/v1/session/actions/{a['id']}", {"championId": cid, "completed": True})
-                        yield f"pick {cid} for {position or 'no position'}: {c1} {b1 if c1 >= 400 else ''}"
+                        yield f"pick {cid} for {position or 'no position'}: {c1} {b1 if c1 >= 400 else ''}; spells {b2}"
                         if c1 < 400:
-                            c2, _ = self.set_spells(position)
-                            yield f"picked {cid}; spells for {position or 'no position'}: {c2}"
+                            yield f"picked {cid}"
                             return
                     if not options:
                         yield f"none of {order} available for {position or 'no position'}"
