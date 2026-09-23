@@ -420,10 +420,15 @@ class Mechanics:
         before = set(items_now()) if items_now else set()
 
         def bought() -> bool:
+            # The game API's inventory lags the shop by up to a couple of seconds: poll before
+            # calling it a failure (a too-early check logged real purchases as failed and retried).
             if not items_now:
                 return False
-            time.sleep(0.5)
-            return bool(set(items_now()) - before)
+            for _ in range(10):
+                time.sleep(0.25)
+                if set(items_now()) - before:
+                    return True
+            return False
 
         if self.geo.shop_button:
             self.ctl.click(*self._pt(self.geo.shop_button), "left")
