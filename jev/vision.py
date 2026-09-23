@@ -145,6 +145,8 @@ class VisionReader:
             # Frame check: the dark frame runs above and below the whole bar, not just the fill,
             # and closes on the left. Red damage numbers and scenery fail this.
             full = unit_full
+            if x + full >= W - 1:
+                continue  # cut off by the screen edge: the fill reads low (a full Kayle read 10%, game 4)
             x_end = min(W, x + full + 1)
             # The border may sit one row further out: the fill's last row can render dimmer than
             # the colour threshold (4 px bars read as 3), so accept the darker of two rows each side.
