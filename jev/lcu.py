@@ -141,7 +141,7 @@ class LCU:
         }
         return self.req("POST", "/lol-lobby/v2/lobby", payload)
 
-    def add_bot(self, champion_id: int, team: str = "200", difficulty: str = "MEDIUM") -> tuple[int, Any]:
+    def add_bot(self, champion_id: int, team: str = "200", difficulty: str = "RSINTERMEDIATE") -> tuple[int, Any]:
         return self.req("POST", "/lol-lobby/v1/lobby/custom/bots", {"botDifficulty": difficulty, "championId": champion_id, "teamId": team})
 
     def start_champ_select(self) -> tuple[int, Any]:
@@ -197,7 +197,7 @@ class LCU:
         code, bots = self.req("GET", "/lol-lobby/v2/lobby/custom/available-bots")
         return bots if code == 200 and isinstance(bots, list) else []
 
-    def bot_game(self, champion_id: int = YASUO, difficulty: str = "MEDIUM", timeout_s: float = 240.0):
+    def bot_game(self, champion_id: int = YASUO, difficulty: str = "RSINTERMEDIATE", timeout_s: float = 240.0):
         """Custom 5v5 on Summoner's Rift: me plus four allied bots against five bots. Picks the
         champion, sets the summoner spells, and yields progress lines until the game starts."""
         self.delete_lobby()
