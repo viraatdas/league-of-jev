@@ -121,7 +121,7 @@ class Player:
     def __init__(self, dry_run: bool = False, quick_cast: bool | None = None, role: str = "", logfile=None, keep_front: bool = True,
                  forever: bool = False, tactic_hz: float = 8.0, champion: str | None = None, explore: float = 0.0,
                  decision_log: str | None = "logs/decisions.jsonl", save_frames_s: float = 0.0,
-                 capture: str = "sck", capture_fps: int = 60) -> None:
+                 capture: str = "sck", capture_fps: int = 60, frames_dir: str = "snapshots/live") -> None:
         self.dry_run = dry_run
         self.forever = forever
         self.keep_front = keep_front
@@ -171,6 +171,7 @@ class Player:
         self._potion_at = 0.0
         self._level_seen, self._level_changed_at = 0, 0.0
         self.save_frames_s = save_frames_s
+        self.frames_dir = frames_dir
         self.capture_backend = capture
         self.capture_fps = capture_fps
         self.capture_name = "-"
@@ -273,14 +274,22 @@ class Player:
                     self.perceive_ms = sorted(read_ms)[len(read_ms) // 2]
                     self.frame_age_ms = (time.time() - f.ts) * 1000
                     self._wake_actor.set()
-                    if self.save_frames_s and f.ts - getattr(self, "_last_saved", 0.0) >= self.save_frames_s:
-                        import cv2
-                        from pathlib import Path
+                    if self.save_frames_s:
+                        # Every N seconds, and 4 per second while an enemy champion is on screen
+                        # (fights are what reviews look at). JPEG keeps a night of games small.
+                        v = self.view
+                        fighting = v is not None and bool(v.enemies("champion"))
+                        gap = min(self.save_frames_s, 0.25) if fighting else self.save_frames_s
+                        if f.ts - getattr(self, "_last_saved", 0.0) >= gap:
+                            import cv2
+                            from pathlib import Path
 
-                        self._last_saved = f.ts
-                        d = Path("snapshots/live")
-                        d.mkdir(parents=True, exist_ok=True)
-                        cv2.imwrite(str(d / f"{time.strftime('%H%M%S')}.png"), frame)
+                            self._last_saved = f.ts
+                            d = Path(self.frames_dir)
+                            d.mkdir(parents=True, exist_ok=True)
+                            gt = float(((self.data or {}).get("gameData") or {}).get("gameTime", 0.0))
+                            name = f"{time.strftime('%H%M%S')}{int(f.ts * 1000) % 1000:03d}_t{int(gt // 60):02d}{int(gt % 60):02d}.jpg"
+                            cv2.imwrite(str(d / name), frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 except Exception as e:  # noqa: BLE001
                     self.log_lines.append(f"perception error: {e}")
                     time.sleep(0.05)

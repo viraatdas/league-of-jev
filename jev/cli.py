@@ -98,13 +98,14 @@ def play(
     capture: str = typer.Option("sck", help="Screen capture: sck (ScreenCaptureKit stream) | mss (blocking grab)"),
     capture_fps: int = typer.Option(60, help="ScreenCaptureKit frame rate cap; 120 on a 120 Hz display halves the frame wait"),
     markers: bool = typer.Option(True, help="Draw Jev's last move (target ring, aim line) over the game"),
+    frames_dir: str = typer.Option("snapshots/live", help="Where --save-frames writes (JPEG; 4/s while an enemy champion is on screen)"),
 ) -> None:
     """Play the current game with Jev driving strategy (1/s), tactics (~7/s) and the build."""
     from jev.loop import Player
 
     player = Player(dry_run=dry_run, logfile=logfile, keep_front=keep_front, forever=forever, tactic_hz=tactic_hz,
                     champion=champion or None, role=role, explore=explore, decision_log=decision_log,
-                    save_frames_s=save_frames, capture=capture, capture_fps=capture_fps)
+                    save_frames_s=save_frames, capture=capture, capture_fps=capture_fps, frames_dir=frames_dir)
     if not overlay:
         player.run()
         return
@@ -180,6 +181,19 @@ def lcu(action: str = typer.Argument("status", help="status | practice | custom 
     elif action == "pick":
         console.print(c.pick(CHAMPIONS.get(champion.lower(), YASUO)))
     c.close()
+
+
+@app.command()
+def session(champion: str = typer.Option("yasuo", help="yasuo | leesin | thresh"),
+            minutes: float = typer.Option(18.0, help="Leave the game (surrender) at this game time"),
+            tag: str = typer.Option("", help="Name for the log and frames (default: date_champion)"),
+            difficulty: str = typer.Option("RSINTERMEDIATE", help="Bot difficulty"),
+            explore: float = typer.Option(0.0, help="Passed to jev play")) -> None:
+    """One unattended bot game end to end: lobby, pick, the harness playing, time limit, score."""
+    from jev.session import run
+
+    extra = ["--explore", str(explore)] if explore else []
+    run(champion, minutes, tag, difficulty, extra)
 
 
 @app.command()
