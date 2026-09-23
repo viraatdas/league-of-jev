@@ -643,10 +643,20 @@ class Player:
                 mi.set_mode("farm", now)
                 self.log_lines.append("fight: no enemy champion on the minimap near me, dropping the fight")
             return
+        outnumbered = sc.enemy_champs >= 2 and not sc.ally_champs
         if mi.mode in FIGHT_MODES:
             if ch is not None and mi.hp_pct < 25 and ch.unit.hp > mi.hp_pct / 100 + 0.15:
                 mi.set_mode("back_off", now)
                 self.log_lines.append(f"fight: losing ({mi.hp_pct:.0f}% vs {ch.unit.hp * 100:.0f}%), backing off")
+            elif ch is not None and outnumbered and ch.unit.hp > 0.2:
+                # A second champion joined (a gank): Fiddlesticks then Kayle took Yasuo 71% -> 13% in
+                # a second while he chased (g08). Out at once, unless the target is nearly dead.
+                mi.set_mode("back_off", now)
+                self.log_lines.append(f"fight: outnumbered ({sc.enemy_champs} enemy champions, no ally), backing off")
+            return
+        if ch is not None and outnumbered and d < 900 and mi.mode != "back_off":
+            mi.set_mode("back_off", now)
+            self.log_lines.append(f"fight: {sc.enemy_champs} enemy champions close and no ally, backing off")
             return
         if ch is None or getattr(self, "_near_enemy_tower", False):
             return
