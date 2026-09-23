@@ -69,6 +69,9 @@ class DemoFeed:
                       "needs": {"armor": 0.2, "mr": 0.89, "tenacity": 0.87, "antiheal": 0.09, "defense": 0.78}},
             "perf": {"apm": random.randint(260, 340), "capture": "sck", "fps": 60, "read_ms": 7.1, "api_ms": 11,
                      "react": {"reflex": (15, 22), "lasthit": (16, 24), "jev": (190, 262)}},
+            "micro": {"mode": sc["intent"] if sc["intent"] in ("trade", "all_in") else "farm",
+                      "order": (f"{sc['intent']}: {sc['executed']}" if sc["intent"] in ("trade", "all_in") else "farm: hold behind the wave"),
+                      "age": max(0.0, age - 0.3)},
             "log": ["build -> Mercurial Scimitar", "level Q (Jev)", f"did: {sc['executed']}"],
             "markers": mk,
         }

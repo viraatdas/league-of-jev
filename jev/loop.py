@@ -472,6 +472,11 @@ class Player:
                     react[kind] = lat
         out["perf"] = {"apm": self.ctl.apm(), "capture": "sck" if self.capture_name == "screencapturekit" else self.capture_name,
                        "fps": self.perceive_fps, "read_ms": self.perceive_ms, "api_ms": self.api_ms, "react": react}
+        mi = self.micro
+        if mi is not None:
+            # What the frame-rate layer is doing: its mode (farm / trade / all_in / back_off) and the
+            # last order it sent (combo steps like "E+Q onto the champion" show up here).
+            out["micro"] = {"mode": mi.mode, "order": mi.last_action, "age": now - getattr(mi, "last_action_t", now)}
         out["log"] = list(self.log_lines)[-3:]
         sc = self.scene
         if sc is not None:

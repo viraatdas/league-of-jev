@@ -176,6 +176,11 @@ class PanelView(NSView):
             if t:
                 _text(f"> {t.get('action', '').upper()}  {t.get('p', 0):.2f}", 12, y, 12, WARN if t.get("explored") else ACCENT, bold=True)
                 y += 18
+            m = d.get("micro") or {}
+            if m:
+                fighting = m.get("mode") in ("trade", "all_in")
+                _text(f"{m.get('mode', '').upper()}  {str(m.get('order', ''))[:40]}", 12, y, 10.5, BAD if fighting else DIM, bold=fighting)
+                y += 16
             s = d.get("strategy") or {}
             if s:
                 _text(f"plan {s.get('intent', '').upper()}   danger {s.get('danger', 0):.1f}   APM {d.get('perf', {}).get('apm', 0)}", 12, y, 10.5, DIM)
@@ -183,6 +188,7 @@ class PanelView(NSView):
             _text("double-click to expand", 12, y, 9, DIM)
             return y + 18
         y = self._tactics(y, t)
+        y = self._micro(y, d.get("micro") or {})
         y = self._strategy(y, d.get("strategy") or {})
         y = self._build(y, d.get("build") or {})
         y = self._perf(y, d.get("perf") or {}, d.get("log") or [])
@@ -242,6 +248,20 @@ class PanelView(NSView):
             _text(f"{t.get('exec_age', 0):.1f} s ago", W - 80, y, 10, DIM)
             y += 15
         return y + 2
+
+    @objc.python_method
+    def _micro(self, y: float, m: dict) -> float:
+        """The frame-rate layer: its mode and the last order (the combo steps during fights)."""
+        if not m:
+            return y
+        mode = str(m.get("mode", ""))
+        fighting = mode in ("trade", "all_in")
+        y = self._section(y + 4, "MICRO  ·  every frame", f"{m.get('age', 0):.1f} s ago")
+        wdt = _text(mode.upper(), 12, y, 12, BAD if fighting else (WARN if mode == "back_off" else ACCENT), bold=True)
+        order = str(m.get("order", ""))
+        order = order.split(": ", 1)[1] if order.startswith(mode + ":") else order
+        _text(order[:44], 22 + wdt, y + 1, 10.5, GOLD if fighting else FG)
+        return y + 20
 
     @objc.python_method
     def _strategy(self, y: float, s: dict) -> float:

@@ -252,6 +252,7 @@ class Micro:
     def _ordered(self, now: float, what: str) -> None:
         self.last_order = now
         self.last_action = what
+        self.last_action_t = now
         self.orders += 1
 
     def attack_ready(self, now: float, attack_speed: float) -> bool:
