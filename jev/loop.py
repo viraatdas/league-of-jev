@@ -940,6 +940,12 @@ class Player:
         self.mech = Mechanics(self.ctl, self.screen, self.kb, side, lane=self.lane, skill_order=self.kit.skill_order)
         self.micro = Micro(self.ctl, self.screen, self.kb, side)
         self.jungle_state = JungleState(side) if getattr(self.kit, "jungle", False) else None
+        if self.jungle_state is not None and "smite" not in actions.summoner_names(me):
+            # The jungle pets need Smite; without it the pet buy fails and he left base empty-handed.
+            import dataclasses
+
+            self.kit.items = dataclasses.replace(self.kit.items, starters=["Doran's Blade", "Health Potion"])
+            self.log_lines.append("jungle: no Smite this game: starting with Doran's Blade instead of a pet")
         if self.shop_brain is not None:
             self.shop_brain.profile = self.kit.items
         self.data = data
