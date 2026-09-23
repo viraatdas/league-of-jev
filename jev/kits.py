@@ -320,10 +320,94 @@ class Thresh(Kit):
         return super().continuous(mi, sc, now, aspd, mode, pushing)
 
 
-KITS = {"yasuo": Yasuo, "thresh": Thresh}
-BY_ID = {Yasuo.champ_id: Yasuo, Thresh.champ_id: Thresh}
+# ---------------------------------------------------------------------------------------
+class Soraka(Kit):
+    name = "Soraka"
+    champ_id = 16
+    default_role = "UTILITY"
+    skill_order = ["Q", "W", "E", "Q", "Q", "R", "Q", "W", "Q", "W", "R", "W", "W", "E", "E", "R", "E", "E"]
+    items = ItemProfile(
+        champion="Soraka",
+        core=["Ionian Boots of Lucidity", "Moonstone Renewer", "Redemption", "Mikael's Blessing", "Echoes of Helia", "Dawncore"],
+        starters=["World Atlas", "Health Potion"],
+        boots=["Ionian Boots of Lucidity", "Boots of Swiftness", "Plated Steelcaps", "Mercury's Treads"],
+        support=True,
+        note="Soraka is a healer support who keeps her carry alive",
+    )
+
+    def specs(self, ctx: Ctx) -> list[Spec]:
+        sc = ctx.sc
+        out = self.modes(
+            ("hold_with_carry", "Stay beside my carry, out of the enemy's reach, and leave last hits to the carry."),
+            ("push", "Help shove the wave: attack minions."),
+            ("back_off", "Walk back toward my tower, away from the enemy."),
+        )
+        if sc.ready.get("Q"):
+            out.append(Spec("Q", "Q Starcall: a star falls at the chosen spot, damaging and slowing enemies there; hitting an enemy champion heals me.",
+                            POINT, who="enemy", range=800, run=lambda c, s, t, p: (c.mi.cast(1, *p), "Q starcall")[1]))
+        if sc.ready.get("W") and ctx.ally_units:
+            out.append(Spec("W", "W Astral Infusion: heal the chosen allied champion (costs some of my own health).",
+                            UNIT, who="ally_champion", range=550, run=lambda c, s, t, p: (c.mi.cast(2, t.x, t.y), "W heal")[1]))
+        if sc.ready.get("E"):
+            out.append(Spec("E", "E Equinox: a zone at the chosen spot that silences enemies inside and roots them if they stay.",
+                            POINT, who="enemy", range=925, run=lambda c, s, t, p: (c.mi.cast(3, *p), "E equinox")[1]))
+        if sc.ready.get("R"):
+            out.append(Spec("R", "R Wish: heal every allied champion anywhere on the map (save it for when an ally is about to die).",
+                            NONE, run=lambda c, s, t, p: (c.mi.ctl.press(c.mi.kb.ability(4)), "R wish")[1]))
+        return out
+
+    def me_state(self, sc: Scene, mi: Micro, now: float) -> dict:
+        carry = min(sc.ally_champs, key=lambda u: math.hypot(u.x - sc.me_xy[0], u.y - sc.me_xy[1])) if sc.ally_champs else None
+        return {"Q": self.ready_words(sc, "Q"), "W_heal": self.ready_words(sc, "W"), "E_silence": self.ready_words(sc, "E"),
+                "R_wish": self.ready_words(sc, "R"), "carry_hp_percent": int(carry.hp * 100) if carry else None}
+
+    def continuous(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, pushing: bool) -> bool:
+        if mode == "hold_with_carry":
+            mode = "farm"
+        return super().continuous(mi, sc, now, aspd, mode, pushing)
 
 
-def kit_for(champion_name: str, role: str = "") -> Kit:
-    cls = KITS.get((champion_name or "").lower().replace(" ", ""), Yasuo)
+class Generic(Kit):
+    """Any champion without a hand-written kit: Q W E R as casts at a chosen spot (the target when
+    aiming at a unit) with the game's own ability names; Jev knows what they do."""
+
+    default_role = ""
+    skill_order = ["Q", "W", "E", "Q", "Q", "R", "Q", "W", "Q", "W", "R", "W", "W", "E", "E", "R", "E", "E"]
+
+    def __init__(self, champion: str, role: str = "", ability_names: dict | None = None) -> None:
+        self.name = champion or "champion"
+        super().__init__(role or "MIDDLE")
+        self.ability_names = ability_names or {}
+        self.items = ItemProfile(champion=self.name, core=[], starters=["Health Potion"] if not self.support else ["World Atlas", "Health Potion"],
+                                 boots=["Plated Steelcaps", "Mercury's Treads", "Ionian Boots of Lucidity"], support=self.support)
+
+    def specs(self, ctx: Ctx) -> list[Spec]:
+        sc = ctx.sc
+        if self.support:
+            out = self.modes(("hold_with_carry", "Stay beside my carry and leave last hits to the carry."),
+                             ("push", "Help shove the wave."), ("back_off", "Walk back toward my tower."))
+        else:
+            out = self.modes(("farm", "Keep farming: last-hit minions about to die."), ("push", "Shove the wave."),
+                             ("back_off", "Walk back toward my tower."))
+        for i, k in enumerate("QWER"):
+            if sc.ready.get(k):
+                nm = self.ability_names.get(k) or k
+                out.append(Spec(k, f"{k} ({nm}) of {self.name}, cast at the chosen spot or unit.", POINT, who="enemy", range=700,
+                                run=lambda c, s, t, p, i=i: (c.mi.cast(i + 1, *p), s.name)[1]))
+        return out
+
+    def continuous(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, pushing: bool) -> bool:
+        if mode == "hold_with_carry":
+            mode = "farm"
+        return super().continuous(mi, sc, now, aspd, mode, pushing)
+
+
+KITS = {"yasuo": Yasuo, "thresh": Thresh, "soraka": Soraka}
+BY_ID = {Yasuo.champ_id: Yasuo, Thresh.champ_id: Thresh, Soraka.champ_id: Soraka}
+
+
+def kit_for(champion_name: str, role: str = "", ability_names: dict | None = None) -> Kit:
+    cls = KITS.get((champion_name or "").lower().replace(" ", ""))
+    if cls is None:
+        return Generic(champion_name, role, ability_names)
     return cls(role)
