@@ -741,7 +741,8 @@ class Player:
                 continue
             before = [g for tt, g in gh if tt <= t]
             after = [g for tt, g in gh if t < tt <= t + 1.1]
-            ok = bool(before and after) and max(after) - before[-1] >= 12 + 2.1 * 1.1
+            # A caster minion is worth 14 gold early: the old bar (12 + passive = 14.3) never counted them.
+            ok = bool(before and after) and max(after) - before[-1] >= 11 + 2.1 * 1.1
             key = f"{kind} {int(hp * 100) // 5 * 5}%"
             stats[key][0] += 1
             stats[key][1] += int(ok)
