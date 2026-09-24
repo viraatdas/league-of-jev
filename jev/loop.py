@@ -1286,6 +1286,13 @@ class Player:
         lost = self.hp.update(hp_pct, now)
         if not self._self_trail or now - self._self_trail[-1][0] >= 0.1:
             self._self_trail.append((now, hp_pct))
+        bleed = self._trail_change(3.0, now)
+        if (bleed is not None and bleed <= -12 and hp_pct < 70 and (self.scene is None or self.scene.champ is None)
+                and now >= self.guards.retreat_until):
+            # Hit from off screen (a ranged champion past the screen edge): Yasuo bled 60% -> 0 over
+            # twelve seconds while holding the wave, no champion ever on screen (g13, 7:25).
+            self.guards.retreat_until = now + 4.0
+            self.log_lines.append(f"hit from off screen ({bleed:.0f}% in 3 s): retreat")
         self._hp_now, self._hp_lost = hp_pct, lost
         # Significant change: new damage, level, or death state -> wake the brain right away.
         sig = (int(ap.get("level", 1)), bool(me.get("isDead")), int(hp_pct // 10))

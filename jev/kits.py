@@ -473,11 +473,20 @@ class Yasuo(Kit):
         return "all_in" if (ch.unit.hp < 0.45 and mi.hp_pct > 60) else "trade"
 
     def reflex(self, mi: Micro, sc: Scene, now: float, plan: dict) -> bool:
-        """R the moment our own tornado lifts the target, if the fight read is favourable."""
+        """R the moment our own tornado lifts the target, if the fight read is favourable; the wind
+        wall whenever a champion out of melee range is taking HP off us fast (any mode: Kayle's autos
+        burst Yasuo from 75% to 41% in two seconds while he farmed, g13)."""
         if sc.r_lit and sc.champ is not None and now - self.tornado_at < FAST.r_watch_s and plan.get("fight_favorable", 0.5) >= 0.45:
             mi.cast(4, sc.champ.unit.x, sc.champ.unit.y)
             mi._ordered(now, "R reflex after tornado")
             self.tornado_at = 0.0
+            return True
+        d = sc.champ_dist or 9e9
+        if (sc.ready.get("W") and sc.champ is not None and 350 < d <= 1000 and getattr(mi, "hp_lost", 0.0) >= 10
+                and now - getattr(self, "_wall_at", 0.0) > 5.0):
+            mi.cast(2, sc.champ.unit.x, sc.champ.unit.y)
+            self._wall_at = now
+            mi._ordered(now, "W wind wall toward the champion")
             return True
         return False
 
