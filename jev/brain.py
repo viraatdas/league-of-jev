@@ -15,6 +15,15 @@ from typesafe_sdk import Choice, Noul, RetryPolicy, Score, TypeSafeClient
 
 load_dotenv()
 
+
+CREDIT_WAIT_S = 60.0
+
+
+def credit_wait(e: Exception) -> float:
+    """Seconds to wait before the next call: a 402 (the organization is out of TypeSafe credits) will
+    not clear in a second, so the heads ask again once a minute instead of several times a second."""
+    return CREDIT_WAIT_S if "402" in str(e) else 0.2
+
 # Simplified Yasuo build path. Edit freely; the current patch's item names matter.
 YASUO_BUILD = [
     "Berserker's Greaves",

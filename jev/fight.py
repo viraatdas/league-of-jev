@@ -30,6 +30,8 @@ from typing import Any
 from dotenv import load_dotenv
 from typesafe_sdk import Choice, Noul, RetryPolicy, TypeSafeClient
 
+from jev.brain import credit_wait
+
 load_dotenv()
 
 PLANS: dict[str, str] = {
@@ -154,7 +156,7 @@ class FightBrain:
             except Exception as e:  # noqa: BLE001
                 self.errors += 1
                 self.last_error = f"{type(e).__name__}: {e}"[:160]
-                time.sleep(0.2)
+                self._stop.wait(credit_wait(e))
             dt = time.time() - t0
             if dt < period:
                 time.sleep(period - dt)

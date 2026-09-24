@@ -18,7 +18,7 @@ from jev.brain import Brain, Decision
 from jev.control import Controller, activate_game
 from jev.mechanics import Mechanics
 from jev.decisions import DecisionLog
-from jev.brain import legal_level_ups
+from jev.brain import credit_wait, legal_level_ups
 from jev.items import BuildPlan, ShopBrain, enemy_team
 from jev.jungle import BIG, FIRST_SPAWN, JungleState, camps
 from jev import places as map_places
@@ -221,6 +221,8 @@ class Player:
                     self.recorder.write(st, {"decision": self.decision.summary()})
                 except Exception as e:  # noqa: BLE001
                     self.log_lines.append(f"brain error: {e}")
+                    if credit_wait(e) > 1:
+                        self._stop.wait(credit_wait(e))
             self._wake.wait(timeout=max(0.05, period - (time.time() - t0)))
             self._wake.clear()
 
@@ -234,6 +236,8 @@ class Player:
                     self.log_lines.append(self.build.summary())
                 except Exception as e:  # noqa: BLE001
                     self.log_lines.append(f"build error: {e}")
+                    if credit_wait(e) > 1:
+                        self._stop.wait(credit_wait(e))
             self._build_wake.wait(timeout=20.0)
             self._build_wake.clear()
 
