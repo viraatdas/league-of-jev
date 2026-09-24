@@ -374,7 +374,8 @@ class Micro:
             return True
         if self.in_windup(now, attack_speed):
             return True
-        if push and self.attack_ready(now, attack_speed):
+        if push and self.attack_ready(now, attack_speed) and not sc.soon_killable:
+            # (An auto spent on the wave is not ready for the minion about to be killable.)
             tgt = min(sc.minions, key=lambda t: t.unit.hp)
             self.attack(tgt, now, "push: attack lowest minion")
             return True
