@@ -1872,10 +1872,19 @@ class Player:
         else:
             self._me_missing_since = None
         if ((self._me_missing_since is not None and now - self._me_missing_since > 2.5)
-                or now >= getattr(self, "_camera_recheck_at", float("inf"))) and now - getattr(self, "_cam_fix_t", 0.0) > 15:
+                or now >= getattr(self, "_camera_recheck_at", float("inf"))) and now - getattr(self, "_cam_fix_t", 0.0) > 3.0:
+            # Recenter with a tap of the camera-snap key, which cannot hurt a locked camera. The lock
+            # check that ran here toggled the lock on a guess: a locked camera toggled off stays where
+            # it is and read as "now locked", and the bar goes missing for other reasons (dashes,
+            # effects), so g26 ran 135 checks and 5 toggles and ended with 50 CS.
             self._cam_fix_t, self._camera_recheck_at = now, float("inf")
-            self._camera_checked = False
-            self.log_lines.append("camera: my bar is gone (or a purchase failed): checking the lock")
+            if self.ctl.keys_ok():
+                self.ctl.hold(self.kb.camera_snap, True)
+                time.sleep(0.12)
+                self.ctl.hold(self.kb.camera_snap, False)
+            if now - getattr(self, "_cam_fix_logged", 0.0) > 60:
+                self._cam_fix_logged = now
+                self.log_lines.append("camera: my bar is gone: recentering (camera-snap tap)")
         if not getattr(self, "_camera_checked", False) and self.mm is not None and self.ctl.keys_ok():
             self._camera_checked = True
             note = m.ensure_camera_locked(self.mm)
