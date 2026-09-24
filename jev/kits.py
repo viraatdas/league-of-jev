@@ -376,6 +376,7 @@ class Yasuo(Kit):
         if sc.r_lit and d <= VC.r_range:
             mi.cast(4, ch.unit.x, ch.unit.y)
             mi._ordered(now, f"{mode}: R Last Breath")
+            self.r_at = now
             self.burst_at = now
             return True
         if rdy.get("Q") and q3 and d <= VC.q3_range * 0.92 and d > VC.e_range:
@@ -453,12 +454,25 @@ class Yasuo(Kit):
         mi._ordered(now, "escape: E through a minion toward home")
         return True
 
+    r_rank = 0  # set by the loop from the API (R is only lit on screen while someone is airborne)
+
+    def r_up(self, now: float) -> bool:
+        """R learned and off cooldown, from our own casts (80 / 55 / 30 s by rank)."""
+        cd = {1: 80.0, 2: 55.0, 3: 30.0}.get(self.r_rank, 80.0)
+        return self.r_rank >= 1 and now - getattr(self, "r_at", -1e9) > cd
+
     def trade_window(self, mi: Micro, sc: Scene, now: float, level_diff: int) -> str | None:
         """EQ (or the Q3 tornado) is up, the champion is in dash or tornado reach, I am at least
-        as healthy and as high level: trade."""
+        as healthy and as high level: trade. With R up and a knock-up in hand, a champion under
+        55% is an all in (the knock-up into R is Yasuo's kill combo; R went unused in g09-g13)."""
         ch, d, rdy = sc.champ, sc.champ_dist or 9e9, sc.ready
         if now - getattr(self, "_last_window", 0.0) < 8.0 or level_diff < 0:
             return None
+        knockup = rdy.get("Q") and self.q.q3(now) and (d <= VC.q3_range * 0.85 or (rdy.get("E") and d <= VC.e_range + 150))
+        if (self.r_up(now) and knockup and ch.unit.hp < 0.55 and mi.hp_pct >= 45 and not (sc.enemy_champs >= 2 and not sc.ally_champs)
+                and self.minions_near_champ(sc) < 4):
+            self._last_window = now
+            return "all_in"
         if mi.hp_pct < 50 or mi.hp_pct < ch.unit.hp * 100 - 5:
             return None
         if sc.enemy_champs >= 2 and not sc.ally_champs:
@@ -479,6 +493,7 @@ class Yasuo(Kit):
         if sc.r_lit and sc.champ is not None and now - self.tornado_at < FAST.r_watch_s and plan.get("fight_favorable", 0.5) >= 0.45:
             mi.cast(4, sc.champ.unit.x, sc.champ.unit.y)
             mi._ordered(now, "R reflex after tornado")
+            self.r_at = now
             self.tornado_at = 0.0
             return True
         d = sc.champ_dist or 9e9

@@ -599,6 +599,8 @@ class Player:
             except Exception as e:  # noqa: BLE001  a features bug must not stop the micro layer
                 self.log_lines.append(f"fight features error: {e}")
         mi.summoners, mi.hp_pct = inp.summoners, inp.hp_pct
+        if hasattr(kit, "r_rank"):
+            kit.r_rank = int(ap.get("abilities", {}).get("R", {}).get("abilityLevel", 0))
         mi.hp_lost = getattr(self, "_hp_lost", 0.0)  # HP% lost in the damage window
         if escaping:
             # Walking out: no fight entries; reflexes only (Flash, defensive summoners, potion,
@@ -699,6 +701,7 @@ class Player:
         # 79%, and the all-in cost Yasuo 30% HP (game 4). The median of half a second must agree.
         if steady_low and d < 650 and mi.hp_pct > 35:
             mi.set_mode("all_in", now)
+            mi.flash_in_ok = ch.unit.hp < 0.2 and mi.hp_pct > 40
             self.log_lines.append(f"fight: kill window ({ch.unit.hp * 100:.0f}% at {d:.0f}u), all in")
             return
         if not (self.jungle_state is not None and getattr(self, "_at_camp", False)):
