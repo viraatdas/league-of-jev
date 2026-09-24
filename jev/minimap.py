@@ -140,9 +140,13 @@ class MinimapReader:
                 best = (cx, (top + bottom) / 2, 0, right - left, bottom - top)
         if best is not None:
             st.self_pos = self.px_to_map(best[0], best[1])
-            # The own icon sits inside the camera box; drop it from the ally champion list.
+            # The own icon sits inside the camera box; drop it from the ally champion list. Its red
+            # parts (Lee Sin's headband) also read as an enemy icon 100-500 units from us, which kept
+            # the fight head retreating from nobody in the jungle (g12): an enemy that close is on
+            # screen anyway, so enemy blobs within 600 units go too.
             sx, sy = st.self_pos
             st.ally_champions = [p for p in st.ally_champions if (p[0] - sx) ** 2 + (p[1] - sy) ** 2 > 700 ** 2]
+            st.enemy_champions = [p for p in st.enemy_champions if (p[0] - sx) ** 2 + (p[1] - sy) ** 2 > 600 ** 2]
         # Own icon: a white ring roughly 14-24 px across.
         for cx, cy, area, w, h_ in self._components(white, 25, 400):
             if 12 <= w <= 26 and 12 <= h_ <= 26 and abs(w - h_) <= 6:
