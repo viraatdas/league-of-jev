@@ -50,7 +50,7 @@ def choose_intent(d: Decision | None, state: dict, p: Perception, now: float, gu
         guard.retreat_until = now + 4.0  # survival floor, shorter than Jev's own retreat calls
     if p.hp_lost_recent_pct >= config.TIMING.heavy_damage_pct:
         guard.retreat_until = now + 5.0  # tower-sized chunks: step out before the next shot
-    if p.near_enemy_tower and (d is None or d.intent != "push_tower"):
+    if p.near_enemy_tower and (d is None or d.intent != "push_tower") and now >= guard.push_ok_until:
         guard.step_back_until = now + 2.5
     if p.nearest_enemy_champion_units is not None and p.nearest_enemy_champion_units < 600 and me["hp_percent"] < 30:
         guard.retreat_until = now + 5.0
@@ -103,6 +103,7 @@ class Guards:
         self.left_base_at = 0.0
         self.last_level_t = 0.0
         self.resync_until = 0.0
+        self.push_ok_until = 0.0
 
 
 class HpTracker:
@@ -649,7 +650,7 @@ class Player:
         if not standing and mi.mode not in FIGHT_MODES:
             return False
         before = mi.orders
-        ok = kit.step(mi, sc, now, aspd, mi.mode, self.intent == "push_tower")
+        ok = kit.step(mi, sc, now, aspd, mi.mode, self.intent in ("push_tower", "objective"))
         if mi.orders > before and mi.last_action.startswith("last hit"):
             mi.reacted("lasthit", view.ts)
         return ok
@@ -1108,6 +1109,70 @@ class Player:
                 return True
         return False
 
+    def _objective_plan(self, data: dict, now: float):
+        """Objectives that make sense, by rule: push the tower while the lane opponent is dead and our
+        wave is there; take dragon or baron when the team is at the pit; after 15:00 join the team's
+        group and fight with it. Returns (kind, map point, label) or None."""
+        mm = self.mm_state
+        st = self.state or {}
+        me = st.get("me") or {}
+        if mm is None or mm.pos is None or self.kit.support or not me.get("alive", True):
+            return None
+        hp = float(me.get("hp_percent") or 0)
+        gt = float((data.get("gameData") or {}).get("gameTime", 0.0))
+        if hp < 45:
+            return None
+        allies = list(mm.ally_champions)
+        places = map_places.places(self.side)
+        obj = st.get("objectives") or {}
+        opp = st.get("lane_opponent") or {}
+        if self.jungle_state is None and opp and not opp.get("alive", True) and float(opp.get("respawn_in_s") or 0) > 8:
+            theirs = config.RED_TOWERS if self.side == "ORDER" else config.BLUE_TOWERS
+            tower = min(theirs, key=lambda t: dist(mm.pos, t))
+            wave_there = sum(1 for m in mm.ally_minions if dist(m, tower) < 1200)
+            if dist(mm.pos, tower) < 3000 and wave_there >= 3:
+                return ("push_tower", tower, "lane opponent dead and our wave at their tower: hit the tower")
+        if gt >= 300 and (obj.get("next_dragon_in_s") or 0) <= 0:
+            pit = places["dragon_pit"][0]
+            near = sum(1 for a in allies if dist(a, pit) < 2500)
+            if near >= 2 or (self.jungle_state is not None and near >= 1 and int(me.get("level") or 1) >= 6):
+                return ("objective", pit, f"dragon with {near} allies")
+        if gt >= 1200 and (obj.get("next_baron_in_s") or 0) <= 0:
+            pit = places["baron_pit"][0]
+            near = sum(1 for a in allies if dist(a, pit) < 2500)
+            if near >= 3:
+                return ("objective", pit, f"baron with {near} allies")
+        if gt >= 900 and len(allies) >= 3:
+            best = max(allies, key=lambda a: sum(1 for b in allies if dist(a, b) < 2500))
+            group = [b for b in allies if dist(best, b) < 2500]
+            if len(group) >= 3 and dist(mm.pos, best) > 2500:
+                cx = sum(b[0] for b in group) / len(group)
+                cy = sum(b[1] for b in group) / len(group)
+                return ("objective", (cx, cy), f"group with {len(group)} allies")
+        return None
+
+    def _do_objective(self, data: dict, ap: dict, stats: dict, now: float) -> None:
+        """Walk to the objective answering fights on the way; there, fight and hit what is there
+        (monsters count as targets, right-clicked; Smite for a jungler)."""
+        m, mm = self.mech, self.mm_state
+        pt, label = getattr(self, "_obj_pt", None), getattr(self, "_obj_label", "")
+        if pt is None or m is None:
+            return
+        arrived = mm is not None and mm.pos is not None and dist(mm.pos, pt) < 1200
+        if arrived:
+            if self.micro is not None:
+                self.micro.at_camp = True
+            try:
+                acted = self._micro_step(data, ap, stats, now, standing=True, camp_pt=pt, camp_big=True)
+            finally:
+                if self.micro is not None:
+                    self.micro.at_camp = False
+            if not acted:
+                m.go_map(pt, now, attack=True, every=1.5)
+        elif not self._micro_step(data, ap, stats, now, standing=False):
+            m.go_map(pt, now, attack=False, every=1.0)
+        m.last_action = f"objective: {label}"
+
     def _go_to(self, data: dict, ap: dict, stats: dict, now: float) -> None:
         """Travel to Jev's destination through the minimap, answering fights on the way with
         one-shot tactical moves. On arrival: a lane becomes the new lane to play; anywhere else
@@ -1497,6 +1562,19 @@ class Player:
                 self.intent = "farm"
         if self.intent in ("go_to", "group") and d0 is not None and d0.intent_probabilities.get(self.intent, 0.0) < 0.35:
             self.intent = "farm"  # a low-confidence roam costs a laner CS and exposes them; keep laning
+        if self.intent in ("farm", "go_to", "group"):
+            plan_obj = self._objective_plan(data, now)
+            if plan_obj is not None:
+                kind, pt, label = plan_obj
+                if kind == "push_tower":
+                    self.intent = "push_tower"
+                    self.guards.push_ok_until = now + 1.5
+                else:
+                    self.intent = "objective"
+                    self._obj_pt, self._obj_label = pt, label
+                if label != getattr(self, "_obj_logged", None):
+                    self._obj_logged = label
+                    self.log_lines.append(f"objective: {label}")
         if self.kit.support and self.intent in ("go_to", "group", "trade", "all_in", "push_tower"):
             self.intent = "farm"  # support: stay with the carry (shadow them) instead of roaming or engaging alone
         if self.intent == "recall" and now - self.guards.left_base_at < config.TIMING.no_recall_after_base_s:
@@ -1567,6 +1645,9 @@ class Player:
         if now < self.guards.resync_until and (self.mm_state is None or self.mm_state.pos is None):
             m.retreat(move_speed, now)  # walking to own tower to re-base position
             self.intent = "resync"
+            return p
+        if self.intent == "objective":
+            self._do_objective(data, ap, cs, now)
             return p
         dest = self.decision.destination if self.decision is not None else None
         if dest and (self.intent in ("go_to", "group") or (self.intent == "defend" and dest.startswith("my_"))):
