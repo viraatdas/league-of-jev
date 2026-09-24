@@ -1172,6 +1172,10 @@ class Player:
         if hp < 45:
             return None
         allies = list(mm.ally_champions)
+        if self.jungle_state is not None:
+            g = self._gank_plan(mm, allies, gt, me, now)
+            if g is not None:
+                return g
         places = map_places.places(self.side)
         obj = st.get("objectives") or {}
         opp = st.get("lane_opponent") or {}
@@ -1199,6 +1203,53 @@ class Player:
                 cy = sum(b[1] for b in group) / len(group)
                 return ("objective", (cx, cy), f"group with {len(group)} allies")
         return None
+
+    def _gank_plan(self, mm, allies: list, gt: float, me: dict, now: float):
+        """A jungler's gank, by rule: an enemy laner past the middle of their lane (pushed toward our
+        tower) within reach, where the numbers are not against us. The target point follows them on
+        the minimap; the gank ends after 30 s, when they are lost for 5 s, when I drop under 40%, or
+        when more of them gather than us. 45 s of camps between ganks."""
+        g = getattr(self, "_gank", None)
+        hp = float(me.get("hp_percent") or 0)
+        if g is not None:
+            near = [e for e in mm.enemy_champions if dist(e, g["pt"]) < 1500]
+            if near:
+                g["pt"], g["seen"] = min(near, key=lambda e: dist(e, g["pt"])), now
+            many = sum(1 for e in mm.enemy_champions if dist(e, g["pt"]) < 2000)
+            friends = sum(1 for a in allies if dist(a, g["pt"]) < 2000)
+            why = ("time" if now > g["until"] else "lost them" if now - g["seen"] > 5 else "low HP" if hp < 40
+                   else f"{many} of them, {friends} of us" if (many >= 2 and friends == 0) or many >= friends + 3 else "")
+            if why:
+                self.log_lines.append(f"gank {g['lane']}: over ({why})")
+                self._gank, self._gank_next = None, now + 45.0
+                return None
+            return ("objective", g["pt"], f"gank {g['lane']}")
+        if gt < 195 or int(me.get("level") or 1) < 3 or hp < 60 or now < getattr(self, "_gank_next", 0.0):
+            return None
+        lanes = self._gank_lanes = getattr(self, "_gank_lanes", None) or {n: Lane(n, self.side) for n in ("top", "mid", "bot")}
+        best = None
+        for name, ln in lanes.items():
+            for e in mm.enemy_champions:
+                prog, off = ln.project(e)
+                if off > 900 or prog > ln.center + ln.frac(400):
+                    continue  # not on this lane, or not pushed toward our side
+                many = sum(1 for o in mm.enemy_champions if dist(o, e) < 1800)
+                friends = sum(1 for a in allies if dist(a, e) < 1800)
+                if (many >= 2 and friends == 0) or many > friends + 1:
+                    continue
+                d = dist(mm.pos, e)
+                if d > 6500:
+                    continue
+                score = d - 1500 * friends - ln.units(ln.center - prog)  # near, with our laner there, overextended
+                if best is None or score < best[0]:
+                    best = (score, name, e, prog, friends)
+        if best is None:
+            return None
+        _, name, e, prog, friends = best
+        self._gank = {"lane": name, "pt": e, "seen": now, "until": now + 30.0}
+        self.log_lines.append(f"gank {name}: their laner at {prog * 100:.0f}% of the lane, {friends} of us there, "
+                              f"{dist(mm.pos, e):.0f} away")
+        return ("objective", e, f"gank {name}")
 
     def _do_objective(self, data: dict, ap: dict, stats: dict, now: float) -> None:
         """Walk to the objective answering fights on the way; there, fight and hit what is there

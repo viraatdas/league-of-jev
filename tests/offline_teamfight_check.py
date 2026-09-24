@@ -92,3 +92,28 @@ for k in range(6):
 print("sidestep:", mi.last_action, sides)
 assert mi.last_action.startswith("farm: sidestep") and sides == {1, -1}
 print("TEAMFIGHT OK")
+
+# Lee Sin gank plan: their top laner pushed past the middle toward us, our top laner there, me level 4.
+from jev.minimap import MinimapState
+p = setup(now)
+p.jungle_state = object()
+p.side = "ORDER"
+from jev.lanes import Lane
+top = Lane("top", "ORDER")
+enemy_at = top.point(top.center - top.frac(900))
+ally_at = top.point(top.center - top.frac(1400))
+mm = MinimapState()
+mm.self_pos, mm.ts = (3872.0, 7900.0), now  # at our blue buff
+mm.enemy_champions, mm.ally_champions = [enemy_at, (12000.0, 12000.0)], [ally_at]
+g = p._gank_plan(mm, mm.ally_champions, 300.0, {"level": 4, "hp_percent": 90}, now)
+print("gank:", g, list(p.log_lines)[-1:])
+assert g is not None and g[2] == "gank top"
+# Two of them there and none of us: over.
+mm.enemy_champions = [enemy_at, (enemy_at[0] + 300, enemy_at[1])]
+g = p._gank_plan(mm, [], 300.0, {"level": 4, "hp_percent": 90}, now + 1)
+assert g is None and "over" in list(p.log_lines)[-1], list(p.log_lines)[-1]
+# Level 2: no gank.
+p._gank_next = 0
+mm.enemy_champions = [enemy_at]
+assert p._gank_plan(mm, [ally_at], 300.0, {"level": 2, "hp_percent": 90}, now) is None
+print("GANK OK")
