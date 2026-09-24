@@ -33,6 +33,9 @@ class Track:
     e_marked_until: float = 0.0   # Yasuo E cannot dash through the same unit again for a while
     path: collections.deque = field(default_factory=lambda: collections.deque(maxlen=12))  # (t, x, y) screen px
     trail: collections.deque = field(default_factory=lambda: collections.deque(maxlen=50))  # (t, hp) every 0.1 s, 5 s
+    drops: collections.deque = field(default_factory=lambda: collections.deque(maxlen=16))  # (t, hp fraction lost) per hit
+    hits_expected: list = field(default_factory=list)   # (t, damage) of our own hits on the way
+    hp_max_measured: float | None = None                 # max HP from the drop our own known-damage hit made
 
     def hp_change(self, now: float, seconds: float) -> float | None:
         """HP fraction gained (+) or lost (-) over the last `seconds`, from the slow trail."""
@@ -72,8 +75,71 @@ class Track:
             return 0.0
         return min(0.0, sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / den)
 
-    def predict_hp(self, now: float, lead: float) -> float:
+    def predict_linear(self, now: float, lead: float) -> float:
         return self.unit.hp + self.hp_rate(now) * lead
+
+    def predict_steps(self, now: float, lead: float) -> float | None:
+        """Minion HP falls in steps, one per hit: the next drops come at the hit rhythm (median
+        interval and size of the last 2.5 s of drops). None with fewer than two drops."""
+        rec = [(t, a) for t, a in self.drops if now - t <= 2.5]
+        if len(rec) < 2:
+            return None
+        ivals = sorted(b[0] - a[0] for a, b in zip(rec, rec[1:]))
+        period = min(2.0, max(0.25, ivals[len(ivals) // 2]))
+        size = sorted(a for _, a in rec)[len(rec) // 2]
+        nxt = max(now, rec[-1][0] + period)
+        n = 0 if now + lead < nxt else 1 + int((now + lead - nxt) / period)
+        return self.unit.hp - n * size
+
+    def predict_hp(self, now: float, lead: float) -> float:
+        """HP fraction `lead` seconds from now, by whichever forecast has been more accurate in this
+        game so far (HP_MODEL scores both against what happened, live)."""
+        if HP_MODEL.best() == "steps":
+            st = self.predict_steps(now, lead)
+            if st is not None:
+                return st
+        return self.predict_linear(now, lead)
+
+
+class HpModel:
+    """Scores the two HP forecasts against what happened 0.5 s later, during the game, and names the
+    better one (exponential average of the absolute error in HP fraction)."""
+
+    HORIZON = 0.5
+
+    def __init__(self) -> None:
+        self.err = {"linear": 0.030, "steps": 0.031}   # the linear forecast starts as the incumbent
+        self.n = {"linear": 0, "steps": 0}
+        self.pending: collections.deque = collections.deque(maxlen=400)  # (due, track, {model: forecast})
+        self._last_sample = 0.0
+
+    def best(self) -> str:
+        return "steps" if self.n["steps"] >= 30 and self.err["steps"] < self.err["linear"] * 0.95 else "linear"
+
+    def observe(self, tracks: list, now: float) -> None:
+        while self.pending and self.pending[0][0] <= now:
+            _, tr, preds = self.pending.popleft()
+            if now - tr.seen > 0.1:
+                continue  # gone (dead or off screen): no clean answer
+            for k, v in preds.items():
+                self.err[k] += 0.03 * (abs(v - tr.unit.hp) - self.err[k])
+                self.n[k] += 1
+        if now - self._last_sample < 0.2:
+            return
+        self._last_sample = now
+        for tr in tracks:
+            if tr.unit.kind != "minion" or tr.unit.team != "enemy" or tr.unit.hp > 0.6:
+                continue
+            st = tr.predict_steps(now, self.HORIZON)
+            if st is None:
+                continue  # score both on the same cases
+            self.pending.append((now + self.HORIZON, tr, {"linear": tr.predict_linear(now, self.HORIZON), "steps": st}))
+
+    def summary(self) -> str:
+        return f"hp forecast: {self.best()} (err linear {self.err['linear']:.3f} n={self.n['linear']}, steps {self.err['steps']:.3f})"
+
+
+HP_MODEL = HpModel()
 
 
 class UnitTracker:
@@ -98,6 +164,17 @@ class UnitTracker:
                     best, bd = tid, d
             if best is not None:
                 tr = free.pop(best)
+                prev = [h for _, h in list(tr.hist)[-2:]]
+                if prev and u.hp < min(prev) - 0.015 and u.kind == "minion":
+                    drop = min(prev) - u.hp
+                    tr.drops.append((now, drop))
+                    # Our own hit of known damage landing now: the drop gives the minion's max HP
+                    # (melee ~477, caster ~296 early), better than guessing from its place in the wave.
+                    for t_hit, dmg in tr.hits_expected:
+                        if abs(now - t_hit) <= 0.2 and 150.0 <= dmg / drop <= 2500.0:
+                            tr.hp_max_measured = dmg / drop
+                            break
+                tr.hits_expected = [(t, d) for t, d in tr.hits_expected if now - t < 0.4]
                 tr.unit, tr.seen = u, now
             else:
                 tr = Track(next(_ids), u, now)
@@ -107,6 +184,7 @@ class UnitTracker:
             if not tr.trail or now - tr.trail[-1][0] >= 0.1:
                 tr.trail.append((now, u.hp))
             out.append(tr)
+        HP_MODEL.observe(out, now)
         self.dropped = []
         for tid, tr in list(self.tracks.items()):
             if now - tr.seen > self.ttl:
@@ -190,7 +268,12 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
     for tr in minions:
         d = sc.dist(tr)
         tr.role = roles.get(tr.id, "")
-        hp_max = melee_max if tr.role == "melee" else (caster_max if tr.role == "caster" else avg_max)
+        if tr.hp_max_measured is not None:
+            # Measured from our own hit: its role follows (nearer the melee or the caster pool).
+            tr.role = "melee" if abs(tr.hp_max_measured - melee_max) < abs(tr.hp_max_measured - caster_max) else "caster"
+            hp_max = melee_max if tr.role == "melee" else caster_max
+        else:
+            hp_max = melee_max if tr.role == "melee" else (caster_max if tr.role == "caster" else avg_max)
         tr.hp_max = hp_max
         tr.ally_takes = (tr.unit.hp < 0.12 and sc.allies > 0) or tr.unit.hp < 0.04 or (tr.role == "caster" and tr.unit.hp < 0.12)
         if (tr.unit.hp < 0.12 and sc.allies > 0) or tr.unit.hp < 0.04 or (tr.role == "caster" and tr.unit.hp < 0.12):
@@ -284,6 +367,7 @@ class Micro:
         self.dodge_lines = True                                # the lane opponent throws line skillshots (sidestep)
         self.dash_ok = True                                    # farm dashes allowed (not near their tower)
         self.plan_log: collections.deque = collections.deque(maxlen=400)  # lane planner picks, for the game log
+        self.ad, self.aspd = 0.0, 0.7                          # set each tick (our hits' damage for measuring minions)
         self.trade_cooldown_until = 0.0                        # no new trade before then (one just ended)
         self.flash_in_ok = False                               # the fight head says a Flash-in kill is on
 
@@ -353,6 +437,9 @@ class Micro:
         # a camp that is not already fighting us.
         pt = self._pt(tr.unit.x, tr.unit.y)
         self.attacked_ids[tr.id] = now
+        if tr.unit.kind == "minion" and self.ad:
+            # lands after the input and the wind-up (Yasuo is melee: no projectile)
+            tr.hits_expected.append((now + FAST.lasthit_lead_s + FAST.windup_frac / max(0.3, self.aspd), self.ad))
         if right_click or self.at_camp or tr.unit.kind == "monster":
             self.ctl.click(*pt, "right")
         else:
