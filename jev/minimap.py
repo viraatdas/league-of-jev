@@ -28,7 +28,9 @@ class MinimapState:
 
     @property
     def pos(self) -> tuple[float, float] | None:
-        return self.self_pos or self.self_from_icon
+        # The camera box only: the white-ring icon read agreed with the box within 1000 units on 11
+        # of 416 frames (g20-g29), and as a fallback it put Yasuo in bot lane mid-game (g29 top).
+        return self.self_pos
 
 
 class MinimapReader:
@@ -203,6 +205,35 @@ class MinimapReader:
             px, py = self.map_to_px(*st.self_from_icon)
             cv2.circle(out, (int(px), int(py)), 10, (0, 255, 255), 1)
         return out
+
+
+class PosFilter:
+    """Drops a camera-box read that jumps farther than a champion moves (a dash or Flash is within
+    1500 units), unless the new spot repeats for `confirm` reads in a row (a recall, a respawn). A
+    box edge paired with the wrong line jumped the read 2000-3000 units for a frame (g26, g28)."""
+
+    def __init__(self, confirm: int = 5, stale_s: float = 2.0) -> None:
+        self.confirm, self.stale_s = confirm, stale_s
+        self.good: tuple[float, tuple[float, float]] | None = None   # (ts, pos) last accepted
+        self.cand: tuple[tuple[float, float], int] | None = None      # (pos, reads in a row)
+        self.dropped = 0
+
+    def apply(self, st: MinimapState) -> MinimapState:
+        p = st.self_pos
+        if p is None:
+            return st
+        g = self.good
+        if g is None or st.ts - g[0] > self.stale_s or dist(p, g[1]) <= 1500 + 700 * (st.ts - g[0]):
+            self.good, self.cand = (st.ts, p), None
+            return st
+        n = self.cand[1] + 1 if self.cand is not None and dist(self.cand[0], p) < 800 else 1
+        if n >= self.confirm:
+            self.good, self.cand = (st.ts, p), None
+            return st
+        self.cand = (p, n)
+        self.dropped += 1
+        st.self_pos = None
+        return st
 
 
 def dist(a: tuple[float, float], b: tuple[float, float]) -> float:

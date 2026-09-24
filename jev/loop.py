@@ -25,7 +25,7 @@ from jev import places as map_places
 from jev.kits import FIGHT_MODES, Kit, kit_for
 from jev.lanes import LANE_LETTER, Lane, lane_for
 from jev.micro import Micro, UnitTracker, build_scene
-from jev.minimap import MinimapReader, MinimapState, dist, lane_progress, lane_wave
+from jev.minimap import MinimapReader, MinimapState, PosFilter, dist, lane_progress, lane_wave
 from jev.riot_api import FixtureRecorder, RiotLiveClient
 from jev.screen import Screen
 from jev.state import Perception, build_state, find_me
@@ -166,6 +166,7 @@ class Player:
         self._last_sig = (None, None, 0)
         self._gold_hist: collections.deque[tuple[float, float, int]] = collections.deque()
         self.mm: MinimapReader | None = MinimapReader(self.screen) if (config.GEOMETRY.minimap and not dry_run) else None
+        self.mm_filter = PosFilter()
         self.mm_state: MinimapState | None = None
         self.side = "ORDER"
         self.dead_enemy_mid_towers: set[int] = set()
@@ -286,7 +287,7 @@ class Player:
                         last_mm = f.ts
                         st = self.mm.read(frame[y0:y0 + side, x0:x0 + side])
                         st.ts = f.ts
-                        self.mm_state = st
+                        self.mm_state = self.mm_filter.apply(st)
                     if self.vision is not None:
                         v = self.vision.read(frame)
                         v.ts = f.ts  # latency is measured from when the frame was captured
@@ -1657,6 +1658,7 @@ class Player:
         self.dead_enemy_mid_towers = set()
         self.jungle_state = None
         self.mm_state = None
+        self.mm_filter = PosFilter()
         self.view = None
         self.scene = None
         self.min_tracker = UnitTracker()

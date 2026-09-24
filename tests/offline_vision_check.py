@@ -81,3 +81,16 @@ st = _mm.read(cv2.cvtColor(cv2.imread("tests/fixtures/frames/minimap_top_cut_box
 print("top-lane box:", st.self_pos and tuple(int(v) for v in st.self_pos))
 assert st.self_pos is not None and st.self_pos[0] < 3000 and st.self_pos[1] > 11500, st.self_pos
 print("VISION OK (minimap)")
+
+# Position filter: a one-frame jump of 2800 units is dropped; a new spot that repeats (a recall) is taken.
+from jev.minimap import MinimapState, PosFilter
+pf = PosFilter()
+seq = [((2000, 12000), (2000, 12000)), ((2100, 12050), (2100, 12050)), ((2150, 9200), None), ((2200, 12100), (2200, 12100))]
+for k, (read, want) in enumerate(seq):
+    got = pf.apply(MinimapState(self_pos=read, ts=100 + 0.1 * k)).self_pos
+    assert got == want, (k, read, got)
+outs = [pf.apply(MinimapState(self_pos=(400, 400), ts=101 + 0.03 * k)).self_pos for k in range(6)]
+print("pos filter, recall to base:", outs)
+assert outs[:4] == [None] * 4 and outs[4] == (400, 400)
+assert MinimapState(self_from_icon=(9000, 2000)).pos is None  # the icon read is not a position
+print("VISION OK (pos filter)")
