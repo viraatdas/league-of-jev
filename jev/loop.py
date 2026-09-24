@@ -1572,7 +1572,10 @@ class Player:
                     self.log_lines.append(f"jungle: resumed timers {self.jungle_state.cleared}")
             except (OSError, ValueError, KeyError):
                 pass
-        if self.jungle_state is not None and "smite" not in actions.summoner_names(me):
+        names = actions.summoner_names(me)
+        if self.jungle_state is not None and all(names) and "smite" not in names:
+            # (Only with both spells read: at 0:00 the player list can be empty, and an empty list read
+            # as "no Smite" made Lee buy the pet, undo it as the wrong item, and start with nothing, g20.)
             # The jungle pets need Smite; without it the pet buy fails and he left base empty-handed.
             import dataclasses
 
@@ -2072,7 +2075,14 @@ class Player:
             cat = self.shop_brain.catalog
             owned = self._items_now()
             game_min = float((self.data or {}).get("gameData", {}).get("gameTime", 0.0)) / 60
+            from jev.mechanics import PETS
+
+            has_pet = any(k in o.lower() for o in owned for k in PETS)
             if game_min < 1.5 and not [o for o in owned if o not in ("Stealth Ward", "Oracle Lens")]:
+                order = list(self.kit.items.starters[:1])
+            elif self.jungle_state is not None and not has_pet and any(k in str(self.kit.items.starters[:1]).lower() for k in PETS):
+                # A jungler without his pet gets a fraction of the camps' gold and XP: Lee was level 1
+                # at 9:00 after "clearing" three camps (g20). The pet before anything else.
                 order = list(self.kit.items.starters[:1])
             else:
                 order = [b for b in self.kit.items.boots[:1]] + list(self.kit.items.core)
