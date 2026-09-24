@@ -152,6 +152,13 @@ def run(champion: str = "yasuo", minutes: float = 18.0, tag: str = "", difficult
             if gt >= minutes * 60:
                 result["ended"] = "time limit"
                 break
+            ff = Path("logs/night/FF")
+            if ff.exists() and gt >= 15 * 60:
+                # Operator's early surrender (a broken lineup, a game with nothing left to learn).
+                ff.unlink(missing_ok=True)
+                _say("FF file: surrendering this game")
+                result["ended"] = "time limit"
+                break
     finally:
         stop_harness()
         time.sleep(2)
