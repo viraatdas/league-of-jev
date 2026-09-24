@@ -160,6 +160,10 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
     windup = FAST.windup_frac / max(0.3, aspd)
     for tr in minions:
         d = sc.dist(tr)
+        if tr.unit.hp < 0.08 and sc.allies > 0:
+            # Nearly dead with allied minions around: they take it before our hit lands (g11: Q at
+            # 0-15% paid 8/29, at 20%+ 17/23; autos at 0-10% 3/15).
+            continue
         # Forecast the minion's HP at the moment the hit lands: input, the walk into range, the
         # wind-up. With only the input lead, a hit that needed a walk landed after the allied
         # minions had taken the kill ("last hit (3%)" on a dying minion, game 2).

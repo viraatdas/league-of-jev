@@ -832,7 +832,11 @@ class Player:
             plan = "escape" if fr.in_danger >= 0.85 else "back_off"
         if plan in ("all_in", "trade") and ch is None:
             plan = "farm"
-        if plan == "back_off" and fr.in_danger < 0.4 and mi.hp_pct >= 50 and sc.enemy_champs <= 1:
+        their_hp = max((v.get("hp_percent") or 0) for v in (fr.state.get("enemies_on_screen") or {}).values()) if fr.state.get("enemies_on_screen") else 0
+        if (plan == "back_off" and fr.in_danger < 0.35 and mi.hp_pct >= 70 and mi.hp_pct >= their_hp + 10
+                and sc.enemy_champs <= 1):
+            # (Only when clearly ahead: at 60% vs 57% the override kept Yasuo in a burst that took 57%
+            # in three seconds, g11; Jev's own back_off had been right.)
             # Jev backed off 75% of the time at a median 90% HP against one champion (g09) while
             # its own danger read said 0.2-0.3; poke (skillshots from range, else farm) had the best
             # measured trades (-3.7% mine vs -16% theirs per 3 s). Its danger score decides.
