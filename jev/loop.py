@@ -834,7 +834,9 @@ class Player:
             plan = "farm"
         if plan == "all_in" and fr.win_all_in < 0.55:
             plan = "trade" if fr.trade_worth >= 0.55 else "farm"
-        if plan == "trade" and fr.trade_worth < 0.45:
+        if plan == "trade" and (fr.trade_worth < 0.55 or now < getattr(mi, "trade_cooldown_until", 0.0)):
+            # Jev's trade_worth sits near 0.5 most of the lane, and a trade that just ended was
+            # restarted on the next read: Yasuo chased non-stop and had under 10 CS at 4:00 (g09).
             plan = "poke"
         outnumbered = sc.enemy_champs >= 2 and not sc.ally_champs
         if plan in ("all_in", "trade") and outnumbered and fr.win_all_in < 0.8:
@@ -849,7 +851,9 @@ class Player:
         if mi.mode != mode and not (mode == "trade" and mi.mode == "trade"):
             if not (mi.mode == "trade" and mode in ("poke", "farm") and now - mi.mode_since < 2.0):  # let a started trade finish
                 mi.set_mode(mode, now)
-                self.log_lines.append(f"fight(jev): {plan} <- {fr.summary()}")
+        if plan != getattr(self, "_last_fight_plan", None):
+            self._last_fight_plan = plan
+            self.log_lines.append(f"fight(jev): {plan} <- {fr.summary()}")
         mi.fight_owned_until = now + 0.9  # the tactical head's mode picks stand down meanwhile
         mi.flash_in_ok = plan == "all_in" and fr.win_all_in >= 0.75 and ch is not None and ch.unit.hp < 0.3
         if plan == "escape":

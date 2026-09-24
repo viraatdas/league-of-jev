@@ -227,6 +227,7 @@ class Micro:
         self.lh_pending: list[tuple[float, str, float]] = []   # (time, kind, minion HP fraction) awaiting a gold check
         self.at_camp = False                                   # the loop sets it while clearing a jungle camp
         self.fight_owned_until = 0.0                           # the fight head owns the mode until then
+        self.trade_cooldown_until = 0.0                        # no new trade before then (one just ended)
         self.flash_in_ok = False                               # the fight head says a Flash-in kill is on
 
     def set_mode(self, mode: str, now: float) -> None:

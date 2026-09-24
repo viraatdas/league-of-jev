@@ -119,6 +119,7 @@ class Kit:
         end = (burst + 0.7) if burst >= t0 else (t0 + 2.5)
         if now < end:
             return False
+        mi.trade_cooldown_until = max(mi.trade_cooldown_until, end + 4.0)
         if now < end + 1.2:
             mi.back_off(sc, now)
             mi.last_action = "trade: step back"
@@ -136,6 +137,7 @@ class Kit:
             self._in_reach_t = now
         elif mode == "trade" and now - max(getattr(self, "_in_reach_t", 0.0), mi.mode_since) > 1.2:
             mi.set_mode("farm", now)
+            mi.trade_cooldown_until = now + 4.0
             mi.last_action = "trade: out of reach, back to farming"
             return False
         if d <= rng and mi.attack_ready(now, aspd):
@@ -386,6 +388,7 @@ class Yasuo(Kit):
         crowded = self.minions_near_champ(sc) >= 3 and not (mode == "all_in" and ch.unit.hp < 0.35)
         if crowded and mode == "trade" and not (rdy.get("Q") and d <= VC.q_range + 30) and not (q3 and rdy.get("Q")):
             mi.set_mode("farm", now)  # she stands in her wave and nothing reaches her from here: no trade
+            mi.trade_cooldown_until = now + 4.0
             mi.last_action = "trade: she is in her wave, back to farming"
             return False
         if rdy.get("E") and d <= VC.e_range and ch.e_marked_until <= now and not crowded:
