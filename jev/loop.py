@@ -1400,8 +1400,8 @@ class Player:
                 prog, off = ln.project(e)
                 if off > 900 or prog > ln.center + ln.frac(400):
                     continue  # not on this lane, or not pushed toward our side
-                many = sum(1 for o in mm.enemy_champions if dist(o, e) < 1800)
-                friends = sum(1 for a in allies if dist(a, e) < 1800)
+                many = sum(1 for o in mm.enemy_champions if dist(o, e) < 2000)  # the same radius that ends a gank
+                friends = sum(1 for a in allies if dist(a, e) < 2000)
                 if (many >= 2 and friends == 0) or many > friends + 1:
                     continue
                 d = dist(mm.pos, e)
