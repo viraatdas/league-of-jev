@@ -1533,7 +1533,13 @@ class Player:
             m.push(move_speed, now)
         elif self.intent == "retreat":
             if not self._micro_step(data, ap, cs, now, standing=False, escaping=True):
-                m.retreat(move_speed, now)
+                if self.jungle_state is not None:
+                    # A jungler's way out is home through the jungle, not down the mid lane.
+                    home = config.BLUE_FOUNTAIN if self.side == "ORDER" else config.RED_FOUNTAIN
+                    m.go_map(home, now, attack=False, every=0.8)
+                    m.last_action = "retreat: toward base"
+                else:
+                    m.retreat(move_speed, now)
         elif self.intent == "step_back":
             m.step_back(move_speed, now)
         elif self.intent == "defend":
