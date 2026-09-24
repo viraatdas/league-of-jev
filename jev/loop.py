@@ -1395,6 +1395,8 @@ class Player:
                 g["pt"], g["seen"] = min(near, key=lambda e: dist(e, g["pt"])), now
             many = sum(1 for e in mm.enemy_champions if dist(e, g["pt"]) < 2000)
             friends = sum(1 for a in allies if dist(a, g["pt"]) < 2000)
+            if dist(mm.pos, g["pt"]) < 1500:
+                friends += 1  # Lee himself, once he is there: bot lane is always two of them
             why = ("time" if now > g["until"] else "lost them" if now - g["seen"] > 5 else "low HP" if hp < 40
                    else f"{many} of them, {friends} of us" if (many >= 2 and friends == 0) or many >= friends + 3 else "")
             if why:
