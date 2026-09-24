@@ -1095,6 +1095,12 @@ class Player:
         on screen and at most every 0.3 s (~25 ms each). The actor gives it to the nearest track."""
         if not self._enemy_names or not namereader.available() or ts - self._name_tried < 0.3:
             return
+        try:
+            self._read_names_now(frame, v, ts)
+        except Exception:  # noqa: BLE001  (tracks change under us in the actor thread): a name later
+            pass
+
+    def _read_names_now(self, frame, v, ts: float) -> None:
         for u in v.enemies("champion"):
             named = any(getattr(t, "name", "") and math.hypot(t.unit.x - u.x, t.unit.y - u.y) < 80
                         for t in list(self.champ_tracker.tracks.values()))
