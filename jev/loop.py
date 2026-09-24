@@ -1342,12 +1342,12 @@ class Player:
             # in lane counted, and Yasuo walked to an untouched dragon six times before 13:00 (g17).
             near = sum(1 for a in allies if dist(a, pit) < 1300)
             if near >= 2 or (self.jungle_state is not None and near >= 1 and int(me.get("level") or 1) >= 6):
-                return ("objective", pit, f"dragon with {near} allies")
+                return ("objective", pit, "dragon with allies")
         if gt >= 1200 and (obj.get("next_baron_in_s") or 0) <= 0:
             pit = places["baron_pit"][0]
             near = sum(1 for a in allies if dist(a, pit) < 1500)
             if near >= 3:
-                return ("objective", pit, f"baron with {near} allies")
+                return ("objective", pit, "baron with allies")
         if gt >= 900 and len(allies) >= 3:
             best = max(allies, key=lambda a: sum(1 for b in allies if dist(a, b) < 2500))
             group = [b for b in allies if dist(best, b) < 2500]
