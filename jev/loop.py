@@ -698,6 +698,13 @@ class Player:
         recent = [h for t, h in ch.hist if now - t <= 0.5]
         their = sorted(recent)[len(recent) // 2] if len(recent) >= 3 else None  # half-second median: one misread is not a window
         allies = len(sc.ally_champs)
+        tower = self._own_tower_near(ch, sc)
+        if (tower is not None and their is not None and d < 650 and mi.hp_pct >= 30 and sc.enemy_champs <= allies + 1
+                and mi.hp_pct >= their * 100 - 35 and mi.mode != "all_in"):
+            # She is inside our tower's range next to me: the tower shoots her once she hits me.
+            # Intermediate bots dive and chase under towers; that fight is ours.
+            self._commit(ch, mi, now, f"under our tower ({their * 100:.0f}% at {d:.0f}u, me {mi.hp_pct:.0f}%), all in")
+            return
         if (allies and sc.enemy_champs <= allies + 1 and mi.hp_pct >= 40 and d < 800 and their is not None
                 and (their < 0.5 or (allies >= sc.enemy_champs and mi.hp_pct >= 60))):
             # A team fight: allied champions on screen, numbers even or better. Bots engage all game;
@@ -740,6 +747,28 @@ class Player:
                 and now - dd.ts < 2.0 and mi.mode != "back_off"):
             mi.set_mode("all_in", now)
             self.log_lines.append(f"fight: strategy says all in (p={dd.intent_confidence:.2f})")
+
+    def _own_tower_near(self, ch, sc):
+        """Our standing tower whose range covers the enemy champion, or None. Her map position is
+        ours plus her screen offset; destroyed towers come from the TurretKilled events."""
+        mm = self.mm_state
+        if mm is None or mm.pos is None:
+            return None
+        ppu = config.VISION.px_per_unit
+        cx = mm.pos[0] + (ch.unit.x - sc.me_xy[0]) / ppu
+        cy = mm.pos[1] - (ch.unit.y - sc.me_xy[1]) / ppu
+        own = config.BLUE_TOWERS if self.side == "ORDER" else config.RED_TOWERS
+        tag = "T1" if self.side == "ORDER" else "T2"
+        dead = getattr(self, "_dead_turrets", set())
+        from jev.lanes import LANE_TOWER_BASE
+        for lane, base in LANE_TOWER_BASE.items():
+            for k, num in enumerate((5, 4, 3)):
+                i = base + k
+                if i >= len(own) or f"Turret_{tag}_{LANE_LETTER[lane]}_{num:02d}_A" in dead:
+                    continue
+                if dist((cx, cy), own[i]) < 775 and dist(mm.pos, own[i]) < 1000:
+                    return own[i]
+        return None
 
     def _commit(self, ch, mi, now: float, why: str) -> None:
         """All in on this champion, and keep it the target for four seconds (the scene's default
@@ -1568,6 +1597,9 @@ class Player:
         enemy_tag = "T2" if self.side == "ORDER" else "T1"
         for e in (data.get("events") or {}).get("Events", []):
             tk = str(e.get("TurretKilled", ""))
+            if e.get("EventName") == "TurretKilled" and tk:
+                self._dead_turrets = getattr(self, "_dead_turrets", set())
+                self._dead_turrets.add(tk)
             if e.get("EventName") == "TurretKilled" and f"Turret_{enemy_tag}_{LANE_LETTER[self.lane.name]}_" in tk:
                 try:
                     self.dead_enemy_mid_towers.add(int(tk.split("_")[3]))

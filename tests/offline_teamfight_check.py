@@ -117,3 +117,25 @@ p._gank_next = 0
 mm.enemy_champions = [enemy_at]
 assert p._gank_plan(mm, [ally_at], 300.0, {"level": 2, "hp_percent": 90}, now) is None
 print("GANK OK")
+
+# Under our tower: a healthy enemy chasing me next to our mid outer tower is a fight.
+from jev import config as _cfg
+p = setup(now)
+p.side = "ORDER"
+mm = MinimapState()
+tw = _cfg.BLUE_TOWERS[3]  # mid outer
+mm.self_pos, mm.ts = (tw[0] - 200, tw[1] - 200), now
+p.mm_state = mm
+p.micro.hp_pct = 55.0
+e = track(300, 0.85, 1, now)
+p.champ_tracker.tracks = {1: e}
+sc = Scene(me_xy=ME)
+sc.champ, sc.champ_dist, sc.enemy_champs = e, sc.dist(e), 1
+p._fight_triggers(sc, p.micro, now)
+print("tower:", p.micro.mode, list(p.log_lines)[-1:])
+assert p.micro.mode == "all_in" and "under our tower" in list(p.log_lines)[-1]
+p._dead_turrets = {"Turret_T1_C_05_A"}
+p.micro.set_mode("farm", now)
+p._fight_triggers(sc, p.micro, now + 5)
+assert p.micro.mode != "all_in" or "under our tower" not in list(p.log_lines)[-1]
+print("TOWER OK")
