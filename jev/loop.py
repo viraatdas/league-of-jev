@@ -1658,10 +1658,13 @@ class Player:
             if near:
                 g["pt"], g["seen"] = min(near, key=lambda e: dist(e, g["pt"])), now
             many = sum(1 for e in mm.enemy_champions if dist(e, g["pt"]) < 2000)
-            friends = sum(1 for a in allies if dist(a, g["pt"]) < 2000)
-            if dist(mm.pos, g["pt"]) < 1500:
+            friends = sum(1 for a in allies if dist(a, g["pt"]) < 2500)
+            there = dist(mm.pos, g["pt"]) < 1500
+            if there:
                 friends += 1  # Lee himself, once he is there: bot lane is always two of them
-            bad = (many >= 2 and friends == 0) or many >= friends + 3
+            # Only on the way: once Lee is there, what he sees decides (the fight layer), and the minimap
+            # merges icons in a skirmish ("2 of them, 0 of us" ended 10 of g21's 19 ganks).
+            bad = not there and ((many >= 2 and friends == 0) or many >= friends + 3)
             # The minimap counts jitter frame to frame (icons merge and split): bad numbers must hold for
             # 1.5 s before the gank is called off (it started with "2 of us" and ended the next second
             # on "0 of us", g25).
@@ -1669,8 +1672,16 @@ class Player:
             # Out of sight on the way is normal (they are in fog until we bring vision): lost only when
             # we are there and still see nobody (ganks were dropped mid-walk as "lost them", g25).
             lost = now - g["seen"] > 5 and dist(mm.pos, g["pt"]) < 1200
+            if lost and not g.get("retargeted"):
+                # There and she is gone: another of them still in our half of that lane is the gank now.
+                ln = Lane(g["lane"], self.side)
+                alt = [e for e in mm.enemy_champions if dist(e, g["pt"]) < 2500
+                       and ln.project(e)[1] < 900 and ln.project(e)[0] <= ln.center]
+                if alt:
+                    g["pt"], g["seen"], g["retargeted"] = min(alt, key=lambda e: dist(e, mm.pos)), now, True
+                    lost = False
             why = ("time" if now > g["until"] else "lost them" if lost else "low HP" if hp < 40
-                   else f"{many} of them, {friends} of us" if bad and now - g["bad_since"] >= 1.5 else "")
+                   else f"{many} of them, {friends} of us" if bad and now - g["bad_since"] >= 3.0 else "")
             if why:
                 self.log_lines.append(f"gank {g['lane']}: over ({why})")
                 # A gank that found nothing cost 20-30 s of camps; five of those by 10:00 left Lee two
@@ -1694,6 +1705,8 @@ class Player:
                 d = dist(mm.pos, e)
                 if d > 4500 or (friends == 0 and d > 2000):
                     continue  # from 6400 units the walk took 18 s and they were gone (g21); alone, only a short walk
+                if prog > ln.center - ln.frac(250) and friends == 0:
+                    continue  # at the middle with none of ours there: she walks back before Lee arrives (g25 mid)
                 score = d - 1500 * friends - ln.units(ln.center - prog)  # near, with our laner there, overextended
                 if best is None or score < best[0]:
                     best = (score, name, e, prog, friends)
