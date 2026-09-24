@@ -356,7 +356,8 @@ class Micro:
             tgt = min(sc.minions, key=lambda t: t.unit.hp)
             self.attack(tgt, now, "push: attack lowest minion")
             return True
-        if sc.soon_killable:
+        alone = sc.allies == 0 and len(sc.minions) >= 3  # our wave is gone and theirs is here: every minion targets me
+        if sc.soon_killable and not (alone and self.hp_pct < 60):
             # About to be last-hittable: be in range when it is, so the hit needs no walk.
             tr = sc.soon_killable[0]
             if sc.dist(tr) > VC.auto_range - 20:
@@ -373,6 +374,10 @@ class Micro:
         along = lambda t: (t.unit.x - mx) * self.fwd[0] + (t.unit.y - my) * self.fwd[1]
         front = min(sc.minions, key=along)
         back = (VC.auto_range + 40) * VC.px_per_unit
+        if alone:
+            # Out of their minions' reach until our wave arrives: standing an auto range behind seven of
+            # them with none of ours cost 55% -> 0 at level 2 (g16).
+            back = 700 * VC.px_per_unit
         tx, ty = front.unit.x - self.fwd[0] * back, front.unit.y - self.fwd[1] * back
         ahead = along(front) < 0  # we are past the enemy front line: get out now
         if not ahead and sc.champ is not None and (sc.champ_dist or 9e9) < 1150:

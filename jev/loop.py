@@ -1144,6 +1144,7 @@ class Player:
         mi = self.micro
         gt = float(((self.data or {}).get("gameData") or {}).get("gameTime", 0.0))
         if (self.kit.support or self.jungle_state is not None or gt < 150 or mi.mode in FIGHT_MODES
+                or (sc.champ is not None and (sc.champ_dist or 9e9) < 1000)
                 or now - getattr(self, "_ward_t", 0.0) < 60 or not view.hud.items_ready.get(6)
                 or not any(int(i.get("slot", -1)) == 6 and "ward" in str(i.get("displayName", "")).lower() for i in inp.items)):
             return False
