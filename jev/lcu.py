@@ -4,6 +4,7 @@ same interface the client's own UI uses."""
 from __future__ import annotations
 
 import base64
+import random
 import time
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,37 @@ def find_lockfile() -> Path | None:
     for p in root.rglob("lockfile"):
         return p
     return None
+
+
+# Bot champions by the role they play. The lobby used to fill roles with the first nine bots in
+# the client's list, the same lineup every game, and Galio as our jungler never left base (level 1
+# with 0 CS at 12:00, g15): 4 v 5. Allies take the first available per role; enemies a random one.
+ROLE_BOTS: dict[str, list[int]] = {
+    "TOP": [86, 122, 54, 75, 36, 14, 23, 875, 98, 82, 6],                # Garen, Darius, Malphite, Nasus, Mundo, Sion, Tryndamere, Sett, Shen, Mordekaiser, Urgot
+    "JUNGLE": [9, 11, 19, 32, 5, 56, 120, 254, 113, 876, 77],            # Fiddlesticks, Master Yi, Warwick, Amumu, Xin Zhao, Nocturne, Hecarim, Vi, Sejuani, Lillia, Udyr
+    "MIDDLE": [1, 103, 99, 63, 90, 45, 38, 105, 115, 34, 127, 4],        # Annie, Ahri, Lux, Brand, Malzahar, Veigar, Kassadin, Fizz, Ziggs, Anivia, Lissandra, TF
+    "BOTTOM": [22, 51, 21, 15, 18, 81, 222, 67, 202, 236],               # Ashe, Caitlyn, Miss Fortune, Sivir, Tristana, Ezreal, Jinx, Vayne, Jhin, Lucian
+    "UTILITY": [16, 37, 40, 267, 25, 89, 12, 53, 44, 201, 117],          # Soraka, Sona, Janna, Nami, Morgana, Leona, Alistar, Blitzcrank, Taric, Braum, Lulu
+}
+
+
+def pick_bots(available: list[int], slots: list[tuple[str, str]], rng: random.Random | None = None) -> list[int]:
+    """One bot champion per (team, position) slot, from those who play the role; any available
+    champion when a role list runs dry."""
+    rng = rng or random.Random()
+    avail = [a for a in available if a]
+    used: set[int] = set()
+    out = []
+    for team, pos in slots:
+        cands = [c for c in ROLE_BOTS.get(pos, []) if c in avail and c not in used]
+        if team != "100":
+            rng.shuffle(cands)
+        if not cands:
+            cands = [c for c in avail if c not in used]
+        cid = cands[0]
+        used.add(cid)
+        out.append(cid)
+    return out
 
 
 class LCU:
@@ -262,7 +294,7 @@ class LCU:
         yield f"{len(bots)} bot champions available"
         allies = [p for p in ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY") if p != position.upper()][:4]
         slots = [("100", p) for p in allies] + [("200", p) for p in ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY")]
-        for (team, pos), cid in zip(slots, bots):
+        for (team, pos), cid in zip(slots, pick_bots(bots, slots)):
             c, b = self.add_bot(cid, team, difficulty, pos)
             yield f"bot {cid} {team} {pos}: {c} {b if c >= 400 else ''}"
         c, b = self.start_champ_select()
