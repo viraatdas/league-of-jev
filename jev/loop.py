@@ -607,9 +607,11 @@ class Player:
         aspd = float(stats.get("attackSpeed", 0.7))
         q_rank = int(ap.get("abilities", {}).get("Q", {}).get("abilityLevel", 0))
         game_s = float((data.get("gameData") or {}).get("gameTime", 0.0))
+        e_rank = int(ap.get("abilities", {}).get("E", {}).get("abilityLevel", 0))
         sc = build_scene(view, minions, champs, ad, q_rank, game_s, now, config.GEOMETRY.champion_px,
                          aspd=aspd, move_speed=float(stats.get("moveSpeed", 345.0)),
-                         fwd=fwd)
+                         fwd=fwd, e_dmg=kit.e_minion_damage(e_rank, ad, int(ap.get("level", 1))))
+        mi.dash_ok = not getattr(self, "_near_enemy_tower", False)
         if kit.support:
             sc.killable_auto = []  # supports leave last hits to the carry
         self.scene = sc
@@ -1919,22 +1921,17 @@ class Player:
                 except (IndexError, ValueError):
                     pass
 
-        # Level-ups: Jev's level_up answer when it arrived after this level was reached (the brain
-        # is woken on every level change), otherwise the kit's order after a short wait.
+        # Level-ups: the kit's skill order, R at 6/11/16. Jev's pick put W at 2 and E at 6 (no R) in
+        # g29, and E came at level 4: no E+Q and no ultimate in lane.
         levels = {k: ap.get("abilities", {}).get(k, {}).get("abilityLevel", 0) for k in ("Q", "W", "E", "R")}
         level = int(ap.get("level", 1))
         if level != self._level_seen:
             self._level_seen, self._level_changed_at = level, now
-        if sum(levels.values()) < level and now - self.guards.last_level_t > 1.0:
-            d = self.decision
-            legal = legal_level_ups(level, levels)
-            if d is not None and d.level_up in legal and d.ts >= self._level_changed_at:
-                self.guards.last_level_t = now
-                m.level_ability(d.level_up)
-                self.log_lines.append(f"level {d.level_up} (Jev)")
-            elif now - self._level_changed_at > 1.5:
-                self.guards.last_level_t = now
-                m.level_up(levels)
+        if sum(levels.values()) < level and now - self.guards.last_level_t > 1.0 and now - self._level_changed_at > 0.3:
+            self.guards.last_level_t = now
+            ab = m.level_up(levels, legal_level_ups(level, levels))
+            if ab:
+                self.log_lines.append(f"level {ab} (rank {levels.get(ab, 0) + 1}, at level {level})")
 
         if me.get("isDead"):
             if self.phase != "dead":

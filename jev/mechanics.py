@@ -382,20 +382,28 @@ class Mechanics:
     def cancel_recall(self) -> None:
         self.recall_started = None
 
-    def level_up(self, ability_levels: dict[str, int]) -> str | None:
-        """Click the HUD chevron (works in the background); the key is used only when it can land."""
-        counts = {"Q": 0, "W": 0, "E": 0, "R": 0}
-        for ab in self.skill_order:
-            counts[ab] += 1
-            if ability_levels.get(ab, 0) < counts[ab]:
-                idx = ABILITY_INDEX[ab]
-                if self.ctl.keys_ok():
-                    self.ctl.press(self.kb.level(idx))
-                else:
-                    self.ctl.click(*self._pt(self.geo.level_chevrons[idx - 1]), "left")
-                self.last_action = f"level {ab}"
-                return ab
-        return None
+    def level_up(self, ability_levels: dict[str, int], legal: list[str] | None = None) -> str | None:
+        """The kit's skill order: R whenever it can take a point (6, 11, 16), else the first
+        ability the order has ahead of its rank, else the first legal one in Q E W order. A pick
+        the game refuses (Q to rank 3 at level 4) no longer blocks the point."""
+        if legal is None:
+            from jev.brain import legal_level_ups
+
+            legal = legal_level_ups(sum(ability_levels.values()) + 1, ability_levels)
+        if not legal:
+            return None
+        pick = "R" if "R" in legal else None
+        if pick is None:
+            counts = {"Q": 0, "W": 0, "E": 0, "R": 0}
+            for ab in self.skill_order:
+                counts[ab] += 1
+                if ability_levels.get(ab, 0) < counts[ab] and ab in legal:
+                    pick = ab
+                    break
+        if pick is None:
+            pick = next(a for a in ("Q", "E", "W", "R") if a in legal)
+        self.level_ability(pick)
+        return pick
 
     def shop_open(self) -> bool:
         """The shop is on screen (tab bar or SELL / UNDO templates). The earlier test, "a large flat

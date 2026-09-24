@@ -115,8 +115,7 @@ def legal_level_ups(level: int, ranks: dict[str, int]) -> list[str]:
 def question_pack(state: dict, role_text: str = "a Yasuo laner in the mid lane", support: bool = False) -> dict:
     """Strategic questions. Itemization is its own head (items.ShopBrain); its current plan
     arrives as state["shopping"] so the recall question can weigh what a trip home would buy.
-    `destination` (read when the intent is go_to) and `level_up` (asked only with an unspent
-    point) widen the action space to the whole map and the skill order."""
+    `destination` (read when the intent is go_to) widens the action space to the whole map."""
     pack = _core_pack(state, role_text, support)
     places = state.get("map_places")
     if places:
@@ -124,13 +123,7 @@ def question_pack(state: dict, role_text: str = "a Yasuo laner in the mid lane",
             instructions="If I leave my lane (intent go_to), where should I go?",
             criteria=places,
         )
-    me = state.get("me", {})
-    legal = legal_level_ups(int(me.get("level") or 1), dict(me.get("ability_levels") or {}))
-    if legal:
-        pack["level_up"] = Choice(
-            instructions=f"I have a skill point to spend. Which ability should I level up now, as {role_text}?",
-            criteria={a: f"Rank {int((me.get('ability_levels') or {}).get(a, 0)) + 1} of {a}" for a in legal},
-        )
+    # (No level_up question: the kit's skill order levels, R at 6/11/16. Jev's picks skipped R, g29.)
     return pack
 
 
