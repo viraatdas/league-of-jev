@@ -2028,10 +2028,23 @@ class Player:
         elif self.intent == "retreat":
             if not self._micro_step(data, ap, cs, now, standing=False, escaping=True):
                 if self.jungle_state is not None:
-                    # A jungler's way out is home through the jungle, not down the mid lane.
+                    # A jungler's way out is through the jungle, not down the mid lane: to our nearest
+                    # standing tower, or home when low. Walking to the fountain on every short retreat
+                    # cost Lee two minutes of camps by 25:00 (g23).
                     home = config.BLUE_FOUNTAIN if self.side == "ORDER" else config.RED_FOUNTAIN
-                    m.go_map(home, now, attack=False, every=0.8)
-                    m.last_action = "retreat: toward base"
+                    mm = self.mm_state
+                    safe = home
+                    if hp_pct >= 35 and mm is not None and mm.pos is not None:
+                        own = config.BLUE_TOWERS if self.side == "ORDER" else config.RED_TOWERS
+                        tag = "T1" if self.side == "ORDER" else "T2"
+                        dead = getattr(self, "_dead_turrets", set())
+                        from jev.lanes import LANE_TOWER_BASE
+                        alive = [own[b + k] for ln, b in LANE_TOWER_BASE.items() for k, num in enumerate((5, 4, 3))
+                                 if b + k < len(own) and f"Turret_{tag}_{LANE_LETTER[ln]}_{num:02d}_A" not in dead]
+                        if alive:
+                            safe = min(alive, key=lambda t: dist(mm.pos, t))
+                    m.go_map(safe, now, attack=False, every=0.8)
+                    m.last_action = "retreat: toward " + ("base" if safe == home else "our tower")
                 else:
                     m.retreat(move_speed, now)
         elif self.intent == "step_back":
