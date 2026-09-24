@@ -179,7 +179,10 @@ def run(champion: str = "yasuo", minutes: float = 18.0, tag: str = "", difficult
     result["score"] = report(log)
     _say("score:\n" + result["score"])
     time.sleep(5)
-    _say(f"client phase after: {clear_post_game(c)}")
+    try:
+        _say(f"client phase after: {clear_post_game(c)}")
+    except Exception as e:  # noqa: BLE001  a client read timeout after the game must not fail the session (g22)
+        _say(f"client phase after: unknown ({type(e).__name__})")
     c.close()
     return result
 
