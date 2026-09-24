@@ -1366,7 +1366,7 @@ class Player:
             near = sum(1 for a in allies if dist(a, pit) < 1500)
             if near >= 3:
                 return ("objective", pit, "baron with allies")
-        if gt >= 900 and len(allies) >= 3:
+        if gt >= 1200 and len(allies) >= 3:
             best = max(allies, key=lambda a: sum(1 for b in allies if dist(a, b) < 2500))
             group = [b for b in allies if dist(best, b) < 2500]
             if len(group) >= 3 and dist(mm.pos, best) > 2500:
@@ -1399,6 +1399,8 @@ class Player:
             foes = [o for o in mm.enemy_champions if dist(o, e) < 1500]
             if not friends or len(friends) + 1 < len(foes):
                 continue
+            if self.jungle_state is None and len(friends) < 2 and d > 2500:
+                continue  # a laner leaves the wave for a real fight, not every 1-on-1 across the map (CS 30 at 21:00, g26)
             score = d - 800 * len(friends)
             if best is None or score < best[0]:
                 best = (score, e, len(friends), len(foes))
