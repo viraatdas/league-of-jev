@@ -138,6 +138,7 @@ class Scene:
     champ_dist: float | None = None
     killable_auto: list[Track] = field(default_factory=list)
     killable_q: list[Track] = field(default_factory=list)
+    killable_e: list[Track] = field(default_factory=list)     # a dash through it kills it (Yasuo E)
     soon_killable: list[Track] = field(default_factory=list)   # one auto kills it within ~1.2 s: get in range now
     dash_toward: Track | None = None                          # minion to E through toward the champion
     dash_options: list[tuple[Track, float]] = field(default_factory=list)  # (minion, units gained toward champion)
@@ -160,7 +161,7 @@ def minion_roles(minions: list[Track], me_xy, fwd) -> dict[int, str]:
 
 
 def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float, q_rank: int, game_s: float, now: float, fallback_xy,
-                aspd: float = 0.7, move_speed: float = 345.0, fwd=None) -> Scene:
+                aspd: float = 0.7, move_speed: float = 345.0, fwd=None, e_dmg: float = 0.0) -> Scene:
     me_xy = (view.me.x, view.me.y) if view.me else fallback_xy
     sc = Scene(me_xy=me_xy, minions=minions, allies=len(view.allies("minion")), ally_champs=view.allies("champion"))
     sc.ready = dict(view.hud.ready)
@@ -206,6 +207,12 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
             sc.killable_auto.append(tr)
         if tr not in sc.killable_auto and tr.hp_rate(now) < 0 and 0 < tr.predict_hp(now, 1.6) * hp_max <= ad * 1.1:
             sc.soon_killable.append(tr)
+        if e_dmg and d <= VC.e_range and tr.e_marked_until <= now:
+            at_e = tr.predict_hp(now, FAST.lasthit_lead_s + 0.15) * hp_max
+            if 0 < at_e <= e_dmg and now_abs - e_dmg <= FAST.forecast_cap:
+                tr.at_e = at_e
+                tr.was_killable = True
+                sc.killable_e.append(tr)
         at_q = tr.predict_hp(now, FAST.lasthit_lead_s + FAST.q_cast_s) * hp_max
         if q_rank and d <= VC.q_range and 0 < at_q <= q_dmg and now_abs - q_dmg <= FAST.forecast_cap:
             tr.at_q = at_q
@@ -264,6 +271,7 @@ class Micro:
         self.at_camp = False                                   # the loop sets it while clearing a jungle camp
         self.fight_owned_until = 0.0                           # the fight head owns the mode until then
         self.dodge_lines = True                                # the lane opponent throws line skillshots (sidestep)
+        self.dash_ok = True                                    # farm dashes allowed (not near their tower)
         self.trade_cooldown_until = 0.0                        # no new trade before then (one just ended)
         self.flash_in_ok = False                               # the fight head says a Flash-in kill is on
 

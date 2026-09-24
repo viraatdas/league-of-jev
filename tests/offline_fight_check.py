@@ -217,3 +217,64 @@ mi.farm_step(sc, now + 0.01, 0.7)
 print("after a move:", mi.last_action)
 assert mi.last_action.startswith("last hit"), mi.last_action
 print("FIGHT OK (order gate)")
+
+# E last hit: a minion 350 units away that the dash kills, the auto on cooldown; another minion
+# next to the landing spot takes the circle Q (a stack).
+y = Yasuo()
+y.q.hud = False
+mi, log = micro()
+mi.hp_pct = 90.0
+mi.last_attack = now - 0.5  # auto on cooldown, past its wind-up
+low = track(unit("minion", 350, 0, 0.15), now)
+other = track(unit("minion", 480, 40, 0.9), now)
+sc = scene(None, [low, other], "QE")
+sc.allies = 3
+sc.killable_e = [low]
+assert y.continuous(mi, sc, now + 0.05, 0.7, "farm", False)
+print("E last hit:", mi.last_action, "| queued:", len(mi._later))
+assert mi.last_action == "E+Q last hit" and len(mi._later) == 1
+# The dash would land next to a healthier champion: no E.
+y = Yasuo()
+y.q.hud = False
+mi, log = micro()
+mi.hp_pct = 50.0
+mi.last_attack = now - 0.5
+ch = track(unit("champion", 800, 0, 0.9), now)
+sc = scene(ch, [low], "E")
+sc.allies = 3
+sc.killable_e = [low]
+y.continuous(mi, sc, now + 0.05, 0.7, "farm", False)
+print("E last hit toward a healthier champion:", mi.last_action)
+assert "E" not in mi.last_action.split(" ")[0]
+print("FIGHT OK (E last hit)")
+
+# Fight gap-close through a minion that lands on her: Q in the dash.
+y = Yasuo()
+y.q.hud = False
+mi, log = micro()
+mi.hp_pct = 90.0
+mi.set_mode("all_in", now)
+ch = track(unit("champion", 650, 0, 0.6), now)
+m = track(unit("minion", 300, 0, 0.9), now)
+sc = scene(ch, [m], "QE")
+sc.dash_options = [(m, 450.0)]
+y.fight(mi, sc, now, 0.7, "all_in")
+print("gap close:", mi.last_action, "| queued:", len(mi._later))
+assert mi.last_action == "all_in: E+Q through a minion toward the champion" and len(mi._later) == 1
+print("FIGHT OK (gap close EQ)")
+
+# Level-ups follow the kit's order: E at 2, R at 6/11/16; g29's level-6 state (Jev had spent the
+# points on W and E) takes R; a capped pick falls through to the next legal one.
+from jev.brain import legal_level_ups
+from jev.mechanics import Mechanics
+m = Mechanics(Controller(dry_run=True, log=lambda s: None), Screen(), keybinds.load(), "ORDER", skill_order=Yasuo().skill_order)
+lv, seq = {"Q": 0, "W": 0, "E": 0, "R": 0}, ""
+for level in range(1, 19):
+    ab = m.level_up(lv, legal_level_ups(level, lv))
+    lv[ab] += 1
+    seq += ab
+print("Yasuo levels:", seq)
+assert seq[1] == "E" and seq[5] == seq[10] == seq[15] == "R"
+assert m.level_up({"Q": 3, "W": 1, "E": 1, "R": 0}, legal_level_ups(6, {"Q": 3, "W": 1, "E": 1, "R": 0})) == "R"
+assert m.level_up({"Q": 2, "W": 1, "E": 0, "R": 0}, legal_level_ups(4, {"Q": 2, "W": 1, "E": 0, "R": 0})) == "E"
+print("FIGHT OK (level-ups)")

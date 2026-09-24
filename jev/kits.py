@@ -94,6 +94,10 @@ class Kit:
         """What reaches from here and nothing that walks or dashes in; farm otherwise."""
         return self.poke_auto(mi, sc, now, aspd) or self.continuous(mi, sc, now, aspd, "farm", False)
 
+    def e_minion_damage(self, e_rank: int, ad: float, level: int) -> float:
+        """Damage of a targeted E on a minion (0: the kit has no such E)."""
+        return 0.0
+
     def poke_auto(self, mi: Micro, sc: Scene, now: float, aspd: float) -> bool:
         """An auto on the champion when she walks into my reach, a last hit first. Poke only threw
         skills, and Q was on cooldown from last hits in 92 of the 165 reads where Jev wanted a
@@ -380,6 +384,86 @@ class Yasuo(Kit):
             "R": "castable (enemy airborne)" if sc.r_lit else "not castable",
         }
 
+    def e_minion_damage(self, e_rank: int, ad: float, level: int) -> float:
+        if not e_rank:
+            return 0.0
+        bonus = max(0.0, ad - (60.0 + 3.0 * (level - 1)))  # base AD 60 + 3 per level (approximate)
+        return 0.85 * (FAST.e_base[min(e_rank, 5) - 1] + FAST.e_bonus_ad * bonus)
+
+    @staticmethod
+    def _landing(sc: Scene, tr) -> tuple[float, float]:
+        """Where E through `tr` ends: a fixed dash length from me, through the unit."""
+        mx, my = sc.me_xy
+        dx, dy = tr.unit.x - mx, tr.unit.y - my
+        n = math.hypot(dx, dy) or 1.0
+        r = VC.e_range * VC.px_per_unit
+        return mx + dx / n * r, my + dy / n * r
+
+    @staticmethod
+    def _dash_safe(mi: Micro, sc: Scene, land: tuple[float, float]) -> bool:
+        """A farm dash that does not end next to a healthier champion, alone in their wave, or near
+        their tower."""
+        if not mi.dash_ok:
+            return False
+        ch = sc.champ
+        if ch is not None:
+            if mi.hp_pct < 35:
+                return False
+            if (math.hypot(ch.unit.x - land[0], ch.unit.y - land[1]) / VC.px_per_unit < 500
+                    and mi.hp_pct < ch.unit.hp * 100 + 10):
+                return False
+        crowd = sum(1 for t in sc.minions if math.hypot(t.unit.x - land[0], t.unit.y - land[1]) / VC.px_per_unit < 400)
+        return not (sc.allies == 0 and crowd >= 3 and mi.hp_pct < 70)
+
+    def _eq_after(self, mi: Micro, sc: Scene, land: tuple[float, float], now: float, fight: bool, skip=None) -> bool:
+        """Q during the dash (the circle around the landing spot) when it lands on something worth
+        it: the champion in a fight; in lane, another minion (a stack) and her only when I am ahead.
+        The tornado is kept for her. E+Q happened only inside trades before (0 in g28-g29)."""
+        if not sc.ready.get("Q"):
+            return False
+        r = FAST.eq_radius * VC.px_per_unit
+        inside = lambda u: math.hypot(u.x - land[0], u.y - land[1]) <= r
+        champ_in = sc.champ is not None and inside(sc.champ.unit)
+        q3 = self.q.q3(now)
+        if fight:
+            if not champ_in:
+                return False  # the thrust after landing reaches her; the circle would not
+        else:
+            if q3 and not champ_in:
+                return False
+            if champ_in and mi.hp_pct < sc.champ.unit.hp * 100 + 10:
+                return False  # hitting her turns her wave on me: only when I win the exchange
+            if not champ_in and not any(inside(t.unit) for t in sc.minions if t is not skip):
+                return False
+        mi.later(FAST.eq_delay_s, lambda: mi.ctl.press(mi.kb.ability(1)))
+        self.q.cast(True, now)
+        if q3:
+            self.tornado_at = now + 0.15
+        if champ_in:
+            self.burst_at = now
+        return True
+
+    def _e_lasthit(self, mi: Micro, sc: Scene, now: float, aspd: float) -> bool:
+        """E through a minion the dash kills, when an auto cannot take it now (on cooldown, or it
+        needs a walk): Yasuo's usual last hit, and with Q up the circle Q in the dash stacks Q."""
+        if not sc.ready.get("E") or not sc.killable_e or not mi._can_order(now) or mi.in_windup(now, aspd):
+            return False
+        auto_now = mi.attack_ready(now, aspd)
+        for tr in sc.killable_e:
+            if auto_now and tr in sc.killable_auto and sc.dist(tr) <= VC.auto_range + 40:
+                continue  # the auto takes it
+            land = self._landing(sc, tr)
+            if not self._dash_safe(mi, sc, land):
+                continue
+            mi.cast(3, tr.unit.x, tr.unit.y)
+            tr.e_marked_until = now + 10.0
+            mi.attacked_ids[tr.id] = now
+            eq = self._eq_after(mi, sc, land, now, fight=False, skip=tr)
+            mi._ordered(now, "E+Q last hit" if eq else "E last hit")
+            mi.lh_pending.append((now, f"E-{getattr(tr, 'role', '') or '?'}", tr.unit.hp))
+            return True
+        return False
+
     def continuous(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, pushing: bool) -> bool:
         if (pushing and mode in ("farm", "push") and sc.champ is None and sc.ready.get("Q") and not sc.killable_q
                 and not sc.killable_auto and mi._can_order(now)):  # a last hit first, the wave after
@@ -410,6 +494,8 @@ class Yasuo(Kit):
             mi._ordered(now, "Q last hit")
             mi.lh_pending.append((now, f"Q-{getattr(tq, 'role', '') or '?'}", tq.unit.hp))
             mi.last_exec = {"name": "Q last hit", "what": "Q last hit", "ts": now, "target": mi._pt(tq.unit.x, tq.unit.y), "point": None}
+            return True
+        if mode in ("farm", "push") and self._e_lasthit(mi, sc, now, aspd):
             return True
         return super().continuous(mi, sc, now, aspd, mode, pushing)
 
@@ -494,9 +580,11 @@ class Yasuo(Kit):
             return True
         if rdy.get("E") and d > VC.auto_range + 120 and sc.dash_options and (mode == "all_in" or rdy.get("Q")) and not crowded:
             tr = sc.dash_options[0][0]
+            land = self._landing(sc, tr)
             mi.cast(3, tr.unit.x, tr.unit.y)
             tr.e_marked_until = now + 10.0
-            mi._ordered(now, f"{mode}: E through a minion toward the champion")
+            eq = self._eq_after(mi, sc, land, now, fight=True)
+            mi._ordered(now, f"{mode}: E{'+Q' if eq else ''} through a minion toward the champion")
             return True
         return self.hit_or_chase(mi, sc, now, aspd, mode)
 

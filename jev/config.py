@@ -132,6 +132,9 @@ class Fast:
     caster_hp: tuple[float, float] = (296.0, 8.0)
     q_base: tuple[float, ...] = (20.0, 45.0, 70.0, 95.0, 120.0)  # plus 105% AD (approximate)
     q_ad: float = 1.05
+    e_base: tuple[float, ...] = (60.0, 70.0, 80.0, 90.0, 100.0)  # Yasuo E, magic, plus 20% bonus AD (approximate)
+    e_bonus_ad: float = 0.2
+    eq_radius: float = 220.0           # Yasuo's circle Q during the dash
 
 
 GEOMETRY = Geometry()
