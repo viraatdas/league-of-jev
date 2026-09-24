@@ -1698,7 +1698,13 @@ class Player:
                             time.sleep(0.4)
                         if not self.ctl.keys_ok():
                             self.paused = True
-                            perception = Perception(position="paused: game window not active")
+                            from jev.control import system_prompt_on_screen
+
+                            prompt = system_prompt_on_screen()
+                            if prompt and t0 - getattr(self, "_prompt_logged", 0.0) > 60:
+                                self._prompt_logged = t0
+                                self.log_lines.append(f"input paused: a system prompt ({prompt}) is on screen; not clicking it")
+                            perception = Perception(position=f"paused: {prompt} prompt on screen" if prompt else "paused: game window not active")
                             self.state = build_state(data, perception, self.role)
                             live.update(self._table(perception))
                             self._logline(perception, t0)

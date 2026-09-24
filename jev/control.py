@@ -86,6 +86,36 @@ def session_on_console() -> bool:
         return True
 
 
+# Processes that draw macOS permission prompts and password sheets over whatever app is in front.
+SYSTEM_PROMPT_OWNERS = ("UserNotificationCenter", "SecurityAgent", "CoreServicesUIAgent", "universalAccessAuthWarn",
+                        "coreautha", "tccd")
+_prompt_cache: tuple[float, str | None] = (0.0, None)
+
+
+def system_prompt_on_screen() -> str | None:
+    """The owner of a system permission prompt drawn over the screen, else None (cached 0.5 s).
+    A "python3.14 wants access to control Codex Computer Use" prompt sat over the game with its
+    Allow button where the harness clicks around the champion: no input may go out while one is up."""
+    global _prompt_cache
+    now = time.time()
+    if now - _prompt_cache[0] < 0.5:
+        return _prompt_cache[1]
+    found = None
+    try:
+        wins = Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID) or []
+        for w in wins:
+            owner = str(w.get("kCGWindowOwnerName", ""))
+            if owner in SYSTEM_PROMPT_OWNERS and int(w.get("kCGWindowLayer", 0)) >= 0:
+                b = w.get("kCGWindowBounds", {}) or {}
+                if float(b.get("Width", 0)) > 60 and float(b.get("Height", 0)) > 60:
+                    found = owner
+                    break
+    except Exception:  # noqa: BLE001  no window list: assume none
+        found = None
+    _prompt_cache = (now, found)
+    return found
+
+
 def game_is_frontmost() -> bool:
     name = frontmost_app_name().lower()
     if name:
@@ -202,6 +232,9 @@ class Controller:
             if self.pid is not None:
                 return True
         if self.require_frontmost and not game_is_frontmost():
+            self.blocked += 1
+            return False
+        if system_prompt_on_screen():
             self.blocked += 1
             return False
         return True
@@ -330,8 +363,8 @@ class Controller:
 
     # -- League verbs ------------------------------------------------------------
     def keys_ok(self) -> bool:
-        """Input reaches the game only while it is the active app."""
-        return not self.dry_run and game_is_frontmost()
+        """Input reaches the game only while it is the active app and no system prompt is up."""
+        return not self.dry_run and game_is_frontmost() and not system_prompt_on_screen()
 
     def move_to(self, x: float, y: float) -> None:
         """Right click = move / attack the unit under the cursor."""
