@@ -1361,8 +1361,8 @@ class Player:
                 self._join, self._join_next = None, now + 6.0
                 return None
             return ("objective", j["pt"], "join the fight")
-        if gt < 240 or hp < 55 or now < getattr(self, "_join_next", 0.0):
-            return None
+        if gt < 240 or hp < 55 or now < getattr(self, "_join_next", 0.0) or self._levels_behind() >= 2:
+            return None  # (two levels behind their team, a skirmish is theirs: Lee died walking into them, g21)
         best = None
         for e in mm.enemy_champions:
             d = dist(mm.pos, e)
