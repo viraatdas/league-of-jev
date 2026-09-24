@@ -1429,7 +1429,10 @@ class Player:
             # 1.5 s before the gank is called off (it started with "2 of us" and ended the next second
             # on "0 of us", g25).
             g["bad_since"] = (g.get("bad_since") or now) if bad else None
-            why = ("time" if now > g["until"] else "lost them" if now - g["seen"] > 5 else "low HP" if hp < 40
+            # Out of sight on the way is normal (they are in fog until we bring vision): lost only when
+            # we are there and still see nobody (ganks were dropped mid-walk as "lost them", g25).
+            lost = now - g["seen"] > 5 and dist(mm.pos, g["pt"]) < 1200
+            why = ("time" if now > g["until"] else "lost them" if lost else "low HP" if hp < 40
                    else f"{many} of them, {friends} of us" if bad and now - g["bad_since"] >= 1.5 else "")
             if why:
                 self.log_lines.append(f"gank {g['lane']}: over ({why})")
