@@ -858,7 +858,7 @@ class Player:
             if now - mi.attacked_ids.get(tr.id, 0.0) < 3.0:
                 audit["tried"] += 1
             elif getattr(tr, "was_killable", False):
-                audit["killable, not taken"] += 1
+                audit[f"killable, not taken ({getattr(tr, 'block', '?')}; {self.micro.mode if self.micro else '?'})"] += 1
             else:
                 audit[f"never killable {'<300' if d < 300 else '300-600' if d < 600 else '600-800'}u"] += 1
         if mi.attacked_ids and len(mi.attacked_ids) > 200:

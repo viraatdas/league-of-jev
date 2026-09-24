@@ -200,6 +200,7 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
         if d <= VC.auto_range + 380 and 0 < at_hit <= ad * FAST.lasthit_margin and now_abs - ad <= FAST.forecast_cap:
             tr.at_hit = at_hit
             tr.was_killable = True
+            tr.block = "farm step not reached"  # farm_step overwrites this when it gets to the minion
             sc.killable_auto.append(tr)
         if tr not in sc.killable_auto and tr.hp_rate(now) < 0 and 0 < tr.predict_hp(now, 1.6) * hp_max <= ad * 1.1:
             sc.soon_killable.append(tr)
@@ -364,7 +365,10 @@ class Micro:
         Returns False when there is nothing on screen to farm (macro movement takes over)."""
         if not sc.minions:
             return False
-        if sc.killable_auto and self.attack_ready(now, attack_speed):
+        ready = self.attack_ready(now, attack_speed)
+        for t in sc.killable_auto:
+            t.block = "auto on cooldown" if not ready else ("in wind-up" if self.in_windup(now, attack_speed) else "not first pick")
+        if sc.killable_auto and ready:
             self.attack(sc.killable_auto[0], now, f"last hit ({int(sc.killable_auto[0].unit.hp * 100)}%)")
             self.lh_pending.append((now, f"auto-{getattr(sc.killable_auto[0], 'role', '') or '?'}", sc.killable_auto[0].unit.hp))
             return True
