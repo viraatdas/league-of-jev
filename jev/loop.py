@@ -664,7 +664,15 @@ class Player:
         if not standing and mi.mode not in FIGHT_MODES:
             return False
         before = mi.orders
-        ok = kit.step(mi, sc, now, aspd, mi.mode, self.intent in ("push_tower", "objective"))
+        if sc.champ is not None:
+            self._champ_seen_t = now
+        # Free push: their champion has not been on screen for 3 s, our wave is here, I am healthy and
+        # not under their tower. Waiting for exact last hits paid 2.3 CS a minute in g17 (killable
+        # minions sat at 7-10% for a second); hitting the wave outright is more gold against bots.
+        push_free = (self.intent == "farm" and self.jungle_state is None and not kit.support and sc.champ is None
+                     and now - getattr(self, "_champ_seen_t", 0.0) > 3.0 and mi.hp_pct >= 45 and len(sc.minions) >= 2
+                     and sc.allies > 0 and not getattr(self, "_near_enemy_tower", False))
+        ok = kit.step(mi, sc, now, aspd, mi.mode, self.intent in ("push_tower", "objective") or push_free)
         if mi.orders > before and mi.last_action.startswith("last hit"):
             mi.reacted("lasthit", view.ts)
         return ok

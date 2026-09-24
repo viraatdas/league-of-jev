@@ -185,3 +185,13 @@ sc = scene(track(unit("champion", 700, 0, 0.5), now + 0.4), [], "R", r_lit=True)
 assert y.reflex(mi, sc, now + 0.4, {})
 assert "R reflex" in mi.last_action and mi.mode == "all_in", (mi.last_action, mi.mode)
 print("FIGHT OK (q3 poke)")
+
+# Pushing with no champion in view: Q into the wave.
+y = Yasuo()
+mi, log = micro()
+wave = [track(unit("minion", 300 + 30 * k, 20 * k, 0.9 - 0.1 * k), now) for k in range(4)]
+sc = scene(None, wave, "Q")
+assert y.continuous(mi, sc, now, 0.7, "farm", True)
+print("push:", mi.last_action)
+assert mi.last_action.startswith("push: Q")
+print("FIGHT OK (push)")

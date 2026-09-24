@@ -360,6 +360,17 @@ class Yasuo(Kit):
         }
 
     def continuous(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, pushing: bool) -> bool:
+        if (pushing and mode in ("farm", "push") and sc.champ is None and sc.ready.get("Q") and not sc.killable_q
+                and mi._can_order(now)):
+            # Pushing: Q into the wave on cooldown (the tornado too: it hits the whole line).
+            inq = [t for t in sc.minions if sc.dist(t) <= (VC.q3_range * 0.8 if self.q.q3(now) else VC.q_range)]
+            if inq:
+                tq = min(inq, key=lambda t: t.unit.hp)
+                was_q3 = self.q.q3(now)
+                mi.cast(1, tq.unit.x, tq.unit.y)
+                self.q.cast(True, now)
+                mi._ordered(now, "push: Q3 the wave" if was_q3 else "push: Q the wave")
+                return True
         # Farming Yasuo uses Q on cooldown on minions it can kill (standard play: CS and Q stacks).
         if mode in ("farm", "push") and sc.ready.get("Q") and sc.killable_q and mi._can_order(now):
             tq = sc.killable_q[0]
