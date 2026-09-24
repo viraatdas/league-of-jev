@@ -41,3 +41,15 @@ p._tick(data, t + 2)
 print("arrived:", p.lane.name, "|", p.log_lines[-1])
 assert p.lane.name == "mid"
 print("LANES OK")
+
+# Our outer mid tower falls: retreats go behind the inner one.
+from jev.loop import Player as _P
+p = _P(dry_run=True)
+p.side = "ORDER"
+p._switch_lane("mid")
+before = p.lane.own_tower
+p._dead_turrets = {"Turret_T1_C_05_A"}
+p._rehome_own_tower()
+print("own tower", round(before, 3), "->", round(p.lane.own_tower, 3))
+assert p.lane.own_tower < before - 0.05
+print("LANES OK (towers)")

@@ -1375,7 +1375,30 @@ class Player:
             self.mech.lane = self.lane
             self.mech.nav.lane_units = self.lane.L
         self.dead_enemy_mid_towers = set()
+        self._rehome_own_tower()
         self.log_lines.append(f"lane -> {name}")
+
+    def _rehome_own_tower(self) -> None:
+        """Our tower in this lane is the frontmost one still standing: retreats, step-backs and holds
+        go behind it. With the outer tower gone, Yasuo "retreated" to its ruins in the middle of the
+        enemy wave and died there, three times (g16)."""
+        from jev.lanes import LANE_TOWER_BASE
+
+        ln = self.lane
+        own = config.BLUE_TOWERS if self.side == "ORDER" else config.RED_TOWERS
+        tag = "T1" if self.side == "ORDER" else "T2"
+        dead = getattr(self, "_dead_turrets", set())
+        base = LANE_TOWER_BASE[ln.name]
+        for k, num in enumerate((5, 4, 3)):
+            if f"Turret_{tag}_{LANE_LETTER[ln.name]}_{num:02d}_A" not in dead:
+                prog = ln.project(own[base + k])[0] + ln.frac(200)
+                break
+        else:
+            prog = ln.frac(1800)  # the nexus towers: just outside our base
+        if abs(prog - ln.own_tower) > 1e-6:
+            ln.own_tower = prog
+            ln.max_advance = min(ln.max_advance, ln.center - ln.frac(450))
+            self.log_lines.append(f"towers: our {ln.name} line is now at {prog:.0%} of the lane")
 
     def _metrics(self) -> dict:
         """Outcome signals for the decision log."""
@@ -1633,7 +1656,9 @@ class Player:
             tk = str(e.get("TurretKilled", ""))
             if e.get("EventName") == "TurretKilled" and tk:
                 self._dead_turrets = getattr(self, "_dead_turrets", set())
-                self._dead_turrets.add(tk)
+                if tk not in self._dead_turrets:
+                    self._dead_turrets.add(tk)
+                    self._rehome_own_tower()
             if e.get("EventName") == "TurretKilled" and f"Turret_{enemy_tag}_{LANE_LETTER[self.lane.name]}_" in tk:
                 try:
                     self.dead_enemy_mid_towers.add(int(tk.split("_")[3]))
