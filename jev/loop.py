@@ -733,8 +733,11 @@ class Player:
         their = sorted(recent)[len(recent) // 2] if len(recent) >= 3 else None  # half-second median: one misread is not a window
         allies = len(sc.ally_champs)
         tower = self._own_tower_near(ch, sc)
+        behind = self._levels_behind()
         if (tower is not None and their is not None and d < 650 and mi.hp_pct >= 30 and sc.enemy_champs <= allies + 1
-                and mi.hp_pct >= their * 100 - 35 and mi.mode != "all_in"):
+                and mi.hp_pct >= their * 100 - 35 and mi.mode != "all_in" and (behind < 2 or their < 0.5)):
+            # (Two levels behind their team, the tower does not make up for it: Lee at level 8 went all in
+            # on a full enemy under our tower and died in five seconds, g21.)
             # She is inside our tower's range next to me: the tower shoots her once she hits me.
             # Intermediate bots dive and chase under towers; that fight is ours.
             self._commit(ch, mi, now, f"under our tower ({their * 100:.0f}% at {d:.0f}u, me {mi.hp_pct:.0f}%), all in")
@@ -781,6 +784,14 @@ class Player:
                 and now - dd.ts < 2.0 and mi.mode != "back_off"):
             mi.set_mode("all_in", now)
             self.log_lines.append(f"fight: strategy says all in (p={dd.intent_confidence:.2f})")
+
+    def _levels_behind(self) -> float:
+        """Their team's average level minus mine (0 when unknown)."""
+        data = self.data or {}
+        me = find_me(data) or {}
+        mine = float((data.get("activePlayer") or {}).get("level") or me.get("level") or 0)
+        theirs = [float(p.get("level") or 0) for p in data.get("allPlayers", []) if p.get("team") and p.get("team") != me.get("team")]
+        return (sum(theirs) / len(theirs) - mine) if theirs and mine else 0.0
 
     def _own_tower_near(self, ch, sc):
         """Our standing tower whose range covers the enemy champion, or None. Her map position is
