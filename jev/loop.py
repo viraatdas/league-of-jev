@@ -354,10 +354,16 @@ class Player:
         return x0 + loc[0] + w / 2, y0 + loc[1] + h / 2
 
     def _shop_panel_open(self, frame) -> bool:
-        """The shop is on screen (its tab bar or its SELL / UNDO buttons)."""
-        from jev.uiscan import shop_visible
+        """The shop is on screen (its tab bar or its SELL / UNDO buttons), or its corner anywhere
+        (a dragged panel; its X is then clicked where it is, not where it belongs)."""
+        from jev.uiscan import shop_corner, shop_visible
 
-        return shop_visible(frame)
+        if shop_visible(frame):
+            self._shop_x_at = None
+            return True
+        x, y, score = shop_corner(frame)
+        self._shop_x_at = (x + 24, y + 18) if score >= 0.8 else None
+        return score >= 0.8
 
     def _close_stray_shop(self, now: float) -> bool:
         """A shop left open outside a purchase swallows every click and the level-up keys (Lee Sin
@@ -372,8 +378,9 @@ class Player:
         self._shop_closed_t = now
         g = config.GEOMETRY
         with self.ctl.slow():
-            if g.shop_close:
-                self.ctl.click(*self.screen.to_points(*g.shop_close), "left")
+            x_at = getattr(self, "_shop_x_at", None) or g.shop_close
+            if x_at:
+                self.ctl.click(*self.screen.to_points(*x_at), "left")
             else:
                 self.ctl.press(self.kb.shop)
         self._shop_seen = False

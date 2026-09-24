@@ -411,6 +411,26 @@ class Mechanics:
         except Exception:  # noqa: BLE001
             return False
 
+    def _shop_home(self) -> str:
+        """Put a dragged shop panel back where the click geometry expects it (its title bar dragged
+        by the offset of its top-right corner). Returns a note."""
+        try:
+            from jev.uiscan import SHOP_CORNER_AT, shop_corner
+
+            x, y, score = shop_corner(self.screen.grab())
+        except Exception:  # noqa: BLE001
+            return "shop position: no read"
+        if score < 0.8:
+            return "shop position: not found"
+        dx, dy = SHOP_CORNER_AT[0] - x, SHOP_CORNER_AT[1] - y
+        if abs(dx) + abs(dy) <= 12:
+            return "shop position: ok"
+        # Grab the title bar 60 px left of the corner template, a few px below its top edge.
+        self.ctl.drag(*self._pt((x - 60, y + 12)), *self._pt((x - 60 + dx, y + 12 + dy)))
+        time.sleep(0.5)
+        self.last_action = f"shop: panel was off by ({dx:+d}, {dy:+d}), dragged back"
+        return self.last_action
+
     def shop(self, item: str, items_now=None) -> bool:
         with self.ctl.slow():
             # Stand still first: an earlier move order walks the champion out of shop range while the
@@ -458,6 +478,7 @@ class Mechanics:
         else:
             return False
         time.sleep(0.9)
+        self._shop_home()
         ok = False
         low = item.lower()
         card = None

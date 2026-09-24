@@ -236,6 +236,23 @@ class Controller:
         time.sleep(self._hold_s(hold_ms))
         self._post(CGEventCreateMouseEvent(None, up, (x, y), btn))
 
+    def drag(self, x0: float, y0: float, x1: float, y1: float, steps: int = 12) -> None:
+        """Left-button drag from (x0, y0) to (x1, y1) (moving a UI panel by its title bar)."""
+        self.log(f"drag({x0:.0f},{y0:.0f} -> {x1:.0f},{y1:.0f})")
+        self.move(x0, y0)
+        if not self._allowed():
+            return
+        time.sleep(0.06)
+        self._post(CGEventCreateMouseEvent(None, kCGEventLeftMouseDown, (x0, y0), kCGMouseButtonLeft))
+        time.sleep(0.08)
+        for k in range(1, steps + 1):
+            x, y = x0 + (x1 - x0) * k / steps, y0 + (y1 - y0) * k / steps
+            self._post(CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseDragged, (x, y), kCGMouseButtonLeft))
+            time.sleep(0.02)
+        time.sleep(0.08)
+        self._post(CGEventCreateMouseEvent(None, kCGEventLeftMouseUp, (x1, y1), kCGMouseButtonLeft))
+        self._pos = (x1, y1)
+
     def double_click(self, x: float, y: float) -> None:
         with self.slow():
             self.click(x, y, "left")

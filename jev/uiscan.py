@@ -31,3 +31,19 @@ def _score(frame: np.ndarray, name: str, y0: int, y1: int, x0: int, x1: int) -> 
 
 def shop_visible(frame: np.ndarray) -> bool:
     return _score(frame, "shop_tabs.png", 140, 240, 340, 760) > 0.8 or _score(frame, "shop_sell_undo.png", 790, 880, 360, 640) > 0.8
+
+
+SHOP_CORNER_AT = (1316, 166)  # where the shop's top-right corner template sits in its normal place
+
+
+def shop_corner(frame: np.ndarray) -> tuple[int, int, float]:
+    """Where the shop's top-right corner (gold border and close X) is on screen, anywhere, with the
+    match score. The panel can be dragged: in g16 it sat 1068 px left of its place, every search
+    click missed, and nothing could be bought for the rest of the game. ~15 ms."""
+    t = _tpl("shop_corner.png")
+    if t is None:
+        return (0, 0, 0.0)
+    y0 = 60
+    r = cv2.matchTemplate(_gray(frame[y0:1000, :]), t, cv2.TM_CCOEFF_NORMED)
+    _, mx, _, loc = cv2.minMaxLoc(r)
+    return (int(loc[0]), int(loc[1]) + y0, float(mx))

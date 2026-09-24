@@ -26,3 +26,13 @@ got = units("monster_outline")
 print("outline:", got)
 assert not [u for u in got if u[0] == "champion"], got
 print("VISION OK")
+
+# The shop's corner is found wherever the panel was dragged.
+from jev.uiscan import SHOP_CORNER_AT, shop_corner
+for name, want in (("shop_home", SHOP_CORNER_AT), ("shop_dragged", (249, 349))):
+    x, y, sc = shop_corner(cv2.imread(f"tests/fixtures/frames/{name}.jpg"))
+    print(name, (x, y), round(sc, 2))
+    assert sc >= 0.8 and abs(x - want[0]) + abs(y - want[1]) <= 4, (x, y, sc)
+x, y, sc = shop_corner(cv2.imread("tests/fixtures/frames/level10_urgot_kayle.jpg"))
+assert sc < 0.8, sc
+print("SHOP CORNER OK")
