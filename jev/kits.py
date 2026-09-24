@@ -419,7 +419,9 @@ class Yasuo(Kit):
             self.tornado_at = now
             mi._ordered(now, f"{mode}: Q3 tornado")
             return True
-        crowded = self.minions_near_champ(sc) >= 3 and not (mode == "all_in" and ch.unit.hp < 0.35)
+        # Her wave matters for a trade (its aggro outlasts the exchange), not for a committed all in
+        # while I am healthy: holding E there turned all ins into auto chases she walked out of (g16-g17).
+        crowded = self.minions_near_champ(sc) >= 3 and not (mode == "all_in" and (ch.unit.hp < 0.35 or mi.hp_pct >= 50))
         if crowded and mode == "trade" and not (rdy.get("Q") and d <= VC.q_range + 30) and not (q3 and rdy.get("Q")):
             mi.set_mode("farm", now)  # she stands in her wave and nothing reaches her from here: no trade
             mi.trade_cooldown_until = now + 4.0
