@@ -159,3 +159,18 @@ p.champ_tracker.tracks = {10: flick}
 p.micro.last_order = 0
 assert not p._execute(p.kit, p.micro, sc, now + 0.01)
 print("EXECUTE OK")
+
+# Join a fight: two of ours on one of theirs 2500 units away.
+p = setup(now)
+mm = MinimapState()
+mm.self_pos, mm.ts = (6000.0, 6000.0), now
+e = (8000.0, 7500.0)
+mm.enemy_champions, mm.ally_champions = [e], [(8300.0, 7400.0), (7800.0, 7800.0)]
+j = p._join_fight_plan(mm, mm.ally_champions, 600.0, 80.0, now)
+print("join:", j, list(p.log_lines)[-1])
+assert j is not None and j[2] == "join the fight"
+# Three of theirs on one of ours: stay out.
+p = setup(now)
+mm.enemy_champions, mm.ally_champions = [e, (8200.0, 7600.0), (7900.0, 7300.0)], [(8300.0, 7400.0)]
+assert p._join_fight_plan(mm, mm.ally_champions, 600.0, 80.0, now) is None
+print("JOIN OK")

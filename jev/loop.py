@@ -1239,6 +1239,9 @@ class Player:
             g = self._gank_plan(mm, allies, gt, me, now)
             if g is not None:
                 return g
+        j = self._join_fight_plan(mm, allies, gt, hp, now)
+        if j is not None:
+            return j
         places = map_places.places(self.side)
         obj = st.get("objectives") or {}
         opp = st.get("lane_opponent") or {}
@@ -1266,6 +1269,40 @@ class Player:
                 cy = sum(b[1] for b in group) / len(group)
                 return ("objective", (cx, cy), f"group with {len(group)} allies")
         return None
+
+    def _join_fight_plan(self, mm, allies: list, gt: float, hp: float, now: float):
+        """A skirmish close by: enemy champions next to ours on the minimap, within 4000 units of me,
+        our side not outnumbered once I arrive. Kills happen in those fights (Ashe was 7/1 at 13:00 in
+        g17 while Yasuo, 0/0/0, farmed mid). Sticky for 12 s; over when nobody is left fighting."""
+        j = getattr(self, "_join", None)
+        if j is not None:
+            near = [e for e in mm.enemy_champions if dist(e, j["pt"]) < 1800]
+            if near:
+                j["pt"], j["seen"] = min(near, key=lambda e: dist(e, j["pt"])), now
+            if now > j["until"] or now - j["seen"] > 3 or hp < 40:
+                self._join, self._join_next = None, now + 6.0
+                return None
+            return ("objective", j["pt"], "join the fight")
+        if gt < 240 or hp < 55 or now < getattr(self, "_join_next", 0.0):
+            return None
+        best = None
+        for e in mm.enemy_champions:
+            d = dist(mm.pos, e)
+            if not 1400 < d <= 4000:
+                continue
+            friends = [a for a in allies if dist(a, e) < 1300]
+            foes = [o for o in mm.enemy_champions if dist(o, e) < 1500]
+            if not friends or len(friends) + 1 < len(foes):
+                continue
+            score = d - 800 * len(friends)
+            if best is None or score < best[0]:
+                best = (score, e, len(friends), len(foes))
+        if best is None:
+            return None
+        _, e, nf, ne = best
+        self._join = {"pt": e, "seen": now, "until": now + 12.0}
+        self.log_lines.append(f"objective: join the fight ({nf} of us on {ne} of them, {dist(mm.pos, e):.0f} away)")
+        return ("objective", e, "join the fight")
 
     def _gank_plan(self, mm, allies: list, gt: float, me: dict, now: float):
         """A jungler's gank, by rule: an enemy laner past the middle of their lane (pushed toward our
