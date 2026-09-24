@@ -694,7 +694,12 @@ class Player:
             # Outmatched: half HP with a healthy champion walking up. Farming on cost the second
             # death of g06 (50% -> 0 in five seconds, Flash at 23% too late). Back off now.
             mi.set_mode("back_off", now)
-            self.log_lines.append(f"fight: outmatched ({mi.hp_pct:.0f}% vs {ch.unit.hp * 100:.0f}% at {d:.0f}u), backing off")
+            if mi.hp_pct < 40:
+                # Low and outmatched: leave, do not just step back (43% -> 26% over a dozen seconds of
+                # back_off steps, g15).
+                self.guards.retreat_until = max(self.guards.retreat_until, now + 4.0)
+            self.log_lines.append(f"fight: outmatched ({mi.hp_pct:.0f}% vs {ch.unit.hp * 100:.0f}% at {d:.0f}u), "
+                                  f"{'retreating' if mi.hp_pct < 40 else 'backing off'}")
             return
         recent = [h for t, h in ch.hist if now - t <= 0.5]
         steady_low = len(recent) >= 3 and sorted(recent)[len(recent) // 2] < 0.25 and max(recent) < 0.4
