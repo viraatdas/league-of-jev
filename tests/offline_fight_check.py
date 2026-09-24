@@ -170,3 +170,18 @@ mi.last_order = 0
 y.continuous(mi, sc, now, 0.7, "farm", False)
 assert mi.last_action == "Q last hit", mi.last_action
 print("FIGHT OK (q line)")
+
+# Q3 tornado: poke at the champion in range (not a minion last hit), then R on the knock-up goes all in.
+y = Yasuo()
+y.q.stacks, y.q.last_gain = 2, now
+mi, log = micro()
+mi.hp_pct = 80
+sc = scene(track(unit("champion", 800, 0, 0.6), now), [], "Q")
+assert y.reflex(mi, sc, now, {})
+print("q3 poke:", mi.last_action)
+assert "Q3 tornado at the champion" in mi.last_action
+mi.last_order = 0
+sc = scene(track(unit("champion", 700, 0, 0.5), now + 0.4), [], "R", r_lit=True)
+assert y.reflex(mi, sc, now + 0.4, {})
+assert "R reflex" in mi.last_action and mi.mode == "all_in", (mi.last_action, mi.mode)
+print("FIGHT OK (q3 poke)")

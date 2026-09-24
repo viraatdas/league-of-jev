@@ -36,3 +36,15 @@ for name, want in (("shop_home", SHOP_CORNER_AT), ("shop_dragged", (249, 349))):
 x, y, sc = shop_corner(cv2.imread("tests/fixtures/frames/level10_urgot_kayle.jpg"))
 assert sc < 0.8, sc
 print("SHOP CORNER OK")
+
+# Low champion bars: real ones (Kayle at 12% and 25%) stay; red damage numbers are not an 8% champion.
+got = units("kayle_12pct")
+print("kayle 12%:", got)
+assert any(k == "champion" and t == "enemy" and hp < 0.16 for k, t, hp in got), got
+got = units("kayle_25pct")
+print("kayle 25%:", got)
+assert any(k == "champion" and t == "enemy" and 0.2 < hp < 0.3 for k, t, hp in got), got
+got = units("damage_numbers")
+print("damage numbers:", got)
+assert not any(k == "champion" and t == "enemy" and hp < 0.3 for k, t, hp in got), got
+print("VISION OK (low bars)")

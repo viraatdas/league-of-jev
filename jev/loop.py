@@ -1638,6 +1638,8 @@ class Player:
                         p.near_enemy_tower = True
                         break
                 self._near_enemy_tower = p.near_enemy_tower
+                if self.micro is not None:
+                    self.micro.near_enemy_tower = p.near_enemy_tower
                 # Q aim: nearest enemy champion, else nearest enemy minion, within reach.
                 targets = mm.enemy_champions or mm.enemy_minions
                 if targets:

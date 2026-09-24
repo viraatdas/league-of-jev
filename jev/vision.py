@@ -184,6 +184,13 @@ class VisionReader:
             if counts[team] == 0:
                 continue
             hp = min(1.0, w / full)
+            if unit_kind == "champion" and team != "self" and hp < 0.5:
+                # A real champion bar sits in a solid dark frame, empty part included: low Fiddlesticks
+                # and Kayle bars read 0.93-1.0 above, below and in the empty part; red damage numbers
+                # over Yasuo read as an 8% champion at 0.59-0.70 and drew an execute (E and ignite, g17).
+                empty_mid = dark[y + h // 2, x + w + 1:x_end - 1]
+                if min(above, below) < 0.85 or (empty_mid.size and empty_mid.mean() < 0.85):
+                    continue
             if unit_kind == "champion" and team != "self" and hp < 0.3:
                 # A low champion bar must carry its name above it: red-buff flicker and other small
                 # red shapes read as champions at 3-12% and drew kill windows (g07); none had text.

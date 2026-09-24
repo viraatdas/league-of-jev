@@ -364,6 +364,8 @@ class Yasuo(Kit):
         if mode in ("farm", "push") and sc.ready.get("Q") and sc.killable_q and mi._can_order(now):
             tq = sc.killable_q[0]
             was_q3 = self.q.q3(now)
+            if was_q3 and sc.champ is not None and (sc.champ_dist or 9e9) <= VC.q3_range:
+                return super().continuous(mi, sc, now, aspd, mode, pushing)  # the tornado is kept for her
             if sc.champ is not None and _hits_champ(sc, tq.unit.x, tq.unit.y, VC.q3_range if was_q3 else VC.q_range) \
                     and len(sc.minions) >= 3 and sc.champ.unit.hp > 0.3:
                 # The Q would also hit their champion, and hitting a champion turns her whole wave on
@@ -544,8 +546,21 @@ class Yasuo(Kit):
             mi._ordered(now, "R reflex after tornado")
             self.r_at = now
             self.tornado_at = 0.0
+            if sc.champ.unit.hp < 0.65 and mi.hp_pct >= 35:
+                mi.set_mode("all_in", now)  # knocked up and R'd: finish them
             return True
         d = sc.champ_dist or 9e9
+        if (sc.ready.get("Q") and self.q.q3(now) and sc.champ is not None and 450 < d <= VC.q3_range * 0.85
+                and mi.hp_pct >= 40 and not getattr(mi, "near_enemy_tower", False) and mi.mode not in ("back_off",)
+                and now - getattr(self, "_poke_at", 0.0) > 2.0):
+            # The tornado is for the champion, not a minion: it passes through the wave, knocks up, and
+            # with R ready turns into the kill combo (the reflex above). Nothing chose poke without Jev.
+            x, y = sc.champ.lead(now, 0.3 + d / 1500)
+            mi.cast(1, x, y)
+            self.q.cast(True, now)
+            self.tornado_at = self._poke_at = now
+            mi._ordered(now, "poke: Q3 tornado at the champion")
+            return True
         if (sc.ready.get("W") and sc.champ is not None and 350 < d <= 1000 and getattr(mi, "hp_lost", 0.0) >= 10
                 and now - getattr(self, "_wall_at", 0.0) > 5.0):
             mi.cast(2, sc.champ.unit.x, sc.champ.unit.y)
