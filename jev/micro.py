@@ -181,10 +181,12 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
         d = sc.dist(tr)
         tr.role = roles.get(tr.id, "")
         hp_max = melee_max if tr.role == "melee" else (caster_max if tr.role == "caster" else avg_max)
-        if (tr.unit.hp < 0.08 and sc.allies > 0) or tr.unit.hp < 0.04 or (tr.role == "caster" and tr.unit.hp < 0.12):
+        if (tr.unit.hp < 0.12 and sc.allies > 0) or tr.unit.hp < 0.04 or (tr.role == "caster" and tr.unit.hp < 0.12):
             # Nearly dead with allied minions around: they take it before our hit lands (g11: Q at
             # 0-15% paid 8/29, at 20%+ 17/23; autos at 0-10% 3/15). A caster's bar under 12% (7 px)
-            # paid 10 of 297 attempts over g15-g17, and any bar under 4% is noise.
+            # paid 10 of 297 attempts over g15-g17, and any bar under 4% is noise. Melee minions at 5-9% with
+            # ours around paid 11% of auto attempts over g22-g26 (15-24%: 54-60%): one allied hit finishes
+            # them first, and the wasted auto is on cooldown for the next real last hit.
             continue
         # Forecast the minion's HP at the moment the hit lands: input, the walk into range, the
         # wind-up. With only the input lead, a hit that needed a walk landed after the allied
