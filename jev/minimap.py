@@ -100,9 +100,34 @@ class MinimapReader:
             # Minion dots: tiny solid blobs. Champion icons: ring-shaped blobs 16-30 px across.
             for cx, cy, area, w, h_ in self._components(mask, 3, 30, max_box=7):
                 minions.append(self.px_to_map(cx, cy))
-            for cx, cy, area, w, h_ in self._components(mask, 30, 900, max_box=34):
-                if 14 <= w <= 34 and 14 <= h_ <= 34 and abs(w - h_) <= 8:
-                    champs.append(self.px_to_map(cx, cy))
+            n, labels, stats, cents = cv2.connectedComponentsWithStats(mask, connectivity=8)
+            px_pts: list[tuple[float, float, float]] = []
+            for i in range(1, n):
+                area = int(stats[i, cv2.CC_STAT_AREA])
+                w, h_ = int(stats[i, cv2.CC_STAT_WIDTH]), int(stats[i, cv2.CC_STAT_HEIGHT])
+                if area < 30:
+                    continue
+                if 20 <= w <= 34 and 20 <= h_ <= 34 and abs(w - h_) <= 8:  # a ring is ~31 px; wards and pings are smaller
+                    px_pts.append((float(cents[i][0]), float(cents[i][1]), area))
+                elif 34 < max(w, h_) <= 90 and min(w, h_) >= 26 and area >= 170 and 0.06 <= area / (w * h_) <= 0.35:
+                    # Overlapping icons merge into one blob (a ring alone is ~32 px, ~140 px of area; the
+                    # merged blob stays fat and hollow, unlike a line of minion dots):
+                    # a bot lane duo read as nobody, and ganks there ended at once as "0 of us" (g21).
+                    k = min(4, max(2, round(area / 125)))
+                    ys, xs = np.nonzero(labels == i)
+                    pts = np.float32(np.column_stack([xs, ys]))
+                    crit = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 0.5)
+                    _, _, centers = cv2.kmeans(pts, k, None, crit, 2, cv2.KMEANS_PP_CENTERS)
+                    for c in centers:
+                        px_pts.append((float(c[0]), float(c[1]), area / k))
+            # One icon can yield several pieces (ring fragments, blue portrait art): keep one point per
+            # 15 px (an icon's radius), largest first, and at most five per team.
+            kept: list[tuple[float, float, float]] = []
+            for x, y, a in sorted(px_pts, key=lambda t: -t[2]):
+                if all((x - kx) ** 2 + (y - ky) ** 2 > 15 ** 2 for kx, ky, _ in kept):
+                    kept.append((x, y, a))
+            for x, y, _ in kept[:5]:
+                champs.append(self.px_to_map(x, y))
 
         units(red, st.enemy_minions, st.enemy_champions)
         units(blue, st.ally_minions, st.ally_champions)

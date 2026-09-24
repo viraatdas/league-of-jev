@@ -67,3 +67,12 @@ assert hud.q3 is True
 hud = _v.read_hud(cv2.cvtColor(cv2.imread("tests/fixtures/frames/qwe_ready.jpg"), cv2.COLOR_BGR2BGRA))
 assert hud.q3 is False, hud.q3
 print("VISION OK (q3)")
+
+# Minimap: two overlapping ally icons (a merged blob) are two allies; the enemies are two.
+from jev.minimap import MinimapReader
+from jev.screen import Screen
+_mm = MinimapReader(Screen())
+st = _mm.read(cv2.cvtColor(cv2.imread("tests/fixtures/frames/minimap_merged_allies.png"), cv2.COLOR_BGR2BGRA))
+print("minimap:", len(st.ally_champions), "allies,", len(st.enemy_champions), "enemies")
+assert len(st.ally_champions) >= 2 and len(st.enemy_champions) == 2, (st.ally_champions, st.enemy_champions)
+print("VISION OK (minimap)")
