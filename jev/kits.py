@@ -146,7 +146,10 @@ class Kit:
             return True
         if mi.in_windup(now, aspd):
             return True
-        if mode == "all_in" and mi.flash_in_ok and d > rng and d <= rng + 380:
+        # A fleeing champion under 25% is worth the Flash while I am healthy: two kills walked away at
+        # 15-16% in g17 while Yasuo chased with Flash up.
+        flash_ok = mi.flash_in_ok or (ch.unit.hp < 0.25 and mi.hp_pct >= 40)
+        if mode == "all_in" and flash_ok and d > rng and d <= rng + 380:
             slot = mi.summoner_slot("flash", sc.ready)
             if slot:
                 # Jev reads the kill as on and they are just out of reach: Flash onto them, auto next tick.
