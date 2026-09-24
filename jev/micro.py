@@ -401,7 +401,9 @@ class Micro:
         # With her close, wait further back and step up only for the last hit: holding an auto range
         # behind the front line left Yasuo in a mage's reach, and Annie's poke and burst took most of
         # his deaths (g24).
-        back = (VC.auto_range + (200 if (sc.champ is not None and (sc.champ_dist or 9e9) < 900) else -40)) * VC.px_per_unit
+        # (Only when hurt: always waiting 440 back with her in lane dropped Yasuo to 20 CS at 15:00, g26.)
+        close = sc.champ is not None and (sc.champ_dist or 9e9) < 900
+        back = (VC.auto_range + ((200 if self.hp_pct < 60 else 40) if close else -40)) * VC.px_per_unit
         if alone:
             # Out of their minions' reach until our wave arrives: standing an auto range behind seven of
             # them with none of ours cost 55% -> 0 at level 2 (g16).
