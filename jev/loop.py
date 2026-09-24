@@ -928,13 +928,14 @@ class Player:
         stats = self._lh_stats = getattr(self, "_lh_stats", collections.defaultdict(lambda: [0, 0]))
         keep = []
         for t, kind, hp in mi.lh_pending:
-            if now - t < 1.1:
+            win = 2.0 if kind.startswith("auto") else 1.1  # an auto may walk up to ~1 s first (reach: auto range + 380)
+            if now - t < win:
                 keep.append((t, kind, hp))
                 continue
             before = [g for tt, g in gh if tt <= t]
-            after = [g for tt, g in gh if t < tt <= t + 1.1]
+            after = [g for tt, g in gh if t < tt <= t + win]
             # A caster minion is worth 14 gold early: the old bar (12 + passive = 14.3) never counted them.
-            ok = bool(before and after) and max(after) - before[-1] >= 11 + 2.1 * 1.1
+            ok = bool(before and after) and max(b - a for a, b in zip([before[-1]] + after, after)) >= 11
             key = f"{kind} {int(hp * 100) // 5 * 5}%"
             stats[key][0] += 1
             stats[key][1] += int(ok)
