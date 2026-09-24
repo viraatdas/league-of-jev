@@ -1410,7 +1410,9 @@ class Player:
                    else f"{many} of them, {friends} of us" if (many >= 2 and friends == 0) or many >= friends + 3 else "")
             if why:
                 self.log_lines.append(f"gank {g['lane']}: over ({why})")
-                self._gank, self._gank_next = None, now + 45.0
+                # A gank that found nothing cost 20-30 s of camps; five of those by 10:00 left Lee two
+                # levels under their jungler (g23). Longer back to the camps after a miss.
+                self._gank, self._gank_next = None, now + (75.0 if why in ("lost them", "time") else 45.0)
                 return None
             return ("objective", g["pt"], f"gank {g['lane']}")
         if gt < 195 or int(me.get("level") or 1) < 3 or hp < 60 or now < getattr(self, "_gank_next", 0.0):
@@ -1427,8 +1429,8 @@ class Player:
                 if (many >= 2 and friends == 0) or many > friends + 1:
                     continue
                 d = dist(mm.pos, e)
-                if d > 4500 or (friends == 0 and d > 3500):
-                    continue  # from 6400 units the walk took 18 s and they were gone (g21)
+                if d > 4500 or (friends == 0 and d > 2000):
+                    continue  # from 6400 units the walk took 18 s and they were gone (g21); alone, only a short walk
                 score = d - 1500 * friends - ln.units(ln.center - prog)  # near, with our laner there, overextended
                 if best is None or score < best[0]:
                     best = (score, name, e, prog, friends)
