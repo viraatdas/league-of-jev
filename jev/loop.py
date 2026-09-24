@@ -1031,7 +1031,10 @@ class Player:
         sc = ctx.sc
         hp, lost = getattr(self, "_hp_now", 100.0), getattr(self, "_hp_lost", 0.0)
         forced = now < getattr(self, "_force_escape_until", 0.0) and hp < 50 and sc.champ is not None
-        if not forced and not (lost >= 25 and hp < 45 and sc.champ is not None and (sc.champ_dist or 9e9) < 700):
+        # Losing a quarter of the HP under 45% is reason enough; the damage source is not always the
+        # champion in view (100% -> 11% in six seconds with the only visible enemy at 900 units and no
+        # Flash, g13), so any champion within 1000 units, or none visible, counts.
+        if not forced and not (lost >= 25 and hp < 45 and (sc.champ is None or (sc.champ_dist or 9e9) < 1000)):
             return False
         if forced and self.kit.escape(ctx.mi, sc, now, tuple(-v for v in (self.lane.screen_dir(self.mech.nav.progress) if self.mech else ctx.mi.fwd))):
             return True  # the kit's dash first; Flash stays for the next tick if still in trouble
@@ -1287,12 +1290,15 @@ class Player:
         if not self._self_trail or now - self._self_trail[-1][0] >= 0.1:
             self._self_trail.append((now, hp_pct))
         bleed = self._trail_change(3.0, now)
-        if (bleed is not None and bleed <= -12 and hp_pct < 70 and (self.scene is None or self.scene.champ is None)
+        fr = self.fights.read if self.fights is not None else None
+        winning = fr is not None and now - fr.ts < 1.0 and fr.plan == "all_in" and fr.win_all_in >= 0.6
+        unseen = self.scene is None or self.scene.champ is None
+        if (bleed is not None and ((bleed <= -12 and hp_pct < 70 and unseen) or (bleed <= -15 and hp_pct < 60 and not winning))
                 and now >= self.guards.retreat_until):
             # Hit from off screen (a ranged champion past the screen edge): Yasuo bled 60% -> 0 over
             # twelve seconds while holding the wave, no champion ever on screen (g13, 7:25).
             self.guards.retreat_until = now + 4.0
-            self.log_lines.append(f"hit from off screen ({bleed:.0f}% in 3 s): retreat")
+            self.log_lines.append(f"bleeding ({bleed:.0f}% in 3 s{', nothing in view' if unseen else ''}): retreat")
         self._hp_now, self._hp_lost = hp_pct, lost
         # Significant change: new damage, level, or death state -> wake the brain right away.
         sig = (int(ap.get("level", 1)), bool(me.get("isDead")), int(hp_pct // 10))
