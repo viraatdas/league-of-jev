@@ -612,6 +612,7 @@ class Player:
                          aspd=aspd, move_speed=float(stats.get("moveSpeed", 345.0)),
                          fwd=fwd, e_dmg=kit.e_minion_damage(e_rank, ad, int(ap.get("level", 1))))
         mi.dash_ok = not getattr(self, "_near_enemy_tower", False)
+        sc.lane = self._lane_info(view, stats)
         if kit.support:
             sc.killable_auto = []  # supports leave last hits to the carry
         self.scene = sc
@@ -821,6 +822,24 @@ class Player:
                 and now - dd.ts < 2.0 and mi.mode != "back_off"):
             mi.set_mode("all_in", now)
             self.log_lines.append(f"fight: strategy says all in (p={dd.intent_confidence:.2f})")
+
+    def _lane_info(self, view, stats: dict) -> dict:
+        """What the lane planner needs beyond the screen: her reach and HP pool, their tower on
+        screen, Jev's aggression."""
+        st = self.state or {}
+        opp = st.get("lane_opponent") or {}
+        cat = self.shop_brain.catalog if self.shop_brain is not None else None
+        rng = cat.attack_range(str(opp.get("champion") or "")) if cat is not None else None
+        lvl = int(opp.get("level") or (st.get("me") or {}).get("level") or 1)
+        d = self.decision
+        info = {"opp_range": rng if rng is not None else 550.0, "opp_hp": 640.0 + 95.0 * (lvl - 1),
+                "aggression": d.aggression if d is not None else 1.0,
+                "tower_farm_ok": bool(getattr(self, "_tower_farm_ok", False))}
+        t, mm = getattr(self, "_enemy_tower_map", None), self.mm_state
+        if t is not None and mm is not None and mm.pos is not None and view.me is not None:
+            ppu = config.VISION.px_per_unit
+            info["tower_px"] = (view.me.x + (t[0] - mm.pos[0]) * ppu, view.me.y - (t[1] - mm.pos[1]) * ppu)
+        return info
 
     # Melee champions with a line skillshot or hook worth sidestepping.
     LINE_MELEE = {"blitzcrank", "leesin", "lee sin", "pyke", "leona", "olaf", "yasuo", "yone", "nautilus",
@@ -1884,14 +1903,18 @@ class Player:
                 # Tower safety: enemy towers of this lane that still stand (all others count too).
                 enemy_towers = config.RED_TOWERS if self.side == "ORDER" else config.BLUE_TOWERS
                 lane_ids = self.lane.enemy_tower_ids()  # index in list -> tower number in event names
+                self._enemy_tower_map = None
                 for i, t in enumerate(enemy_towers):
                     if i in lane_ids and lane_ids[i] in self.dead_enemy_mid_towers:
                         continue
+                    if dist(mm.pos, t) < 1700 and (self._enemy_tower_map is None or dist(mm.pos, t) < dist(mm.pos, self._enemy_tower_map)):
+                        self._enemy_tower_map = t  # the lane planner keeps its spots out of its range
                     if dist(mm.pos, t) < config.TOWER_RANGE:
                         p.near_enemy_tower = True
                         p.ally_minions_at_enemy_tower = sum(1 for a in mm.ally_minions if dist(a, t) < 900)
                         break
                 self._near_enemy_tower = p.near_enemy_tower
+                self._tower_farm_ok = p.ally_minions_at_enemy_tower >= 3 and hp_pct >= 50
                 if self.micro is not None:
                     self.micro.near_enemy_tower = p.near_enemy_tower
                 # Q aim: nearest enemy champion, else nearest enemy minion, within reach.
@@ -2182,6 +2205,19 @@ class Player:
         if not self.logfile or now - self._last_logged < 1.0:
             return
         self._last_logged = now
+        mi = self.micro
+        if mi is not None and mi.plan_log:
+            # The lane planner's picks with their runner-ups (moves at most one a second): what the
+            # weights in laneplan.py are tuned from.
+            gt = self.state.get("game", {}).get("time")
+            with open(f"{self.logfile}.plan.jsonl", "a") as f:
+                moved = False
+                while mi.plan_log:
+                    e = mi.plan_log.popleft()
+                    if e["pick"]["kind"] == "hold" or (e["pick"]["kind"] == "move" and moved):
+                        continue
+                    moved = moved or e["pick"]["kind"] == "move"
+                    f.write(json.dumps({"gt": gt, **e}) + "\n")
         me = self.state.get("me", {})
         line = (
             f"{time.strftime('%H:%M:%S')} t={self.state.get('game', {}).get('time')} "

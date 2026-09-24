@@ -464,7 +464,81 @@ class Yasuo(Kit):
             return True
         return False
 
+    def plan_step(self, mi: Micro, sc: Scene, now: float, aspd: float, pushing: bool, poke: bool = False) -> bool:
+        """The lane planner's best option this tick, executed (laneplan.py)."""
+        from jev.laneplan import LanePlanner
+
+        if mi.in_windup(now, aspd):
+            return True  # a move now cancels the auto
+        if not mi._can_order(now):
+            return True
+        if getattr(self, "_planner", None) is None:
+            self._planner = LanePlanner(self)
+        if poke:
+            sc.lane = dict(sc.lane, aggression=max(1.3, float(sc.lane.get("aggression", 1.0))))
+        best, top = self._planner.choose(sc, mi, now, pushing)
+        mi.plan_log.append({"t": round(now, 2), "pick": best.brief(), "also": [o.brief() for o in top[1:]]})
+        k, tr = best.kind, best.target
+        role = (getattr(tr, "role", "") or "?") if tr is not None else ""
+        if k == "auto":
+            if best.p >= 0.5:
+                mi.attack(tr, now, f"last hit ({int(tr.unit.hp * 100)}%)")
+                mi.lh_pending.append((now, f"auto-{role}", tr.unit.hp))
+            else:
+                mi.attack(tr, now, "push: attack the wave")
+            return True
+        if k == "q":
+            was_q3 = self.q.q3(now)
+            mi.cast(1, tr.unit.x, tr.unit.y)
+            self.q.cast(True, now)
+            mi.attacked_ids[tr.id] = now
+            if best.p >= 0.5:
+                mi.lh_pending.append((now, f"Q-{role}", tr.unit.hp))
+            mi._ordered(now, ("Q3 the wave" if was_q3 else "Q last hit") if best.p >= 0.5 else ("push: Q3 the wave" if was_q3 else "Q: stack on the wave"))
+            return True
+        if k in ("e", "eq"):
+            mi.cast(3, tr.unit.x, tr.unit.y)
+            tr.e_marked_until = now + 10.0
+            mi.attacked_ids[tr.id] = now
+            if k == "eq":
+                mi.later(FAST.eq_delay_s, lambda: mi.ctl.press(mi.kb.ability(1)))
+                self.q.cast(True, now)
+            if best.p >= 0.5:
+                mi.lh_pending.append((now, f"E-{role}", tr.unit.hp))
+            label = "E+Q" if k == "eq" else "E"
+            mi._ordered(now, f"{label} last hit" if best.p >= 0.5 else f"{label} through a minion ({best.why[:40]})")
+            return True
+        if k == "auto_champ":
+            mi.attack(tr, now, "plan: auto the champion")
+            self.burst_at = now
+            return True
+        if k in ("q_champ", "q3_champ"):
+            q3 = k == "q3_champ"
+            d = sc.champ_dist or 0.0
+            x, y = tr.lead(now, (0.3 + d / 1500) if q3 else 0.25)
+            mi.cast(1, x, y)
+            self.q.cast(True, now)
+            self.burst_at = now
+            if q3:
+                self.tornado_at = now
+            mi._ordered(now, "plan: Q3 tornado at the champion" if q3 else "plan: Q the champion")
+            return True
+        if k == "eq_champ":
+            mi.cast(3, tr.unit.x, tr.unit.y)
+            tr.e_marked_until = now + 10.0
+            mi.later(FAST.eq_delay_s, lambda: mi.ctl.press(mi.kb.ability(1)))
+            self.q.cast(True, now)
+            self.burst_at = now
+            mi._ordered(now, "plan: E+Q onto the champion")
+            return True
+        if k == "move":
+            mi.move_screen(best.point[0], best.point[1], now, f"plan: stand ({best.why[:48]})", every=0.3)
+            return True
+        return True  # hold
+
     def continuous(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, pushing: bool) -> bool:
+        if FAST.lane_planner and mode in ("farm", "push") and sc.minions:
+            return self.plan_step(mi, sc, now, aspd, pushing or mode == "push")
         if (pushing and mode in ("farm", "push") and sc.champ is None and sc.ready.get("Q") and not sc.killable_q
                 and not sc.killable_auto and mi._can_order(now)):  # a last hit first, the wave after
             # Pushing: Q into the wave on cooldown (the tornado too: it hits the whole line).
@@ -501,6 +575,8 @@ class Yasuo(Kit):
 
     def poke(self, mi: Micro, sc: Scene, now: float, aspd: float) -> bool:
         ch, d, rdy = sc.champ, sc.champ_dist or 9e9, sc.ready
+        if FAST.lane_planner and (sc.minions or ch is not None):
+            return self.plan_step(mi, sc, now, aspd, False, poke=True)
         if mi._can_order(now) and rdy.get("Q"):
             q3 = self.q.q3(now)
             if (q3 and d <= VC.q3_range * 0.9) or (not q3 and d <= VC.q_range + 20):

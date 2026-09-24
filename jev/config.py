@@ -135,6 +135,7 @@ class Fast:
     e_base: tuple[float, ...] = (60.0, 70.0, 80.0, 90.0, 100.0)  # Yasuo E, magic, plus 20% bonus AD (approximate)
     e_bonus_ad: float = 0.2
     eq_radius: float = 220.0           # Yasuo's circle Q during the dash
+    lane_planner: bool = True          # Yasuo's farm/poke/push: every option scored (laneplan.py); False = the old rules
 
 
 GEOMETRY = Geometry()

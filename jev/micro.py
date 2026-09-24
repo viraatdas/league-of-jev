@@ -144,6 +144,13 @@ class Scene:
     dash_options: list[tuple[Track, float]] = field(default_factory=list)  # (minion, units gained toward champion)
     ready: dict[str, bool] = field(default_factory=dict)
     r_lit: bool = False
+    ally_units: list[Unit] = field(default_factory=list)      # allied minions on screen (our wave's front)
+    ad: float = 60.0
+    q_dmg: float = 0.0                                        # Q on a minion, with the model margin
+    e_dmg: float = 0.0                                        # E on a minion (Yasuo), with the margin
+    aspd: float = 0.7
+    move_speed: float = 345.0
+    lane: dict = field(default_factory=dict)                  # set by the loop: opp_range, tower_px, aggression, ...
 
     def dist(self, tr: Track) -> float:
         return math.hypot(tr.unit.x - self.me_xy[0], tr.unit.y - self.me_xy[1]) / VC.px_per_unit
@@ -163,7 +170,8 @@ def minion_roles(minions: list[Track], me_xy, fwd) -> dict[int, str]:
 def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float, q_rank: int, game_s: float, now: float, fallback_xy,
                 aspd: float = 0.7, move_speed: float = 345.0, fwd=None, e_dmg: float = 0.0) -> Scene:
     me_xy = (view.me.x, view.me.y) if view.me else fallback_xy
-    sc = Scene(me_xy=me_xy, minions=minions, allies=len(view.allies("minion")), ally_champs=view.allies("champion"))
+    sc = Scene(me_xy=me_xy, minions=minions, allies=len(view.allies("minion")), ally_champs=view.allies("champion"),
+               ally_units=view.allies("minion"), ad=ad, e_dmg=e_dmg, aspd=aspd, move_speed=move_speed)
     sc.ready = dict(view.hud.ready)
     sc.r_lit = bool(view.hud.ready.get("R"))
     sc.enemy_champs = len(champs)
@@ -177,11 +185,14 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
     # 12% under the formula: over g15-g17, Q on melee minions paid 80% at 10-25% HP but 51% at 30%
     # and 32% at 35%; the model reaches further than the game does.
     q_dmg = 0.88 * (FAST.q_base[max(0, min(q_rank, 5) - 1)] + FAST.q_ad * ad) if q_rank else 0.0
+    sc.q_dmg = q_dmg
     windup = FAST.windup_frac / max(0.3, aspd)
     for tr in minions:
         d = sc.dist(tr)
         tr.role = roles.get(tr.id, "")
         hp_max = melee_max if tr.role == "melee" else (caster_max if tr.role == "caster" else avg_max)
+        tr.hp_max = hp_max
+        tr.ally_takes = (tr.unit.hp < 0.12 and sc.allies > 0) or tr.unit.hp < 0.04 or (tr.role == "caster" and tr.unit.hp < 0.12)
         if (tr.unit.hp < 0.12 and sc.allies > 0) or tr.unit.hp < 0.04 or (tr.role == "caster" and tr.unit.hp < 0.12):
             # Nearly dead with allied minions around: they take it before our hit lands (g11: Q at
             # 0-15% paid 8/29, at 20%+ 17/23; autos at 0-10% 3/15). A caster's bar under 12% (7 px)
@@ -272,6 +283,7 @@ class Micro:
         self.fight_owned_until = 0.0                           # the fight head owns the mode until then
         self.dodge_lines = True                                # the lane opponent throws line skillshots (sidestep)
         self.dash_ok = True                                    # farm dashes allowed (not near their tower)
+        self.plan_log: collections.deque = collections.deque(maxlen=400)  # lane planner picks, for the game log
         self.trade_cooldown_until = 0.0                        # no new trade before then (one just ended)
         self.flash_in_ok = False                               # the fight head says a Flash-in kill is on
 

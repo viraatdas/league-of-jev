@@ -4,6 +4,9 @@ dash, and the kill-window median. No game, no Jev call.
 Run: uv run python tests/offline_fight_check.py"""
 import time
 
+from jev import config as _config
+_config.FAST.lane_planner = False  # these check the rule path; tests/offline_laneplan_check.py checks the planner
+
 from jev import config, keybinds
 from jev.control import Controller
 from jev.kits import LeeSin, Yasuo
