@@ -852,6 +852,16 @@ class Player:
         if pick is not None and pick is not sc.champ:
             sc.champ, sc.champ_dist = pick, sc.dist(pick)
 
+    def _recent_gold_jump(self, seconds: float) -> float:
+        """The largest single gold gain in the last `seconds` (wall time): camps, kills and last hits
+        pay in one step, passive income in small ones."""
+        gh = getattr(self, "_lh_gold", None)
+        if not gh:
+            return 0.0
+        now = time.time()
+        pts = [g for t, g in gh if now - t <= seconds]
+        return max((b - a for a, b in zip(pts, pts[1:])), default=0.0)
+
     def _audit_lasthits(self, mi, now: float) -> None:
         """Every enemy minion that vanishes while low (under 35%) and within 800 units: did we try it?
         If not, was it ever killable by our numbers, and how far was it? Logged each minute with the
@@ -1171,6 +1181,11 @@ class Player:
             js.arrived_at, js.last_seen_monster, js.low_seen = None, 0.0, 1.0
             return
         js_low = js.low_seen
+        if seen_here and gt - js.last_seen_monster > 3.0 and gt - js.arrived_at < 8.0 and self._recent_gold_jump(6.0) < 20:
+            # Too quick for a kill and no camp gold: a phantom low bar and a moment of not seeing the
+            # camp marked red "cleared" 3 s after it spawned, blue 13 s after wolves; Lee skipped camps
+            # and was level 4 against Warwick's 6 at 7:30 (g21). Keep at it.
+            return
         if (seen_here and gt - js.last_seen_monster > 3.0) or (not seen_here and gt - js.arrived_at > 20.0):
             camp, how = js.current, ("killed" if seen_here else "empty")
             js.mark_cleared(camp, gt)
@@ -1390,8 +1405,8 @@ class Player:
                 if (many >= 2 and friends == 0) or many > friends + 1:
                     continue
                 d = dist(mm.pos, e)
-                if d > 6500:
-                    continue
+                if d > 4500 or (friends == 0 and d > 3500):
+                    continue  # from 6400 units the walk took 18 s and they were gone (g21)
                 score = d - 1500 * friends - ln.units(ln.center - prog)  # near, with our laner there, overextended
                 if best is None or score < best[0]:
                     best = (score, name, e, prog, friends)
