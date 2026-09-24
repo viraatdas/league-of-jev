@@ -31,6 +31,7 @@ Q_STACK = 4.0            # a Q stack toward the tornado
 E_COST = 2.0             # an E is cheap (0.5 s cooldown), but the target locks for 10 s (moot when it dies)
 Q_COST = 4.0             # Q on a minion: ~3.5 s without the trade tool (E's cooldown is 0.5 s)
 E_MOVE_MIN = 6.0         # a dash that kills nothing must reach a clearly better spot
+E_MIN = 2.0              # a dash worth less than this is noise (it moves me for nothing)
 Q_COST_NEAR_HER = 5.0    # Q on cooldown when she walks in: the trade we cannot take
 MOVE_GAIN_MIN = 2.5      # a new spot must be this much better than standing still
 
@@ -43,9 +44,17 @@ class Option:
     point: tuple[float, float] | None = None    # screen px
     why: str = ""
     p: float = 0.0                              # chance the hit kills its minion (last hits)
+    z: float | None = None                      # the predicted margin behind p (the learner fits p from it)
 
     def brief(self) -> dict:
         return {"kind": self.kind, "value": round(self.value, 1), "why": self.why}
+
+
+def margin(dmg: float, hp_at_hit: float, hp_max: float) -> float | None:
+    """Damage over predicted HP at the hit, in units of 4% of the minion's max HP (None: no kill)."""
+    if dmg <= 0 or hp_at_hit <= 0:
+        return None
+    return (dmg - hp_at_hit) / max(1.0, 0.04 * hp_max)
 
 
 def p_kill(dmg: float, hp_at_hit: float, hp_max: float) -> float:
@@ -72,6 +81,14 @@ class LanePlanner:
         self.kit = kit
 
     # -- helpers -------------------------------------------------------------------------
+    def _pk(self, mi, kind: str, dmg: float, at: float, hp_max: float) -> tuple[float, float | None]:
+        """Kill chance by the curve learned this game for this hit kind (the fixed one without a learner)."""
+        z = margin(dmg, at, hp_max)
+        if z is None:
+            return 0.0, None
+        lr = getattr(mi, "learner", None)
+        return (lr.p_kill(kind, z) if lr is not None else p_kill(dmg, at, hp_max)), z
+
     def _hp_value(self, hp_pct: float) -> float:
         """Gold-equivalent of 1% HP: worth more the lower I am."""
         return HP_GOLD * (1.0 + max(0.0, 60.0 - hp_pct) / 30.0)
@@ -110,6 +127,32 @@ class LanePlanner:
         along = (px * dx + py * dy) / n
         return 0 <= along <= _px(rng) and abs(px * dy - py * dx) / n <= width_px
 
+    def _exit_after(self, sc, mi, land: tuple[float, float], used, now: float) -> bool:
+        """Lookahead: from `land`, another minion to dash through back toward home (at least 250
+        units gained toward our side), so E in, Q, E out is one plan and not a stranded dash."""
+        home = (-mi.fwd[0], -mi.fwd[1])
+        r = _px(VC.e_range)
+        for m in sc.minions:
+            if m is used or m.e_marked_until > now:
+                continue
+            dx, dy = m.unit.x - land[0], m.unit.y - land[1]
+            n = math.hypot(dx, dy)
+            if 0 < n <= r and (dx / n * home[0] + dy / n * home[1]) * VC.e_range >= 250:
+                return True
+        return False
+
+    def _follow_up(self, sc, mi, land: tuple[float, float], q_left: bool, w: float, aggro_cost: float, her_hp_units: float) -> float:
+        """Lookahead: the best hit on her from `land` right after the dash (Q if still up, else an auto)."""
+        ch = sc.champ
+        if ch is None:
+            return 0.0
+        dl = _units(self._dist_px(land, (ch.unit.x, ch.unit.y)))
+        if q_left and dl <= VC.q_range + 20:
+            return max(0.0, sc.q_dmg / 0.88 / her_hp_units * 100 * w - aggro_cost)
+        if dl <= VC.auto_range + 60:
+            return max(0.0, sc.ad / her_hp_units * 100 * w - aggro_cost)
+        return 0.0
+
     def _landing(self, sc, tr) -> tuple[float, float]:
         mx, my = sc.me_xy
         dx, dy = tr.unit.x - mx, tr.unit.y - my
@@ -118,8 +161,9 @@ class LanePlanner:
         return mx + dx / n * r, my + dy / n * r
 
     # -- the value of standing somewhere -------------------------------------------------
-    def spot_value(self, sc, mi, s: tuple[float, float], now: float) -> tuple[float, str]:
-        """Gold within reach over the next ~2 s, minus the threats of standing at `s`."""
+    def spot_value(self, sc, mi, s: tuple[float, float], now: float, reach_scale: float = 1.0) -> tuple[float, str]:
+        """Gold within reach over the next ~2 s, minus the threats of standing at `s` (her reach
+        scaled by `reach_scale`: with a dash out ready, a moment in her reach costs less)."""
         lane = sc.lane
         farm = 0.0
         reach = VC.auto_range + 60
@@ -141,7 +185,9 @@ class LanePlanner:
             if d < her_reach:
                 ahead = mi.hp_pct - ch.unit.hp * 100
                 factor = 1.4 if ahead < -10 else (1.0 if ahead < 15 else 0.4)
-                pen = (her_reach - d) / her_reach * 8.0 * factor * self._hp_value(mi.hp_pct)
+                lr = getattr(mi, "learner", None)
+                rate = lr.in_reach if lr is not None else 3.0  # % HP a second she takes while I stand in reach
+                pen = (her_reach - d) / her_reach * rate * 2.5 * factor * self._hp_value(mi.hp_pct) * reach_scale
                 risk += pen
                 notes.append(f"her reach {pen:.0f}")
         tower = lane.get("tower_px")
@@ -197,8 +243,11 @@ class LanePlanner:
         agg = float(lane.get("aggression", 1.0))
         hp_val = self._hp_value(mi.hp_pct)
         her_wave = sum(1 for t in sc.minions if ch is not None and _units(self._dist_px((t.unit.x, t.unit.y), (ch.unit.x, ch.unit.y))) < 500)
-        # her wave turns on me when I hit her: each of its minions ~1.5% of my HP
-        aggro_cost = her_wave * 1.5 * hp_val
+        # her wave turns on me when I hit her: each of its minions takes a learned share of my HP
+        lr = getattr(mi, "learner", None)
+        aggro_cost = her_wave * (lr.aggro if lr is not None else 1.5) * hp_val
+        trade_w = lr.trade_weight() if lr is not None else 1.0
+        dash_cost = 0.5 * (lr.dash if lr is not None else 1.0) * hp_val
         her_hp_units = float(lane.get("opp_hp", 700.0))
 
         # Autos on minions (auto_p: what a Q or E kill on the same minion adds over the free auto)
@@ -212,14 +261,14 @@ class LanePlanner:
                 if walk > 1.0:
                     continue
                 at = self._at(tr, now, FAST.lasthit_lead_s + walk + windup)
-                p = p_kill(sc.ad * FAST.lasthit_margin, at, getattr(tr, "hp_max", 400.0))
+                p, z = self._pk(mi, "auto", sc.ad * FAST.lasthit_margin, at, getattr(tr, "hp_max", 400.0))
                 if walk == 0.0:
                     auto_p[tr.id] = p
                 v = p * self._gold(tr) - walk * 3.0
                 if p < 0.15 and pushing and tr.unit.hp > 0.2:
                     v = 2.0 - walk * 3.0  # pushing: hit the wave (not the minion about to be last-hittable)
                 if v > 0.5:
-                    out.append(Option("auto", v, tr, why=f"p={p:.2f} walk={walk:.1f}s", p=p))
+                    out.append(Option("auto", v, tr, why=f"p={p:.2f} walk={walk:.1f}s", p=p, z=z))
 
         # Q on minions (a line), or the tornado through the wave when pushing. Q is on cooldown for
         # ~3.5 s after: the last hits it would have taken in that time are its cost (a Q spent on
@@ -238,9 +287,10 @@ class LanePlanner:
                 if sc.dist(tr) > rng:
                     continue
                 line = self._line_units(sc, tr.unit.x, tr.unit.y, rng)
-                gold = sum(p_kill(sc.q_dmg, self._at(u, now, FAST.lasthit_lead_s + FAST.q_cast_s), getattr(u, "hp_max", 400.0))
-                           * self._gold(u) * (0.3 if auto_p.get(u.id, 0.0) >= 0.7 else 1.0)
-                           for u in line if not getattr(u, "ally_takes", False))
+                qp = {u.id: self._pk(mi, "Q", sc.q_dmg, self._at(u, now, FAST.lasthit_lead_s + FAST.q_cast_s), getattr(u, "hp_max", 400.0))
+                      for u in line if not getattr(u, "ally_takes", False)}
+                gold = sum(qp[u.id][0] * self._gold(u) * (0.3 if auto_p.get(u.id, 0.0) >= 0.7 else 1.0)
+                           for u in line if u.id in qp)
                 v = gold + (Q_STACK if (line and not q3) else 0.0) - q_later - Q_COST
                 if q3 and not pushing and gold < 10:
                     v -= 8.0  # the tornado on a wave that dies anyway: keep it for her
@@ -251,41 +301,62 @@ class LanePlanner:
                 if ch is not None and self._line_passes(sc, tr.unit.x, tr.unit.y, rng, ch.unit) and her_wave >= 3 and ch.unit.hp > 0.3:
                     v -= aggro_cost  # the Q also hits her: her whole wave turns on me (g16)
                 if v > 1.0:
-                    p = max((p_kill(sc.q_dmg, self._at(u, now, FAST.lasthit_lead_s + FAST.q_cast_s), getattr(u, "hp_max", 400.0))
-                             for u in line), default=0.0)
-                    out.append(Option("q", v, tr, why=f"line {len(line)} gold {gold:.0f}", p=p))
+                    p, z = qp.get(tr.id, (0.0, None))
+                    out.append(Option("q", v, tr, why=f"line {len(line)} gold {gold:.0f}", p=p, z=z))
 
-        # E through a minion (a last hit, a better spot, and with Q up the circle Q in the dash)
+        # E through a minion (a last hit, a better spot, and with Q up the circle Q in the dash),
+        # looked at one step further: the hit on her from the landing spot, and a dash back out.
         e_ok = ready.get("E") and sc.e_dmg > 0 and getattr(mi, "dash_ok", True)
+        champ_w = 0.0
+        if ch is not None and agg > 0.2:
+            # Trading while well behind in HP loses the exchange that follows it: she answers and wins.
+            behind = ch.unit.hp * 100 - mi.hp_pct
+            fac = 1.0 if behind <= 10 else (0.6 if behind <= 25 else 0.25)
+            if mi.hp_pct < 35:
+                fac *= 0.3
+            champ_w = CHAMP_HP_GOLD * agg * trade_w * fac * (1.3 if ch.unit.hp < 0.4 else 1.0)
         if e_ok:
             for tr in sc.minions:
                 d = sc.dist(tr)
                 if d > VC.e_range or tr.e_marked_until > now:
                     continue
                 land = self._landing(sc, tr)
-                spot, note = self.spot_value(sc, mi, land, now)
+                exit_ok = ch is not None and self._exit_after(sc, mi, land, tr, now)
+                spot, note = self.spot_value(sc, mi, land, now, reach_scale=0.4 if exit_ok else 1.0)
+                follow = 0.8 * self._follow_up(sc, mi, land, bool(ready.get("Q")) and not q3, champ_w, aggro_cost, her_hp_units) if champ_w else 0.0
+                if not exit_ok:
+                    follow *= 0.5  # in with no way back out: she answers the hit where I stand
+                if exit_ok:
+                    note = (note + ", " if note else "") + "dash out ready"
                 at = self._at(tr, now, FAST.lasthit_lead_s + 0.15)
-                kill = 0.0 if getattr(tr, "ally_takes", False) else p_kill(sc.e_dmg, at, getattr(tr, "hp_max", 400.0)) * self._gold(tr)
+                pe, ze = (0.0, None) if getattr(tr, "ally_takes", False) else self._pk(mi, "E", sc.e_dmg, at, getattr(tr, "hp_max", 400.0))
+                kill = pe * self._gold(tr)
                 if auto_p.get(tr.id, 0.0) >= 0.7:
                     kill *= 0.3  # the auto takes it for free
                 pk = kill / self._gold(tr)
-                v = kill + 0.6 * (spot - here) - (0.5 + E_COST * (1.0 - pk))
-                if pk < 0.3 and spot - here < E_MOVE_MIN:
+                v = kill + 0.6 * (spot - here) - (0.5 + E_COST * (1.0 - pk)) - dash_cost
+                if pk < 0.3 and spot - here < E_MOVE_MIN and follow < E_MOVE_MIN:
                     v = min(v, 0.0)
-                out.append(Option("e", v, tr, land, why=f"kill {kill:.0f} spot {spot - here:+.0f} {note}", p=pk))
+                v_e = v + follow
+                if v_e >= E_MIN:
+                    out.append(Option("e", v_e, tr, land, why=f"kill {kill:.0f} spot {spot - here:+.0f} then {follow:.0f} {note}", p=pk, z=ze))
                 if ready.get("Q") and not q3:
                     r = _px(FAST.eq_radius)
                     around = [u for u in sc.minions if u is not tr and self._dist_px((u.unit.x, u.unit.y), land) <= r]
                     if around:
-                        qg = sum(p_kill(sc.q_dmg, self._at(u, now, FAST.lasthit_lead_s + 0.25), getattr(u, "hp_max", 400.0))
+                        qg = sum(self._pk(mi, "Q", sc.q_dmg, self._at(u, now, FAST.lasthit_lead_s + 0.25), getattr(u, "hp_max", 400.0))[0]
                                  * self._gold(u) for u in around if not getattr(u, "ally_takes", False))
                         v2 = v + qg + Q_STACK - q_later - Q_COST - (Q_COST_NEAR_HER * agg if (ch is not None and cd < 800) else 0.0)
-                        out.append(Option("eq", v2, tr, land, why=f"kill {kill:.0f} circle {len(around)} gold {qg:.0f} spot {spot - here:+.0f}", p=pk))
+                        if champ_w and ch is not None and self._dist_px((ch.unit.x, ch.unit.y), land) <= r:
+                            v2 += sc.q_dmg / 0.88 / her_hp_units * 100 * champ_w - aggro_cost  # the circle catches her too
+                        elif champ_w:
+                            v2 += 0.8 * self._follow_up(sc, mi, land, False, champ_w, aggro_cost, her_hp_units)
+                        out.append(Option("eq", v2, tr, land, why=f"kill {kill:.0f} circle {len(around)} gold {qg:.0f} spot {spot - here:+.0f}", p=pk, z=ze))
 
         # The champion: hits that cost her more than they cost me
         if ch is not None and agg > 0.2:
             ahead = mi.hp_pct - ch.unit.hp * 100
-            w = CHAMP_HP_GOLD * agg * (1.3 if ch.unit.hp < 0.4 else 1.0)
+            w = champ_w
             if attack_ready and cd <= VC.auto_range + 40:
                 v = sc.ad / her_hp_units * 100 * w - aggro_cost - (6.0 if ahead < -15 else 0.0)
                 out.append(Option("auto_champ", v, ch, why=f"ahead {ahead:+.0f} her wave {her_wave}"))
@@ -296,8 +367,9 @@ class LanePlanner:
                 v = (sc.q_dmg / 0.88 / her_hp_units * 100 + 12.0) * w - aggro_cost  # the knock-up sets up everything after it
                 out.append(Option("q3_champ", v, ch, why=f"tornado, her wave {her_wave}"))
             if e_ok and ready.get("Q") and cd <= VC.e_range and ch.e_marked_until <= now:
-                v = (sc.e_dmg + sc.q_dmg) / 0.85 / her_hp_units * 100 * w - aggro_cost - (10.0 if ahead < -10 else 0.0)
-                out.append(Option("eq_champ", v, ch, why=f"ahead {ahead:+.0f} her wave {her_wave}"))
+                exit_ok = self._exit_after(sc, mi, self._landing(sc, ch), ch, now)
+                v = (sc.e_dmg + sc.q_dmg) / 0.85 / her_hp_units * 100 * w - aggro_cost - ((4.0 if exit_ok else 10.0) if ahead < -10 else 0.0)
+                out.append(Option("eq_champ", v, ch, why=f"ahead {ahead:+.0f} her wave {her_wave}{', dash out ready' if exit_ok else ''}"))
 
         # Where to stand
         best_spot, best_v, best_note = None, here, here_note

@@ -6,6 +6,7 @@ import json
 import math
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 from rich.console import Console
@@ -24,7 +25,7 @@ from jev.jungle import BIG, FIRST_SPAWN, JungleState, camps
 from jev import places as map_places
 from jev.kits import FIGHT_MODES, Kit, kit_for
 from jev.lanes import LANE_LETTER, Lane, lane_for
-from jev.micro import Micro, UnitTracker, build_scene
+from jev.micro import HP_MODEL, Micro, UnitTracker, build_scene
 from jev.minimap import MinimapReader, MinimapState, PosFilter, dist, lane_progress, lane_wave
 from jev.riot_api import FixtureRecorder, RiotLiveClient
 from jev.screen import Screen
@@ -32,9 +33,15 @@ from jev.state import Perception, build_state, find_me
 from jev import actions
 from jev.tactics import TacticalBrain, TacticInput, menu
 from jev.fight import FightBrain, FightRead
+from jev.lanelearn import LaneLearner
 from jev.vision import View, VisionReader
 
 console = Console()
+
+
+def inp_hp(data: dict) -> float:
+    cs = (data.get("activePlayer") or {}).get("championStats") or {}
+    return 100.0 * float(cs.get("currentHealth", 0.0)) / max(1.0, float(cs.get("maxHealth", 1.0)))
 
 
 def choose_intent(d: Decision | None, state: dict, p: Perception, now: float, guard: "Guards") -> str:
@@ -607,12 +614,20 @@ class Player:
         aspd = float(stats.get("attackSpeed", 0.7))
         q_rank = int(ap.get("abilities", {}).get("Q", {}).get("abilityLevel", 0))
         game_s = float((data.get("gameData") or {}).get("gameTime", 0.0))
+        mi.ad, mi.aspd = ad, aspd
         e_rank = int(ap.get("abilities", {}).get("E", {}).get("abilityLevel", 0))
         sc = build_scene(view, minions, champs, ad, q_rank, game_s, now, config.GEOMETRY.champion_px,
                          aspd=aspd, move_speed=float(stats.get("moveSpeed", 345.0)),
                          fwd=fwd, e_dmg=kit.e_minion_damage(e_rank, ad, int(ap.get("level", 1))))
         mi.dash_ok = not getattr(self, "_near_enemy_tower", False)
         sc.lane = self._lane_info(view, stats)
+        lr = getattr(mi, "learner", None)
+        if lr is not None:
+            lr.opponent = str((self.state.get("lane_opponent") or {}).get("champion") or "").lower()
+            her = sc.champ
+            reach = float(sc.lane.get("opp_range", 550.0)) + 150.0
+            lr.exposure(now, inp_hp(data), None if her is None else sc.dist(her) < reach)
+            lr.tick(now, inp_hp(data), her.unit.hp if her is not None else None)
         if kit.support:
             sc.killable_auto = []  # supports leave last hits to the carry
         self.scene = sc
@@ -1007,15 +1022,20 @@ class Player:
         gh.append((now, gold))
         stats = self._lh_stats = getattr(self, "_lh_stats", collections.defaultdict(lambda: [0, 0]))
         keep = []
-        for t, kind, hp in mi.lh_pending:
+        learner = getattr(mi, "learner", None)
+        for entry in mi.lh_pending:
+            t, kind, hp = entry[:3]
+            z = entry[3] if len(entry) > 3 else None  # the planner's predicted margin, for the learner
             win = 2.0 if kind.startswith("auto") else 1.1  # an auto may walk up to ~1 s first (reach: auto range + 380)
             if now - t < win:
-                keep.append((t, kind, hp))
+                keep.append(entry)
                 continue
             before = [g for tt, g in gh if tt <= t]
             after = [g for tt, g in gh if t < tt <= t + win]
             # A caster minion is worth 14 gold early: the old bar (12 + passive = 14.3) never counted them.
             ok = bool(before and after) and max(b - a for a, b in zip([before[-1]] + after, after)) >= 11
+            if learner is not None:
+                learner.lasthit(kind, z, ok)
             key = f"{kind} {int(hp * 100) // 5 * 5}%"
             stats[key][0] += 1
             stats[key][1] += int(ok)
@@ -1030,6 +1050,10 @@ class Player:
             self._lh_logged = now
             parts = [f"{k} {v[1]}/{v[0]}" for k, v in sorted(stats.items())]
             self.log_lines.append("lasthits paid: " + ", ".join(parts))
+            if learner is not None:
+                self.log_lines.append(learner.summary())
+                self.log_lines.append(HP_MODEL.summary())
+                learner.save()
             audit = getattr(self, "_lh_audit", None)
             if audit:
                 self.log_lines.append("lasthit audit (low minions that died near me): "
@@ -1734,6 +1758,8 @@ class Player:
         self.mech.blind_q_enabled = self.vision is None
         self.micro = Micro(self.ctl, self.screen, self.kb, side)
         self.micro.on_fight_order = lambda what: self.log_lines.append(f"order: {what}")
+        # Learns the lane planner's numbers during the game (lanelearn.py); dry runs start clean.
+        self.micro.learner = LaneLearner(path=Path("logs/lane_learned.json") if not self.ctl.dry_run else Path("/dev/null/x"))
         self.jungle_state = JungleState(side) if getattr(self.kit, "jungle", False) else None
         if self.jungle_state is not None and self.logfile:
             try:

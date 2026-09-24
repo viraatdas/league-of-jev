@@ -483,17 +483,20 @@ class Yasuo(Kit):
         if k == "auto":
             if best.p >= 0.5:
                 mi.attack(tr, now, f"last hit ({int(tr.unit.hp * 100)}%)")
-                mi.lh_pending.append((now, f"auto-{role}", tr.unit.hp))
+                mi.lh_pending.append((now, f"auto-{role}", tr.unit.hp, best.z))
             else:
                 mi.attack(tr, now, "push: attack the wave")
             return True
         if k == "q":
             was_q3 = self.q.q3(now)
+            rng = VC.q3_range * 0.8 if was_q3 else VC.q_range
+            for u in self._planner._line_units(sc, tr.unit.x, tr.unit.y, rng):
+                u.hits_expected.append((now + FAST.lasthit_lead_s + FAST.q_cast_s, sc.q_dmg / 0.88))
             mi.cast(1, tr.unit.x, tr.unit.y)
             self.q.cast(True, now)
             mi.attacked_ids[tr.id] = now
             if best.p >= 0.5:
-                mi.lh_pending.append((now, f"Q-{role}", tr.unit.hp))
+                mi.lh_pending.append((now, f"Q-{role}", tr.unit.hp, best.z))
             mi._ordered(now, ("Q3 the wave" if was_q3 else "Q last hit") if best.p >= 0.5 else ("push: Q3 the wave" if was_q3 else "Q: stack on the wave"))
             return True
         if k in ("e", "eq"):
@@ -504,10 +507,15 @@ class Yasuo(Kit):
                 mi.later(FAST.eq_delay_s, lambda: mi.ctl.press(mi.kb.ability(1)))
                 self.q.cast(True, now)
             if best.p >= 0.5:
-                mi.lh_pending.append((now, f"E-{role}", tr.unit.hp))
+                mi.lh_pending.append((now, f"E-{role}", tr.unit.hp, best.z))
+            if getattr(mi, "learner", None) is not None:
+                mi.learner.dashed(now, mi.hp_pct)
             label = "E+Q" if k == "eq" else "E"
             mi._ordered(now, f"{label} last hit" if best.p >= 0.5 else f"{label} through a minion ({best.why[:40]})")
             return True
+        if k in ("auto_champ", "q_champ", "q3_champ", "eq_champ") and getattr(mi, "learner", None) is not None:
+            her_wave = sum(1 for t in sc.minions if math.hypot(t.unit.x - tr.unit.x, t.unit.y - tr.unit.y) <= 500 * VC.px_per_unit)
+            mi.learner.hit_her(now, mi.hp_pct, tr.unit.hp, her_wave)
         if k == "auto_champ":
             mi.attack(tr, now, "plan: auto the champion")
             self.burst_at = now

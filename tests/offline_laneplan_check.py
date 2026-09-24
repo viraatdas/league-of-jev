@@ -123,3 +123,77 @@ assert y.continuous(mi, sc, now, 0.7, "farm", False)
 print("executed:", mi.last_action, "| logged:", mi.plan_log[-1]["pick"])
 assert mi.last_action.startswith("E") and mi.plan_log
 print("LANEPLAN OK")
+
+# Learning during the game: Q last hits the model called likely (z = 1.5) keep failing -> the Q
+# curve drops and the planner stops counting on them; standing in her reach costs 5%/s -> her
+# reach penalty grows; exchanges she loses -> the trade weight rises.
+from pathlib import Path
+from jev.lanelearn import LaneLearner
+lr = LaneLearner(opponent="nasus", path=Path("/dev/null/none"))
+p0 = lr.p_kill("Q", 1.5)
+for _ in range(25):
+    lr.lasthit("Q-caster", 1.5, False)
+p1 = lr.p_kill("Q", 1.5)
+print(f"Q curve at z=1.5: {p0:.2f} -> {p1:.2f} after 25 misses")
+assert p0 > 0.75 and p1 < 0.5
+t, hp = 100.0, 90.0
+for k in range(40):
+    lr.exposure(t + 0.25 * k, hp - 1.25 * k, True)   # 5% a second inside her reach
+print(f"her reach rate: {lr.in_reach:.1f}%/s")
+assert lr.in_reach > 3.5
+for k in range(4):
+    lr.hit_her(200 + 10 * k, 90, 0.8, 1)
+    lr.tick(203.1 + 10 * k, 88, 0.65)                   # she lost 15%, I lost 2%
+print(f"trade weight vs nasus: {lr.trade_weight():.2f}")
+assert lr.trade_weight() > 1.3
+print(lr.summary())
+
+# The planner reads it: the same Q last hit is worth less once the Q curve has dropped.
+y = Yasuo()
+y.q.hud = False
+pl = LanePlanner(y)
+mi = micro()
+mi.last_attack = now - 0.5
+q_low = tr("minion", 400, 0, 0.17, 1)
+sc = scene([q_low], ready="Q")
+before = max((o.value for o in pl.options(sc, mi, now, False) if o.kind == "q"), default=0.0)
+mi.learner = lr
+after = max((o.value for o in pl.options(sc, mi, now, False) if o.kind == "q"), default=0.0)
+print(f"Q last hit value: {before:.1f} -> {after:.1f} with the learned curve")
+assert after < before
+
+# HP forecast chosen live: minions hit in a steady rhythm score the step model better.
+from jev.micro import HpModel, UnitTracker, HP_MODEL
+import jev.micro as _m
+_m.HP_MODEL = hm = HpModel()
+ut = UnitTracker()
+t0 = 5000.0
+for m in range(12):
+    hp = 0.55
+    for i in range(0, 90):
+        now2 = t0 + m * 4 + i / 30
+        if i % 24 == 0 and i:
+            hp -= 0.06
+        ut.update([Unit("minion", "enemy", 300 + 90 * m, 400, hp, (0, 0, 60, 4))], now2)
+print(hm.summary())
+assert hm.best() == "steps"
+_m.HP_MODEL = HP_MODEL
+print("LANEPLAN OK (learning)")
+
+# Lookahead: healthy vs her, a minion to dash through lands next to her, and another minion there to
+# dash back out through: E in (then Q her) beats standing and waiting (either minion in, the other out).
+mi = micro()
+mi.hp_pct, mi.last_attack = 95.0, now - 0.5
+y2 = Yasuo()
+y2.q.hud = False
+pl2 = LanePlanner(y2)
+her = tr("champion", 700, 0, 0.7, 9, role="")
+gate = tr("minion", 320, 0, 0.9, 30)          # through it toward her
+back = tr("minion", 560, 60, 0.9, 31)         # from the landing, back toward home... needs to be behind the landing
+back.unit.x, back.unit.y = ME[0] + 300 * PPU, ME[1] + 80 * PPU
+sc = scene([gate, back], champ=her)
+sc.lane["opp_range"] = 550.0
+best, top = pl2.choose(sc, mi, now, False)
+print("E in with a way out:", best.kind, "through", best.target.id, best.why, [(o.kind, round(o.value, 1)) for o in top[1:]])
+assert best.kind in ("e", "eq") and best.target in (gate, back) and "dash out ready" in best.why and " then 0 " not in best.why
+print("LANEPLAN OK (lookahead)")
