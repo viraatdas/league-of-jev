@@ -207,6 +207,16 @@ def night(rotation: str = typer.Option("yasuo,leesin", help="Champions in turn (
 
 
 @app.command()
+def normal(first: str = typer.Option("MIDDLE", help="First position preference"),
+           second: str = typer.Option("JUNGLE", help="Second position preference"),
+           tag: str = typer.Option("", help="Name for the log and frames")) -> None:
+    """One normal (PvP) game end to end, played to its end (no surrender)."""
+    from jev.session import normal_game
+
+    normal_game(tag, first, second)
+
+
+@app.command()
 def watch_install(interval: float = 30.0) -> None:
     """Block until League of Legends.app appears in /Applications."""
     from jev.doctor import LEAGUE_APP

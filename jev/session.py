@@ -294,3 +294,62 @@ def night(rotation: str = "yasuo,leesin", minutes: float = 16.0, games: int = 30
             if game_alive():
                 kill_game()
             time.sleep(20)
+
+
+def normal_game(tag: str = "", first: str = "MIDDLE", second: str = "JUNGLE", max_minutes: float = 60.0) -> dict:
+    """One normal (PvP) game end to end: queue with position preferences, accept, ban, pick by the
+    assigned position, the harness playing the champion and role the game gives it, and the game
+    played to its end: no surrender (in PvP /ff starts a vote for four real teammates)."""
+    logs = Path("logs/night")
+    logs.mkdir(parents=True, exist_ok=True)
+    tag = tag or time.strftime("normal_%m%d_%H%M")
+    log = logs / f"{tag}.log"
+    cmd = ["uv", "run", "jev", "play", "--logfile", str(log), "--decision-log", str(logs / f"{tag}_decisions.jsonl"),
+           "--save-frames", "2", "--frames-dir", f"snapshots/night/{tag}"]
+    c, riot = LCU(), RiotLiveClient()
+    _say(f"client phase {clear_post_game(c)}")
+    if not harness_alive():
+        console = open(logs / f"{tag}.console", "a")
+        subprocess.Popen(cmd, stdout=console, stderr=subprocess.STDOUT, start_new_session=True)
+        _say(f"harness: {' '.join(cmd)}")
+    started = False
+    for line in c.play_normal(first=first, second=second):
+        _say(f"lcu: {line}")
+        started = started or line == "game starting"
+    result = {"tag": tag, "log": str(log), "ended": "?"}
+    if not started:
+        result["ended"] = "no game"
+        stop_harness()
+        return result
+    t0 = time.time()
+    while not game_alive() and time.time() - t0 < 300:
+        time.sleep(2)
+    gone, last_note = 0, 0.0
+    while time.time() - t0 < max_minutes * 60 + 300:
+        time.sleep(5)
+        if not game_alive():
+            gone += 1
+            if gone >= 3:
+                result["ended"] = "game over"
+                break
+            continue
+        gone = 0
+        if not harness_alive():
+            _say("harness not running: restarting it")
+            console = open(logs / f"{tag}.console", "a")
+            subprocess.Popen(cmd, stdout=console, stderr=subprocess.STDOUT, start_new_session=True)
+        if time.time() - last_note > 60:
+            last_note = time.time()
+            try:
+                _say("status " + log.read_text(errors="ignore").splitlines()[-1][:160])
+            except (OSError, IndexError):
+                pass
+    stop_harness()
+    from jev.score import report
+
+    result["score"] = report(log)
+    _say("score:\n" + result["score"])
+    time.sleep(5)
+    _say(f"client phase after: {clear_post_game(c)}")
+    c.close()
+    return result
