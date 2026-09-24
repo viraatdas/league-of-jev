@@ -75,4 +75,20 @@ sc2 = Scene(me_xy=ME, ally_champs=sc.ally_champs)
 sc2.champ, sc2.champ_dist, sc2.enemy_champs = near, sc2.dist(near), 2
 p._fight_triggers(sc2, p.micro, now + 0.2)
 assert sc2.champ is weak
+
+# Sidestep: holding behind the wave with their champion in skillshot range, the hold point alternates.
+mi = Micro(Controller(dry_run=True, log=lambda m: None), Screen(), keybinds.load(), "ORDER")
+mi.fwd = (1.0, 0.0)
+m = track(300, 0.9, 5, now)
+m.unit.kind = "minion"
+sc = Scene(me_xy=ME, minions=[m])
+c = track(900, 0.9, 6, now)
+sc.champ, sc.champ_dist = c, sc.dist(c)
+sides = set()
+for k in range(6):
+    mi.last_order = 0
+    mi.farm_step(sc, now + k * 1.0, 0.7)
+    sides.add(mi._juke_side)
+print("sidestep:", mi.last_action, sides)
+assert mi.last_action.startswith("farm: sidestep") and sides == {1, -1}
 print("TEAMFIGHT OK")

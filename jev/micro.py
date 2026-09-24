@@ -9,6 +9,7 @@ from __future__ import annotations
 import collections
 import itertools
 import math
+import random
 import time
 from dataclasses import dataclass, field
 
@@ -374,6 +375,16 @@ class Micro:
         back = (VC.auto_range + 40) * VC.px_per_unit
         tx, ty = front.unit.x - self.fwd[0] * back, front.unit.y - self.fwd[1] * back
         ahead = along(front) < 0  # we are past the enemy front line: get out now
+        if not ahead and sc.champ is not None and (sc.champ_dist or 9e9) < 1150:
+            # Their champion is in skillshot range: never stand still while waiting. Bots aim at where
+            # we stand; sidestepping across the lane every 0.5-0.9 s makes the straight lines miss.
+            if now >= getattr(self, "_juke_flip_at", 0.0):
+                self._juke_side = -getattr(self, "_juke_side", 1)
+                self._juke_flip_at = now + random.uniform(0.5, 0.9)
+            side = (-self.fwd[1], self.fwd[0])
+            off = 120 * VC.px_per_unit * self._juke_side
+            self.move_screen(tx + side[0] * off, ty + side[1] * off, now, "farm: sidestep (champion in range)", every=0.2)
+            return True
         if ahead or math.hypot(tx - mx, ty - my) > 35:
             self.move_screen(tx, ty, now, "farm: back out of the wave" if ahead else "farm: hold behind the wave",
                              every=0.15 if ahead else 0.3)
