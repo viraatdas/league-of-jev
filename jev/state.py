@@ -29,6 +29,7 @@ class Perception:
     nearest_enemy_champion_units: float | None = None
     enemy_minions_in_lane: int = 0
     ally_minions_in_lane: int = 0
+    ally_minions_at_enemy_tower: int = 0   # our minions within 900 units of the enemy tower we are near
     wave_position: str | None = None
     near_enemy_tower: bool = False
     where_label: str | None = None        # lane-aware description set by the loop

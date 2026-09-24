@@ -50,7 +50,12 @@ def choose_intent(d: Decision | None, state: dict, p: Perception, now: float, gu
         guard.retreat_until = now + 4.0  # survival floor, shorter than Jev's own retreat calls
     if p.hp_lost_recent_pct >= config.TIMING.heavy_damage_pct:
         guard.retreat_until = now + 5.0  # tower-sized chunks: step out before the next shot
-    if p.near_enemy_tower and (d is None or d.intent != "push_tower") and now >= guard.push_ok_until:
+    # Under their tower is fine while our wave is there taking its shots, nobody of theirs is close and
+    # we are healthy: the last hits there are safe. Stepping back every time left Yasuo at 50 CS at
+    # 44:00 while the team kept their wave under the tower (g26).
+    tower_farm_ok = (p.ally_minions_at_enemy_tower >= 3 and me["hp_percent"] >= 50
+                     and (p.nearest_enemy_champion_units is None or p.nearest_enemy_champion_units >= 1000))
+    if p.near_enemy_tower and (d is None or d.intent != "push_tower") and now >= guard.push_ok_until and not tower_farm_ok:
         guard.step_back_until = now + 2.5
     if p.nearest_enemy_champion_units is not None and p.nearest_enemy_champion_units < 600 and me["hp_percent"] < 30:
         guard.retreat_until = now + 5.0
@@ -1795,6 +1800,7 @@ class Player:
                         continue
                     if dist(mm.pos, t) < config.TOWER_RANGE:
                         p.near_enemy_tower = True
+                        p.ally_minions_at_enemy_tower = sum(1 for a in mm.ally_minions if dist(a, t) < 900)
                         break
                 self._near_enemy_tower = p.near_enemy_tower
                 if self.micro is not None:
