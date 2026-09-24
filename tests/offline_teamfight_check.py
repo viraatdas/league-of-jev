@@ -111,11 +111,13 @@ mm.enemy_champions, mm.ally_champions = [enemy_at, (12000.0, 12000.0)], [ally_at
 g = p._gank_plan(mm, mm.ally_champions, 300.0, {"level": 4, "hp_percent": 90}, now)
 print("gank:", g, list(p.log_lines)[-1:])
 assert g is not None and g[2] == "gank top"
-# Two of them there and none of us: over.
+# Two of them there and none of us, Lee still on the way: over once it holds 3 s.
 mm.enemy_champions = [enemy_at, (enemy_at[0] + 300, enemy_at[1])]
 g = p._gank_plan(mm, [], 300.0, {"level": 4, "hp_percent": 90}, now + 1)
 assert g is not None  # one frame of bad numbers is not enough (the minimap jitters)
 g = p._gank_plan(mm, [], 300.0, {"level": 4, "hp_percent": 90}, now + 2.6)
+assert g is not None  # held 1.6 s: still on (3 s now: icons merge in skirmishes, g21)
+g = p._gank_plan(mm, [], 300.0, {"level": 4, "hp_percent": 90}, now + 4.2)
 assert g is None and "over" in list(p.log_lines)[-1], list(p.log_lines)[-1]
 # Level 2: no gank.
 p._gank_next = 0
