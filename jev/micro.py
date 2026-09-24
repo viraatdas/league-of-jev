@@ -170,15 +170,18 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
     melee_max = FAST.melee_hp[0] + FAST.melee_hp[1] * max(0.0, game_s) / 90.0
     caster_max = FAST.caster_hp[0] + FAST.caster_hp[1] * max(0.0, game_s) / 90.0
     roles = minion_roles(minions, me_xy, fwd)
-    q_dmg = (FAST.q_base[max(0, min(q_rank, 5) - 1)] + FAST.q_ad * ad) if q_rank else 0.0
+    # 12% under the formula: over g15-g17, Q on melee minions paid 80% at 10-25% HP but 51% at 30%
+    # and 32% at 35%; the model reaches further than the game does.
+    q_dmg = 0.88 * (FAST.q_base[max(0, min(q_rank, 5) - 1)] + FAST.q_ad * ad) if q_rank else 0.0
     windup = FAST.windup_frac / max(0.3, aspd)
     for tr in minions:
         d = sc.dist(tr)
         tr.role = roles.get(tr.id, "")
         hp_max = melee_max if tr.role == "melee" else (caster_max if tr.role == "caster" else avg_max)
-        if tr.unit.hp < 0.08 and sc.allies > 0:
+        if (tr.unit.hp < 0.08 and sc.allies > 0) or tr.unit.hp < 0.04 or (tr.role == "caster" and tr.unit.hp < 0.12):
             # Nearly dead with allied minions around: they take it before our hit lands (g11: Q at
-            # 0-15% paid 8/29, at 20%+ 17/23; autos at 0-10% 3/15).
+            # 0-15% paid 8/29, at 20%+ 17/23; autos at 0-10% 3/15). A caster's bar under 12% (7 px)
+            # paid 10 of 297 attempts over g15-g17, and any bar under 4% is noise.
             continue
         # Forecast the minion's HP at the moment the hit lands: input, the walk into range, the
         # wind-up. With only the input lead, a hit that needed a walk landed after the allied
