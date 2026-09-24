@@ -83,6 +83,7 @@ class UnitTracker:
         self.tracks: dict[int, Track] = {}
         self.max_jump = max_jump_px
         self.ttl = ttl
+        self.dropped: list[Track] = []
 
     def update(self, units: list[Unit], now: float) -> list[Track]:
         free = dict(self.tracks)
@@ -106,8 +107,10 @@ class UnitTracker:
             if not tr.trail or now - tr.trail[-1][0] >= 0.1:
                 tr.trail.append((now, u.hp))
             out.append(tr)
+        self.dropped = []
         for tid, tr in list(self.tracks.items()):
             if now - tr.seen > self.ttl:
+                self.dropped.append(tr)  # died or left the screen (the last-hit audit reads these)
                 del self.tracks[tid]
         return out
 
@@ -193,14 +196,17 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
         now_abs = tr.unit.hp * hp_max
         # Reach: an auto range plus ~1 s of walking (counted in the forecast). Over g18 only 34 of 313
         # low enemy minions were within 300 units of Yasuo while farming; 57% were past 500.
+        tr.last_dist = d
         if d <= VC.auto_range + 380 and 0 < at_hit <= ad * FAST.lasthit_margin and now_abs - ad <= FAST.forecast_cap:
             tr.at_hit = at_hit
+            tr.was_killable = True
             sc.killable_auto.append(tr)
         if tr not in sc.killable_auto and tr.hp_rate(now) < 0 and 0 < tr.predict_hp(now, 1.6) * hp_max <= ad * 1.1:
             sc.soon_killable.append(tr)
         at_q = tr.predict_hp(now, FAST.lasthit_lead_s + FAST.q_cast_s) * hp_max
         if q_rank and d <= VC.q_range and 0 < at_q <= q_dmg and now_abs - q_dmg <= FAST.forecast_cap:
             tr.at_q = at_q
+            tr.was_killable = True
             sc.killable_q.append(tr)
     # Most HP left at the moment of our hit first: the nearly dead ones are the ones allied minions
     # finish before the hit lands (autos at 0-5% paid 1 in 5, game 4).
@@ -244,6 +250,7 @@ class Micro:
         self.summoners: list[str | None] = []   # set by the loop each tick (flash, ignite, ...)
         self.hp_pct = 100.0                     # own HP, set by the loop each tick
         self._summoner_cast_at: dict[int, float] = {}
+        self.attacked_ids: dict[int, float] = {}   # track id -> last time we attacked or Q'd it
         self.last_action = ""
         self.last_seq = 0
         self.orders = 0
@@ -321,6 +328,7 @@ class Micro:
         # Jungle monsters get a right-click on the body: an attack-move does not start a fight with
         # a camp that is not already fighting us.
         pt = self._pt(tr.unit.x, tr.unit.y)
+        self.attacked_ids[tr.id] = now
         if right_click or self.at_camp or tr.unit.kind == "monster":
             self.ctl.click(*pt, "right")
         else:

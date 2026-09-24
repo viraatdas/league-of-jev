@@ -389,6 +389,7 @@ class Yasuo(Kit):
                 # me: a level-2 Q last hit through Kayle cost 88% -> 59% in two seconds (g16). Auto it.
                 return super().continuous(mi, sc, now, aspd, mode, pushing)
             hit = _line_hits(sc, tq.unit.x, tq.unit.y, VC.q3_range if was_q3 else VC.q_range)
+            mi.attacked_ids[tq.id] = now
             mi.cast(1, tq.unit.x, tq.unit.y)
             self.q.cast(hit, now)
             mi._ordered(now, "Q last hit")

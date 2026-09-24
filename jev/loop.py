@@ -571,6 +571,7 @@ class Player:
             # Jungle monsters have red bars like enemy minions: keep only units near the lane path.
             raw_minions = [u for u in raw_minions if self.lane.project(world(u))[1] < 900]
         minions = self.min_tracker.update(raw_minions, now)
+        self._audit_lasthits(mi, now)
         champs = self.champ_tracker.update(view.enemies("champion"), now)
         if not minions and not champs and not (self.kit.support and view.allies("champion")):
             self.scene = None
@@ -841,6 +842,28 @@ class Player:
         if pick is not None and pick is not sc.champ:
             sc.champ, sc.champ_dist = pick, sc.dist(pick)
 
+    def _audit_lasthits(self, mi, now: float) -> None:
+        """Every enemy minion that vanishes while low (under 35%) and within 800 units: did we try it?
+        If not, was it ever killable by our numbers, and how far was it? Logged each minute with the
+        paid rates, so farming is fixed from counts (g19: 48 tries for ~90 minions in 8 minutes)."""
+        if mi is None:
+            return
+        audit = self._lh_audit = getattr(self, "_lh_audit", collections.Counter())
+        for tr in self.min_tracker.dropped:
+            if tr.unit.team != "enemy" or tr.unit.kind != "minion" or tr.unit.hp > 0.35:
+                continue
+            d = getattr(tr, "last_dist", 9e9)
+            if d > 800:
+                continue
+            if now - mi.attacked_ids.get(tr.id, 0.0) < 3.0:
+                audit["tried"] += 1
+            elif getattr(tr, "was_killable", False):
+                audit["killable, not taken"] += 1
+            else:
+                audit[f"never killable {'<300' if d < 300 else '300-600' if d < 600 else '600-800'}u"] += 1
+        if mi.attacked_ids and len(mi.attacked_ids) > 200:
+            mi.attacked_ids = {k: v for k, v in mi.attacked_ids.items() if now - v < 10}
+
     def _lasthit_check(self, gold: float, now: float) -> None:
         """Did each last-hit attempt pay? A CS is a gold jump of 12+ above passive income within
         a second of the order. Tallied by kind and minion HP bucket; logged once a minute, so
@@ -874,6 +897,10 @@ class Player:
             self._lh_logged = now
             parts = [f"{k} {v[1]}/{v[0]}" for k, v in sorted(stats.items())]
             self.log_lines.append("lasthits paid: " + ", ".join(parts))
+            audit = getattr(self, "_lh_audit", None)
+            if audit:
+                self.log_lines.append("lasthit audit (low minions that died near me): "
+                                      + ", ".join(f"{k} {v}" for k, v in audit.most_common()))
 
     # -- the fight head -----------------------------------------------------------------------
     def _enemies_near_on_map(self, radius: float) -> list[tuple[float, float]]:
