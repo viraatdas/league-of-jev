@@ -221,6 +221,16 @@ def _line_hits(sc: Scene, x: float, y: float, rng_units: float, width_px: float 
     return False
 
 
+def _hits_champ(sc: Scene, x: float, y: float, rng_units: float, width_px: float = 55) -> bool:
+    """Would a line skillshot toward (x, y) also hit the enemy champion?"""
+    mx, my = sc.me_xy
+    dx, dy = x - mx, y - my
+    n = math.hypot(dx, dy) or 1.0
+    ux, uy = sc.champ.unit.x - mx, sc.champ.unit.y - my
+    along = (ux * dx + uy * dy) / n
+    return 0 < along <= (rng_units + 60) * VC.px_per_unit and abs(ux * dy - uy * dx) / n < width_px
+
+
 class Yasuo(Kit):
     name = "Yasuo"
     champ_id = YASUO_ID
@@ -338,6 +348,11 @@ class Yasuo(Kit):
         if mode in ("farm", "push") and sc.ready.get("Q") and sc.killable_q and mi._can_order(now):
             tq = sc.killable_q[0]
             was_q3 = self.q.q3(now)
+            if sc.champ is not None and _hits_champ(sc, tq.unit.x, tq.unit.y, VC.q3_range if was_q3 else VC.q_range) \
+                    and len(sc.minions) >= 3 and sc.champ.unit.hp > 0.3:
+                # The Q would also hit their champion, and hitting a champion turns her whole wave on
+                # me: a level-2 Q last hit through Kayle cost 88% -> 59% in two seconds (g16). Auto it.
+                return super().continuous(mi, sc, now, aspd, mode, pushing)
             hit = _line_hits(sc, tq.unit.x, tq.unit.y, VC.q3_range if was_q3 else VC.q_range)
             mi.cast(1, tq.unit.x, tq.unit.y)
             self.q.cast(hit, now)

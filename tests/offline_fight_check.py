@@ -154,3 +154,19 @@ assert mi.last_action == "trade: step back"
 y.step(mi, sc, now + 3.0, 0.7, "trade", False)
 assert mi.mode == "farm"
 print("FIGHT OK")
+
+# Q last hit that would also hit the champion (and turn her wave on me): auto instead.
+y = Yasuo()
+mi, log = micro()
+wave = [track(unit("minion", 250, 0, 0.08), now)] + [track(unit("minion", 350 + 20 * k, 60 * k - 60, 0.9), now) for k in range(3)]
+sc = scene(track(unit("champion", 420, 10, 0.9), now), wave, "Q")
+sc.killable_q = [wave[0]]
+y.continuous(mi, sc, now, 0.7, "farm", False)
+print("q through the champion:", mi.last_action)
+assert mi.last_action != "Q last hit"
+sc = scene(track(unit("champion", -100, 400, 0.9), now), wave, "Q")
+sc.killable_q = [wave[0]]
+mi.last_order = 0
+y.continuous(mi, sc, now, 0.7, "farm", False)
+assert mi.last_action == "Q last hit", mi.last_action
+print("FIGHT OK (q line)")
