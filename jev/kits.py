@@ -342,7 +342,7 @@ class Yasuo(Kit):
             mi.cast(1, tq.unit.x, tq.unit.y)
             self.q.cast(hit, now)
             mi._ordered(now, "Q last hit")
-            mi.lh_pending.append((now, "Q", tq.unit.hp))
+            mi.lh_pending.append((now, f"Q-{getattr(tq, 'role', '') or '?'}", tq.unit.hp))
             mi.last_exec = {"name": "Q last hit", "what": "Q last hit", "ts": now, "target": mi._pt(tq.unit.x, tq.unit.y), "point": None}
             return True
         return super().continuous(mi, sc, now, aspd, mode, pushing)

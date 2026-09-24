@@ -144,8 +144,19 @@ class Scene:
         return math.hypot(tr.unit.x - self.me_xy[0], tr.unit.y - self.me_xy[1]) / VC.px_per_unit
 
 
+def minion_roles(minions: list[Track], me_xy, fwd) -> dict[int, str]:
+    """Melee or caster by place in the wave: melee minions walk in front (nearest our side along
+    the lane), casters behind. All minion bars are 60 px, so the bar alone cannot tell them apart."""
+    if fwd is None or not minions:
+        return {}
+    along = lambda t: (t.unit.x - me_xy[0]) * fwd[0] + (t.unit.y - me_xy[1]) * fwd[1]
+    order = sorted(minions, key=along)
+    n_melee = min(3, max(1, len(order) // 2)) if len(order) >= 2 else 0
+    return {t.id: ("melee" if i < n_melee else "caster") for i, t in enumerate(order)}
+
+
 def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float, q_rank: int, game_s: float, now: float, fallback_xy,
-                aspd: float = 0.7, move_speed: float = 345.0) -> Scene:
+                aspd: float = 0.7, move_speed: float = 345.0, fwd=None) -> Scene:
     me_xy = (view.me.x, view.me.y) if view.me else fallback_xy
     sc = Scene(me_xy=me_xy, minions=minions, allies=len(view.allies("minion")), ally_champs=view.allies("champion"))
     sc.ready = dict(view.hud.ready)
@@ -154,12 +165,16 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
     if champs:
         sc.champ = min(champs, key=sc.dist)
         sc.champ_dist = sc.dist(sc.champ)
-    hp_max = minion_max_hp(game_s)
+    avg_max = minion_max_hp(game_s)
     melee_max = FAST.melee_hp[0] + FAST.melee_hp[1] * max(0.0, game_s) / 90.0
+    caster_max = FAST.caster_hp[0] + FAST.caster_hp[1] * max(0.0, game_s) / 90.0
+    roles = minion_roles(minions, me_xy, fwd)
     q_dmg = (FAST.q_base[max(0, min(q_rank, 5) - 1)] + FAST.q_ad * ad) if q_rank else 0.0
     windup = FAST.windup_frac / max(0.3, aspd)
     for tr in minions:
         d = sc.dist(tr)
+        tr.role = roles.get(tr.id, "")
+        hp_max = melee_max if tr.role == "melee" else (caster_max if tr.role == "caster" else avg_max)
         if tr.unit.hp < 0.08 and sc.allies > 0:
             # Nearly dead with allied minions around: they take it before our hit lands (g11: Q at
             # 0-15% paid 8/29, at 20%+ 17/23; autos at 0-10% 3/15).
@@ -171,7 +186,7 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
         at_hit = tr.predict_hp(now, FAST.lasthit_lead_s + walk + windup) * hp_max
         # The forecast may bring the minion down by about one allied hit, no more: counting on
         # more, Q at 25-45% HP paid 0/5 and autos at 20-30% 0/3 (game 4), against 6/6 at 10-20%.
-        now_abs = tr.unit.hp * melee_max
+        now_abs = tr.unit.hp * hp_max
         if d <= VC.auto_range + 250 and 0 < at_hit <= ad * FAST.lasthit_margin and now_abs - ad <= FAST.forecast_cap:
             tr.at_hit = at_hit
             sc.killable_auto.append(tr)
@@ -332,7 +347,7 @@ class Micro:
             return False
         if sc.killable_auto and self.attack_ready(now, attack_speed):
             self.attack(sc.killable_auto[0], now, f"last hit ({int(sc.killable_auto[0].unit.hp * 100)}%)")
-            self.lh_pending.append((now, "auto", sc.killable_auto[0].unit.hp))
+            self.lh_pending.append((now, f"auto-{getattr(sc.killable_auto[0], 'role', '') or '?'}", sc.killable_auto[0].unit.hp))
             return True
         if self.in_windup(now, attack_speed):
             return True

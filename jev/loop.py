@@ -58,7 +58,13 @@ def choose_intent(d: Decision | None, state: dict, p: Perception, now: float, gu
         return "retreat"
     if now < guard.step_back_until:
         return "step_back"
-    if d is None:
+    if d is None or now - d.ts > 6.0:
+        # No fresh strategy from Jev (API down, out of credits): recall by rule, otherwise farm.
+        gold = float(me.get("gold") or 0)
+        enemy_near = p.nearest_enemy_champion_units is not None and p.nearest_enemy_champion_units < 1500
+        if (me["hp_percent"] < 35 and since_dmg > 4 and not enemy_near) or (gold >= 1300 and me["hp_percent"] < 60 and not enemy_near) \
+                or (gold >= 2200 and not enemy_near):
+            return "recall"
         return "farm"
     if d.danger >= 2.5:
         return "retreat"
@@ -562,7 +568,8 @@ class Player:
         q_rank = int(ap.get("abilities", {}).get("Q", {}).get("abilityLevel", 0))
         game_s = float((data.get("gameData") or {}).get("gameTime", 0.0))
         sc = build_scene(view, minions, champs, ad, q_rank, game_s, now, config.GEOMETRY.champion_px,
-                         aspd=aspd, move_speed=float(stats.get("moveSpeed", 345.0)))
+                         aspd=aspd, move_speed=float(stats.get("moveSpeed", 345.0)),
+                         fwd=self.lane.screen_dir(self.mech.nav.progress) if self.mech else None)
         if kit.support:
             sc.killable_auto = []  # supports leave last hits to the carry
         self.scene = sc
@@ -729,6 +736,10 @@ class Player:
             stats[key][1] += int(ok)
             stats[kind][0] += 1
             stats[kind][1] += int(ok)
+            base = kind.split("-")[0]
+            if base != kind:  # "Q" and "auto" totals next to the per-role ones ("Q-melee", "auto-caster")
+                stats[base][0] += 1
+                stats[base][1] += int(ok)
         mi.lh_pending = keep
         if now - getattr(self, "_lh_logged", 0.0) > 60 and stats:
             self._lh_logged = now
@@ -1639,9 +1650,26 @@ class Player:
                 names = [b.name for b in cat.purchases(target, self._items_now(), gold)]
             # (No extra Health Potion: typing its name also matches every item mentioning health,
             # so it failed 16 times in two games; the starting bundle already has one.)
+        if not names and self.shop_brain is not None and (self.build is None or time.time() - self.build.ts > 90):
+            # No build plan from Jev (API down): the kit's core items in order, components as gold allows.
+            cat = self.shop_brain.catalog
+            owned = self._items_now()
+            game_min = float((self.data or {}).get("gameData", {}).get("gameTime", 0.0)) / 60
+            if game_min < 1.5 and not [o for o in owned if o not in ("Stealth Ward", "Oracle Lens")]:
+                order = list(self.kit.items.starters[:1])
+            else:
+                order = [b for b in self.kit.items.boots[:1]] + list(self.kit.items.core)
+            for name in order:
+                it = cat.get(name)
+                if it is None or name in owned:
+                    continue
+                names = [b.name for b in cat.purchases(it, owned, gold)]
+                if names:
+                    self.log_lines.append(f"shop (no Jev): toward {name}")
+                break
         if not names:
             first = self.kit.items.starters[0] if self.kit.items.starters else "Doran's Blade"
-            names = [first] if gold >= 400 else []
+            names = [first] if gold >= 400 and not self._items_now()[1:] else []
         bought_any = False
         fails = self._shop_fails = getattr(self, "_shop_fails", {})  # reset when we leave the fountain
         names = [n for n in names if fails.get(n, 0) < 2]  # an item that failed twice this visit is skipped
