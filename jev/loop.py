@@ -1277,7 +1277,7 @@ class Player:
             if len(group) >= 3 and dist(mm.pos, best) > 2500:
                 cx = sum(b[0] for b in group) / len(group)
                 cy = sum(b[1] for b in group) / len(group)
-                return ("objective", (cx, cy), f"group with {len(group)} allies")
+                return ("objective", (cx, cy), "group with the team")
         return None
 
     def _join_fight_plan(self, mm, allies: list, gt: float, hp: float, now: float):
