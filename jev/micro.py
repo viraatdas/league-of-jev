@@ -191,10 +191,12 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
         # The forecast may bring the minion down by about one allied hit, no more: counting on
         # more, Q at 25-45% HP paid 0/5 and autos at 20-30% 0/3 (game 4), against 6/6 at 10-20%.
         now_abs = tr.unit.hp * hp_max
-        if d <= VC.auto_range + 250 and 0 < at_hit <= ad * FAST.lasthit_margin and now_abs - ad <= FAST.forecast_cap:
+        # Reach: an auto range plus ~1 s of walking (counted in the forecast). Over g18 only 34 of 313
+        # low enemy minions were within 300 units of Yasuo while farming; 57% were past 500.
+        if d <= VC.auto_range + 380 and 0 < at_hit <= ad * FAST.lasthit_margin and now_abs - ad <= FAST.forecast_cap:
             tr.at_hit = at_hit
             sc.killable_auto.append(tr)
-        if tr not in sc.killable_auto and tr.hp_rate(now) < 0 and 0 < tr.predict_hp(now, 1.2) * hp_max <= ad * 1.1:
+        if tr not in sc.killable_auto and tr.hp_rate(now) < 0 and 0 < tr.predict_hp(now, 1.6) * hp_max <= ad * 1.1:
             sc.soon_killable.append(tr)
         at_q = tr.predict_hp(now, FAST.lasthit_lead_s + FAST.q_cast_s) * hp_max
         if q_rank and d <= VC.q_range and 0 < at_q <= q_dmg and now_abs - q_dmg <= FAST.forecast_cap:
@@ -381,7 +383,9 @@ class Micro:
         mx, my = sc.me_xy
         along = lambda t: (t.unit.x - mx) * self.fwd[0] + (t.unit.y - my) * self.fwd[1]
         front = min(sc.minions, key=along)
-        back = (VC.auto_range + 40) * VC.px_per_unit
+        # An auto range behind their front line, or just inside it when their champion is not close:
+        # the minions that die are the ones fighting at the front.
+        back = (VC.auto_range + (40 if (sc.champ is not None and (sc.champ_dist or 9e9) < 900) else -40)) * VC.px_per_unit
         if alone:
             # Out of their minions' reach until our wave arrives: standing an auto range behind seven of
             # them with none of ours cost 55% -> 0 at level 2 (g16).
