@@ -59,3 +59,11 @@ hud = _v.read_hud(cv2.cvtColor(cv2.imread("tests/fixtures/frames/qwe_ready.jpg")
 print("qwe ready:", hud.ready)
 assert hud.ready.get("Q") and hud.ready.get("W") and hud.ready.get("E") and not hud.ready.get("R"), hud.ready
 print("VISION OK (hud)")
+
+# Yasuo's Q icon: the whirlwind (two stacks) against the blade.
+hud = _v.read_hud(cv2.cvtColor(cv2.imread("tests/fixtures/frames/q3_tornado.jpg"), cv2.COLOR_BGR2BGRA))
+print("q3 icon:", hud.q3)
+assert hud.q3 is True
+hud = _v.read_hud(cv2.cvtColor(cv2.imread("tests/fixtures/frames/qwe_ready.jpg"), cv2.COLOR_BGR2BGRA))
+assert hud.q3 is False, hud.q3
+print("VISION OK (q3)")

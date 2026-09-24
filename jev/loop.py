@@ -611,6 +611,8 @@ class Player:
             except Exception as e:  # noqa: BLE001  a features bug must not stop the micro layer
                 self.log_lines.append(f"fight features error: {e}")
         mi.summoners, mi.hp_pct = inp.summoners, inp.hp_pct
+        if hasattr(kit, "q") and hasattr(kit.q, "hud"):
+            kit.q.hud = view.hud.q3
         if hasattr(kit, "r_rank"):
             kit.r_rank = int(ap.get("abilities", {}).get("R", {}).get("abilityLevel", 0))
         mi.hp_lost = getattr(self, "_hp_lost", 0.0)  # HP% lost in the damage window

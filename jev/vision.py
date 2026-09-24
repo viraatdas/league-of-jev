@@ -36,7 +36,8 @@ class Unit:
 class Hud:
     ready: dict[str, bool] = field(default_factory=dict)   # Q W E R D F -> lit
     lit: dict[str, float] = field(default_factory=dict)    # share of bright pixels per icon
-    q_sig: tuple[float, float, float] = (0.0, 0.0, 0.0)    # Q icon mean H, S, V (tells Q3 apart)
+    q_sig: tuple[float, float, float] = (0.0, 0.0, 0.0)    # Q icon mean H, S, V
+    q3: bool | None = None    # Yasuo's Q icon shows the tornado (two stacks); None when unread
     items_ready: dict[int, bool] = field(default_factory=dict)  # API slot 0-6 -> icon lit (active off cooldown)
     items_lit: dict[int, float] = field(default_factory=dict)
 
@@ -70,6 +71,37 @@ def _masks(hsv: np.ndarray) -> dict[str, np.ndarray]:
 def to_bgr(img: np.ndarray) -> np.ndarray:
     """Capture frames are BGRA; saved screenshots are BGR."""
     return cv2.cvtColor(img, cv2.COLOR_BGRA2BGR) if img.ndim == 3 and img.shape[2] == 4 else img
+
+
+_Q_TPL: dict[str, np.ndarray] | None = None
+
+
+def _q3_icon(patch: np.ndarray) -> bool | None:
+    """Yasuo's Q icon turns into a whirlwind with two stacks. Counting stacks from our own casts
+    drifted (a plain Q thrown at 800 units as the "tornado", g18): the icon is the truth. Normalised
+    correlation with the whirlwind and the two blade icons; the whirlwind scored 0.6-0.87 where it
+    showed and the blades 1.0 on theirs."""
+    global _Q_TPL
+    if _Q_TPL is None:
+        from pathlib import Path
+
+        a = Path(__file__).parent / "assets"
+        loaded = {k: cv2.imread(str(a / f"q_{k}.png"), cv2.IMREAD_GRAYSCALE) for k in ("tornado", "blade", "blade_lit")}
+        _Q_TPL = {k: v.astype(np.float32) for k, v in loaded.items() if v is not None}
+    t = _Q_TPL.get("tornado")
+    if t is None:
+        return None
+    g = cv2.cvtColor(to_bgr(np.ascontiguousarray(patch)), cv2.COLOR_BGR2GRAY).astype(np.float32)
+    if g.shape != t.shape:
+        g = cv2.resize(g, (t.shape[1], t.shape[0]))
+
+    def ncc(a, b):
+        a, b = a - a.mean(), b - b.mean()
+        return float((a * b).sum() / (np.sqrt((a * a).sum() * (b * b).sum()) + 1e-6))
+
+    ct = ncc(g, t)
+    cb = max((ncc(g, v) for k, v in _Q_TPL.items() if k != "tornado"), default=0.0)
+    return ct >= 0.55 and ct > cb
 
 
 class VisionReader:
@@ -251,6 +283,7 @@ class VisionReader:
             hud.ready[name] = lit >= self.vc.icon_ready_lit
             if name == "Q":
                 hud.q_sig = (float(np.median(hsv[:, :, 0])), float(hsv[:, :, 1].mean()), float(hsv[:, :, 2].mean()))
+                hud.q3 = _q3_icon(patch)
         r = self.vc.item_half
         for slot, (cx, cy) in enumerate(self.vc.item_slots):
             patch = frame[cy - r:cy + r, cx - r:cx + r]

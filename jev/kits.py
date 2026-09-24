@@ -211,8 +211,11 @@ class QStacks:
     def __init__(self) -> None:
         self.stacks = 0
         self.last_gain = 0.0
+        self.hud: bool | None = None   # the HUD's Q icon (whirlwind or blade), set every frame; wins when read
 
     def q3(self, now: float) -> bool:
+        if self.hud is not None:
+            return self.hud
         if self.stacks and now - self.last_gain > 6.0:
             self.stacks = 0
         return self.stacks >= 2
