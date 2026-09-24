@@ -665,6 +665,7 @@ class Player:
         too; a fight I am clearly losing backs off. Supports keep Jev's choice."""
         if self.kit.support:
             return
+        self._focus_target(sc, mi, now)
         fr = self.fights.read if self.fights is not None else None
         if fr is not None and fr.age(now) < 0.9 and (sc.champ is not None or fr.plan in ("back_off", "escape")):
             self._apply_fight_read(fr, sc, mi, now)
@@ -694,6 +695,20 @@ class Player:
             return
         if ch is None or getattr(self, "_near_enemy_tower", False):
             return
+        recent = [h for t, h in ch.hist if now - t <= 0.5]
+        their = sorted(recent)[len(recent) // 2] if len(recent) >= 3 else None  # half-second median: one misread is not a window
+        allies = len(sc.ally_champs)
+        if (allies and sc.enemy_champs <= allies + 1 and mi.hp_pct >= 40 and d < 800 and their is not None
+                and (their < 0.5 or (allies >= sc.enemy_champs and mi.hp_pct >= 60))):
+            # A team fight: allied champions on screen, numbers even or better. Bots engage all game;
+            # Yasuo farmed next to their fights (0 kills in g09-g15). Join on the weakest in reach.
+            self._commit(ch, mi, now, f"team fight ({allies + 1} vs {sc.enemy_champs}), all in on {their * 100:.0f}% at {d:.0f}u")
+            return
+        if (their is not None and their < 0.45 and max(recent) < 0.6 and mi.hp_pct >= their * 100 + 25 and d < 700
+                and sc.enemy_champs == 1 and self.kit.minions_near_champ(sc) < 4 and mi.mode != "back_off"):
+            # Lane kill pressure: she is under 45% and I am well ahead in HP, with no full wave around her.
+            self._commit(ch, mi, now, f"kill pressure ({their * 100:.0f}% vs me {mi.hp_pct:.0f}% at {d:.0f}u), all in")
+            return
         if mi.hp_pct < 55 and ch.unit.hp * 100 > mi.hp_pct + 20 and d < 900 and mi.mode != "back_off":
             # Outmatched: half HP with a healthy champion walking up. Farming on cost the second
             # death of g06 (50% -> 0 in five seconds, Flash at 23% too late). Back off now.
@@ -705,14 +720,12 @@ class Player:
             self.log_lines.append(f"fight: outmatched ({mi.hp_pct:.0f}% vs {ch.unit.hp * 100:.0f}% at {d:.0f}u), "
                                   f"{'retreating' if mi.hp_pct < 40 else 'backing off'}")
             return
-        recent = [h for t, h in ch.hist if now - t <= 0.5]
-        steady_low = len(recent) >= 3 and sorted(recent)[len(recent) // 2] < 0.25 and max(recent) < 0.4
+        steady_low = their is not None and their < 0.3 and max(recent) < 0.45
         # One low reading is not a kill window: an overlapped bar read Kayle at 15% while she had
         # 79%, and the all-in cost Yasuo 30% HP (game 4). The median of half a second must agree.
-        if steady_low and d < 650 and mi.hp_pct > 35:
-            mi.set_mode("all_in", now)
+        if steady_low and d < 700 and mi.hp_pct > 35:
+            self._commit(ch, mi, now, f"kill window ({ch.unit.hp * 100:.0f}% at {d:.0f}u), all in")
             mi.flash_in_ok = ch.unit.hp < 0.2 and mi.hp_pct > 40
-            self.log_lines.append(f"fight: kill window ({ch.unit.hp * 100:.0f}% at {d:.0f}u), all in")
             return
         if not (self.jungle_state is not None and getattr(self, "_at_camp", False)):
             me_lvl = int((self.state.get("me") or {}).get("level") or 1)
@@ -727,6 +740,32 @@ class Player:
                 and now - dd.ts < 2.0 and mi.mode != "back_off"):
             mi.set_mode("all_in", now)
             self.log_lines.append(f"fight: strategy says all in (p={dd.intent_confidence:.2f})")
+
+    def _commit(self, ch, mi, now: float, why: str) -> None:
+        """All in on this champion, and keep it the target for four seconds (the scene's default
+        target is the nearest champion, which changes as a fight moves)."""
+        if mi.mode != "all_in":
+            self.log_lines.append(f"fight: {why}")
+        mi.set_mode("all_in", now)
+        self._focus_id, self._focus_until = ch.id, now + 4.0
+
+    def _focus_target(self, sc, mi, now: float) -> None:
+        """The champion to fight: the one we committed to while it is in view; otherwise, with two
+        or more in reach, the weakest by a clear margin (a kill), not simply the nearest."""
+        if sc.champ is None:
+            return
+        live = [t for t in self.champ_tracker.tracks.values() if now - t.seen < 0.25]
+        pick = None
+        if now < getattr(self, "_focus_until", 0.0):
+            pick = next((t for t in live if t.id == self._focus_id), None)
+        if pick is None:
+            reach = [t for t in live if sc.dist(t) < 800]
+            if len(reach) >= 2:
+                weakest = min(reach, key=lambda t: t.unit.hp)
+                if weakest.unit.hp < sc.champ.unit.hp - 0.15:
+                    pick = weakest
+        if pick is not None and pick is not sc.champ:
+            sc.champ, sc.champ_dist = pick, sc.dist(pick)
 
     def _lasthit_check(self, gold: float, now: float) -> None:
         """Did each last-hit attempt pay? A CS is a gold jump of 12+ above passive income within
