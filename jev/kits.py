@@ -567,7 +567,9 @@ class Yasuo(Kit):
             return True
         d = sc.champ_dist or 9e9
         if (sc.ready.get("Q") and self.q.q3(now) and sc.champ is not None and 450 < d <= VC.q3_range * 0.85
-                and mi.hp_pct >= 40 and not getattr(mi, "near_enemy_tower", False) and mi.mode not in ("back_off",)
+                and mi.hp_pct >= 55 and mi.hp_pct >= sc.champ.unit.hp * 100 - 15  # not when behind: a poke from 63% on a
+                # full Lux drew her combo and cost 43% (g18)
+                and not getattr(mi, "near_enemy_tower", False) and mi.mode not in ("back_off",)
                 and now - getattr(self, "_poke_at", 0.0) > 2.0):
             # The tornado is for the champion, not a minion: it passes through the wave, knocks up, and
             # with R ready turns into the kill combo (the reflex above). Nothing chose poke without Jev.
