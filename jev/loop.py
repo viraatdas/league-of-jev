@@ -1331,6 +1331,11 @@ class Player:
         j = self._join_fight_plan(mm, allies, gt, hp, now)
         if j is not None:
             return j
+        if self.jungle_state is not None and self._levels_behind() >= 2:
+            # A jungler two levels behind their team is worth more in his camps than at a dragon he
+            # cannot contest: Lee spent six of g23's first 25 minutes on objectives and was level 8
+            # to their 10-14.
+            return None
         places = map_places.places(self.side)
         obj = st.get("objectives") or {}
         opp = st.get("lane_opponent") or {}
