@@ -554,6 +554,24 @@ class Player:
         out.append(f"micro: {self.micro.last_action if self.micro else '-'}")
         return out
 
+    def _wave_fwd(self, view, enemy_minions, world) -> tuple[float, float] | None:
+        """Screen direction up the lane where the minions are. Top and bot lanes turn 90 degrees
+        at the corner: Yasuo held back on the vertical part while the wave fought on the horizontal
+        one (g28/g29 top), and the lane read at his own spot pointed "up" across a wave lined up
+        left to right, which scrambled the hold-back spot and the melee/caster order. Lane
+        direction at the wave's centre agreed with the wave's own axis twice as well (median off
+        32 -> 17 degrees on g28/g29 frames)."""
+        if self.mech is None:
+            return None
+        prog = self.mech.nav.progress
+        units = list(enemy_minions) + view.allies("minion")
+        if world is not None and units:
+            pts = [world(u) for u in units]
+            at, off = self.lane.project((sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)))
+            if off < 1200:
+                prog = at
+        return self.lane.screen_dir(prog)
+
     def _micro_step(self, data: dict, ap: dict, stats: dict, now: float, standing: bool = True,
                     camp_pt: tuple[float, float] | None = None, camp_big: bool = False, escaping: bool = False) -> bool:
         """Screen-level play while units are on screen: Jev's tactical choice, the kit's reflexes,
@@ -578,6 +596,7 @@ class Player:
             raw_minions = [u for u in raw_minions if self.lane.project(world(u))[1] < 900]
         minions = self.min_tracker.update(raw_minions, now)
         self._audit_lasthits(mi, now)
+        fwd = self._wave_fwd(view, raw_minions, world if camp_pt is None else None)
         champs = self.champ_tracker.update(view.enemies("champion"), now)
         if not minions and not champs and not (self.kit.support and view.allies("champion")):
             self.scene = None
@@ -588,11 +607,11 @@ class Player:
         game_s = float((data.get("gameData") or {}).get("gameTime", 0.0))
         sc = build_scene(view, minions, champs, ad, q_rank, game_s, now, config.GEOMETRY.champion_px,
                          aspd=aspd, move_speed=float(stats.get("moveSpeed", 345.0)),
-                         fwd=self.lane.screen_dir(self.mech.nav.progress) if self.mech else None)
+                         fwd=fwd)
         if kit.support:
             sc.killable_auto = []  # supports leave last hits to the carry
         self.scene = sc
-        mi.fwd = self.lane.screen_dir(self.mech.nav.progress) if self.mech else mi.fwd
+        mi.fwd = fwd or mi.fwd
         d = self.decision
         plan = {
             "intent": self.intent,

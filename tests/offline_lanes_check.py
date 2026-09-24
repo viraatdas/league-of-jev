@@ -53,3 +53,26 @@ p._rehome_own_tower()
 print("own tower", round(before, 3), "->", round(p.lane.own_tower, 3))
 assert p.lane.own_tower < before - 0.05
 print("LANES OK (towers)")
+
+# Top lane: Yasuo south of the corner, the wave ~1000 units above him on the horizontal part. The
+# lane direction is read where the minions are ("right"), not at his spot ("up"), g28/g29.
+from jev.vision import Unit, View
+from jev import config as _cfg
+p = _P(dry_run=True)
+p.side = "ORDER"
+p._switch_lane("top")
+p.mech = Mechanics(p.ctl, p.screen, p.kb, "ORDER", lane=p.lane, skill_order=Yasuo().skill_order)
+me_pos = (1900.0, 12300.0)
+p.mech.nav.progress = p.lane.project(me_pos)[0]
+ppu = _cfg.VISION.px_per_unit
+me = Unit("champion", "self", 860.0, 500.0, 1.0, (830, 400, 100, 10))
+mins = [Unit("minion", t, 860.0 + dx, 500.0 - 1000 * ppu, 0.8, (0, 0, 60, 4))
+        for t, dx in [("ally", -120), ("ally", -80), ("enemy", 60), ("enemy", 110)]]
+v = View(units=mins + [me], me=me, ts=_t.time())
+world = lambda u: (me_pos[0] + (u.x - me.x) / ppu, me_pos[1] - (u.y - me.y) / ppu)
+at_me = p.lane.screen_dir(p.mech.nav.progress)
+f = p._wave_fwd(v, v.enemies("minion"), world)
+print("top corner: lane dir at me", tuple(round(c, 2) for c in at_me), "at the wave", tuple(round(c, 2) for c in f))
+assert at_me[1] < -0.8 and f[0] > 0.8, (at_me, f)
+assert p._wave_fwd(v, v.enemies("minion"), None) == at_me  # no position: the lane at our own spot
+print("LANES OK (wave direction)")
