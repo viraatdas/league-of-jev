@@ -975,9 +975,11 @@ class Player:
             # Gone while still healthy: we walked off or it leashed (red buff back to full, g05). Retry.
             js.arrived_at, js.last_seen_monster, js.low_seen = None, 0.0, 1.0
             return
+        js_low = js.low_seen
         if (seen_here and gt - js.last_seen_monster > 3.0) or (not seen_here and gt - js.arrived_at > 20.0):
-            js.mark_cleared(js.current, gt)
-            self.log_lines.append(f"jungle: cleared {list(js.cleared)[-1]} at {int(gt)}s")
+            camp, how = js.current, ("killed" if seen_here else "empty")
+            js.mark_cleared(camp, gt)
+            self.log_lines.append(f"jungle: cleared {camp} at {int(gt)}s ({how}, lowest {js_low:.0%})")
             if self.logfile:
                 # Kept per game so a harness restart does not walk back to camps already taken.
                 try:
