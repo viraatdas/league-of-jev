@@ -144,13 +144,22 @@ class MinimapReader:
             # horizontal pieces that line up at about the box's height apart, using their outer
             # edges; if one end touches the minimap edge, use the box's usual width.
             n, _, stats, _ = cv2.connectedComponentsWithStats(white, connectivity=8)
+            # A champion icon on the box's edge cuts that edge short: in the top-left corner (top lane)
+            # the top edge started at x=31 while the bottom one started at 3, and the box was lost on
+            # 19% of frames (g29). Edges pair when their left ends or their right ends line up; one of
+            # them must be nearly the box's full width.
             pieces = [tuple(int(v) for v in stats[i][:4]) for i in range(1, n)
-                      if 55 <= stats[i][2] <= 140 and stats[i][3] <= 26]
+                      if 40 <= stats[i][2] <= 140 and stats[i][3] <= 26]
             pair = None
             for a in pieces:
                 for b in pieces:
                     gap = (b[1] + b[3]) - a[1]
-                    if b[1] > a[1] and 30 <= gap <= 90 and abs(a[0] - b[0]) < 10 and abs(a[2] - b[2]) < 14:
+                    if b[1] <= a[1] or not 30 <= gap <= 90:
+                        continue
+                    twins = min(a[2], b[2]) >= 55 and abs(a[0] - b[0]) < 10 and abs(a[2] - b[2]) < 14
+                    cut = max(a[2], b[2]) >= 70 and (abs(a[0] - b[0]) < 10
+                                                     or abs((a[0] + a[2]) - (b[0] + b[2])) < 10)
+                    if twins or cut:
                         if pair is None or a[2] + b[2] > pair[0][2] + pair[1][2]:
                             pair = (a, b)
             if pair is not None:

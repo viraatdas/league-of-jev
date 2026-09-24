@@ -75,4 +75,9 @@ _mm = MinimapReader(Screen())
 st = _mm.read(cv2.cvtColor(cv2.imread("tests/fixtures/frames/minimap_merged_allies.png"), cv2.COLOR_BGR2BGRA))
 print("minimap:", len(st.ally_champions), "allies,", len(st.enemy_champions), "enemies")
 assert len(st.ally_champions) >= 2 and len(st.enemy_champions) == 2, (st.ally_champions, st.enemy_champions)
+# Camera box in the top-left corner: its bottom edge is clipped by the minimap's left edge and its
+# top edge is cut short by champion icons (g29 lost the box on 19% of top-lane frames).
+st = _mm.read(cv2.cvtColor(cv2.imread("tests/fixtures/frames/minimap_top_cut_box.png"), cv2.COLOR_BGR2BGRA))
+print("top-lane box:", st.self_pos and tuple(int(v) for v in st.self_pos))
+assert st.self_pos is not None and st.self_pos[0] < 3000 and st.self_pos[1] > 11500, st.self_pos
 print("VISION OK (minimap)")
