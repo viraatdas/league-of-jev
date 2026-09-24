@@ -1187,8 +1187,9 @@ class Player:
         # Flash, g13), so any champion within 1000 units, or none visible, counts.
         if not forced and not (lost >= 25 and hp < 45 and (sc.champ is None or (sc.champ_dist or 9e9) < 1000)):
             return False
-        if forced and self.kit.escape(ctx.mi, sc, now, tuple(-v for v in (self.lane.screen_dir(self.mech.nav.progress) if self.mech else ctx.mi.fwd))):
-            return True  # the kit's dash first; Flash stays for the next tick if still in trouble
+        home = tuple(-v for v in (self.lane.screen_dir(self.mech.nav.progress) if self.mech else ctx.mi.fwd))
+        if (forced or hp >= 25) and self.kit.escape(ctx.mi, sc, now, home):
+            return True  # the kit's dash first; Flash stays for the next tick if still in trouble (and for kills)
         if now - getattr(self, "_escape_t", 0.0) < 12.0:
             return False
         self._escape_t = now
