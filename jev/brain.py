@@ -42,13 +42,18 @@ ITEM_PRICES = {
 }
 
 INTENTS: dict[str, str] = {
-    "farm": "Stay with the minion wave and last-hit minions. The default when nothing else is clearly better.",
+    "farm": "Stay with the minion wave and last-hit minions. The default when nothing else is clearly better. "
+            "With `situation.enemies_missing_from_map` at 3 or more, farm on our half of the lane.",
     "trade": "Take one short exchange with `lane_opponent` using Q and auto attacks, then back off.",
     "all_in": "Commit to killing `lane_opponent` now: dash in with E, land Q, use R when they are airborne.",
-    "retreat": "Walk back toward your own tower immediately because staying is too dangerous.",
-    "recall": "Move to a safe spot and recall to base to spend gold or heal.",
-    "push_tower": "Push the wave into the enemy tower and attack the tower.",
-    "group": "Leave lane and join teammates at `destination` for an objective or fight.",
+    "retreat": "Walk back toward your own tower immediately because staying is too dangerous "
+               "(also when `situation.window` says two or more of us are dead and enemies are near).",
+    "recall": "Move to a safe spot and recall to base to spend gold or heal. Best right after our wave is pushed "
+              "into their tower, never during a power play.",
+    "push_tower": "Push the wave into the enemy tower and attack the tower. Right in a power play "
+                  "(`situation.window`: two or more of them dead) or when `lane_opponent` is dead and our wave is there.",
+    "group": "Leave lane and join teammates at `destination` for an objective or fight "
+             "(in a power play: the tower or dragon they are taking).",
     "defend": "Fall back to protect my own tower or inhibitor that is under attack (at `destination` if it names one of mine).",
     "go_to": "Leave the lane and go to `destination`: another lane, an objective (dragon, baron), the river, a jungle buff, or a tower, to fight, help, take the objective, or ward.",
 }
@@ -142,7 +147,8 @@ def _core_pack(state: dict, role_text: str, support: bool) -> dict:
             criteria=[
                 "Safe: no enemy champions visible near me and my HP is fine",
                 "Caution: an enemy champion is visible but I have HP and minions between us",
-                "Dangerous: an enemy champion is close and I am low on HP, or several enemies are missing from the minimap",
+                "Dangerous: an enemy champion is close and I am low on HP, or I am past the middle of the lane with "
+                "`situation.enemies_missing_from_map` at 3 or more",
                 "Leave now: I will very likely die if I stay",
             ],
         ),
