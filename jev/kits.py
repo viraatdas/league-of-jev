@@ -367,7 +367,7 @@ class Yasuo(Kit):
 
     def continuous(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, pushing: bool) -> bool:
         if (pushing and mode in ("farm", "push") and sc.champ is None and sc.ready.get("Q") and not sc.killable_q
-                and mi._can_order(now)):
+                and not sc.killable_auto and mi._can_order(now)):  # a last hit first, the wave after
             # Pushing: Q into the wave on cooldown (the tornado too: it hits the whole line).
             inq = [t for t in sc.minions if sc.dist(t) <= (VC.q3_range * 0.8 if self.q.q3(now) else VC.q_range)]
             if inq:
