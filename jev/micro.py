@@ -263,6 +263,7 @@ class Micro:
         self.lh_pending: list[tuple[float, str, float]] = []   # (time, kind, minion HP fraction) awaiting a gold check
         self.at_camp = False                                   # the loop sets it while clearing a jungle camp
         self.fight_owned_until = 0.0                           # the fight head owns the mode until then
+        self.dodge_lines = True                                # the lane opponent throws line skillshots (sidestep)
         self.trade_cooldown_until = 0.0                        # no new trade before then (one just ended)
         self.flash_in_ok = False                               # the fight head says a Flash-in kill is on
 
@@ -417,7 +418,7 @@ class Micro:
             back = 700 * VC.px_per_unit
         tx, ty = front.unit.x - self.fwd[0] * back, front.unit.y - self.fwd[1] * back
         ahead = along(front) < 0  # we are past the enemy front line: get out now
-        if not ahead and sc.champ is not None and (sc.champ_dist or 9e9) < 1150:
+        if not ahead and self.dodge_lines and sc.champ is not None and (sc.champ_dist or 9e9) < 1150:
             # Their champion is in skillshot range: never stand still while waiting. Bots aim at where
             # we stand; sidestepping across the lane every 0.5-0.9 s makes the straight lines miss.
             if now >= getattr(self, "_juke_flip_at", 0.0):

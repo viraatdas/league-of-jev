@@ -262,3 +262,23 @@ p.kit.poke(mi, sc, now + 2, 0.7)
 print("poke, a minion to last hit:", mi.last_action)
 assert mi.last_action != "poke: auto the champion"
 print("TRADE WINDOW OK")
+
+# Sidestep only against line skillshots: Nasus (melee) no, Annie (ranged) yes.
+p = setup(now)
+if p.shop_brain is not None:
+    p.state = {"lane_opponent": {"champion": "Nasus"}}
+    assert p._opponent_throws_lines() is False
+    p.state = {"lane_opponent": {"champion": "Annie"}}
+    assert p._opponent_throws_lines() is True
+mi = Micro(Controller(dry_run=True, log=lambda m: None), Screen(), keybinds.load(), "ORDER")
+mi.fwd, mi.dodge_lines = (1.0, 0.0), False
+m = track(300, 0.9, 5, now)
+m.unit.kind = "minion"
+sc = Scene(me_xy=ME, minions=[m])
+c = track(900, 0.9, 6, now)
+sc.champ, sc.champ_dist = c, sc.dist(c)
+mi.last_order = 0
+mi.farm_step(sc, now, 0.7)
+print("melee opponent in range:", mi.last_action)
+assert not mi.last_action.startswith("farm: sidestep")
+print("SIDESTEP OK")

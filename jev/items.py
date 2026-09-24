@@ -207,6 +207,10 @@ class Catalog:
         dmg = "magic" if info.get("magic", 0) > info.get("attack", 0) + 1 else "physical" if info.get("attack", 0) > info.get("magic", 0) + 1 else "mixed"
         return {"class": "/".join(c.get("tags", [])), "damage": dmg}
 
+    def attack_range(self, name: str) -> float | None:
+        c = self.champs.get((name or "").lower())
+        return float(c["stats"]["attackrange"]) if c and "attackrange" in c.get("stats", {}) else None
+
     def cost_to_finish(self, item: Item, owned: list[str]) -> int:
         """Gold still needed for `item`, counting owned components that the recipe consumes."""
         pool = [o.lower() for o in owned]

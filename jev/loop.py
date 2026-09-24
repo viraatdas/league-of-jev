@@ -598,6 +598,7 @@ class Player:
         minions = self.min_tracker.update(raw_minions, now)
         self._audit_lasthits(mi, now)
         fwd = self._wave_fwd(view, raw_minions, world if camp_pt is None else None)
+        mi.dodge_lines = self._opponent_throws_lines()
         champs = self.champ_tracker.update(view.enemies("champion"), now)
         if not minions and not champs and not (self.kit.support and view.allies("champion")):
             self.scene = None
@@ -818,6 +819,21 @@ class Player:
                 and now - dd.ts < 2.0 and mi.mode != "back_off"):
             mi.set_mode("all_in", now)
             self.log_lines.append(f"fight: strategy says all in (p={dd.intent_confidence:.2f})")
+
+    # Melee champions with a line skillshot or hook worth sidestepping.
+    LINE_MELEE = {"blitzcrank", "leesin", "lee sin", "pyke", "leona", "olaf", "yasuo", "yone", "nautilus",
+                  "mordekaiser", "aatrox", "rakan", "jarvaniv", "jarvan iv", "sion", "gragas", "sett"}
+
+    def _opponent_throws_lines(self) -> bool:
+        """Sidestepping only pays against line skillshots: against Nasus (melee, point-and-click) the
+        juke every 0.2 s was 33 of g29's moves and the cursor it left behind aimed the next Q.
+        Ranged lane opponents and the melee ones in LINE_MELEE; unknown counts as yes."""
+        opp = str((self.state.get("lane_opponent") or {}).get("champion") or "")
+        cat = self.shop_brain.catalog if self.shop_brain is not None else None
+        rng = cat.attack_range(opp) if (cat is not None and opp) else None
+        if rng is None:
+            return True
+        return rng >= 300 or opp.lower() in self.LINE_MELEE
 
     def _recall_threat(self, now: float) -> bool:
         """An enemy champion within 1300 units or an enemy minion within 700 on screen: a channel
