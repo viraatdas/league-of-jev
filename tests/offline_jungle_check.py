@@ -36,3 +36,19 @@ for i in range(1, 24):
 print("cleared:", p.jungle_state.cleared, "next:", p.jungle_state.next_camp(red, 124.0))
 assert "red" in p.jungle_state.cleared and p.jungle_state.next_camp(red, 124.0) == "krugs"
 print("JUNGLE OK")
+
+# A gank through the whole tick: level 4 at 5:00, their top laner pushed past the middle with ours there.
+top = Lane("top", "ORDER")
+data["gameData"]["gameTime"] = 300.0
+data["activePlayer"]["level"] = 4
+cs = data["activePlayer"]["championStats"]
+cs["currentHealth"] = cs["maxHealth"]  # the fixture sits at 42%: ganks need 60%
+p.mm_state = MinimapState(self_pos=camps("ORDER")["blue"], ts=time.time(),
+                          enemy_champions=[top.point(top.center - top.frac(900))],
+                          ally_champions=[top.point(top.center - top.frac(1300))])
+for i in range(3):
+    p.mm_state.ts = time.time()
+    p.state = p._full_state(data, p._tick(data, now + 40 + i))  # as the live loop does after each tick
+print("gank tick:", p.intent, getattr(p, "_obj_label", None), "|", p.mech.last_action)
+assert p.intent == "objective" and getattr(p, "_obj_label", "") == "gank top", (p.intent, getattr(p, "_obj_label", None))
+print("JUNGLE OK (gank)")
