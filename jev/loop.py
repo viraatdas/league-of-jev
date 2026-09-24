@@ -1253,12 +1253,14 @@ class Player:
                 return ("push_tower", tower, "lane opponent dead and our wave at their tower: hit the tower")
         if gt >= 300 and (obj.get("next_dragon_in_s") or 0) <= 0:
             pit = places["dragon_pit"][0]
-            near = sum(1 for a in allies if dist(a, pit) < 2500)
+            # In the pit, not merely on the bot side of the map: at 2500 units the bot lane standing
+            # in lane counted, and Yasuo walked to an untouched dragon six times before 13:00 (g17).
+            near = sum(1 for a in allies if dist(a, pit) < 1300)
             if near >= 2 or (self.jungle_state is not None and near >= 1 and int(me.get("level") or 1) >= 6):
                 return ("objective", pit, f"dragon with {near} allies")
         if gt >= 1200 and (obj.get("next_baron_in_s") or 0) <= 0:
             pit = places["baron_pit"][0]
-            near = sum(1 for a in allies if dist(a, pit) < 2500)
+            near = sum(1 for a in allies if dist(a, pit) < 1500)
             if near >= 3:
                 return ("objective", pit, f"baron with {near} allies")
         if gt >= 900 and len(allies) >= 3:
