@@ -839,6 +839,9 @@ class Player:
         outnumbered = sc.enemy_champs >= 2 and not sc.ally_champs
         if plan in ("all_in", "trade") and outnumbered and fr.win_all_in < 0.8:
             plan = "back_off"
+        if (plan in ("all_in", "trade") and ch is not None and mi.hp_pct < 25 and ch.unit.hp > mi.hp_pct / 100 + 0.15
+                and fr.win_all_in < 0.8):
+            plan = "back_off"  # losing floor: low and behind
         if plan in ("all_in", "trade") and getattr(self, "_near_enemy_tower", False) and not (
                 ch is not None and ch.unit.hp < 0.25 and fr.win_all_in >= 0.8):
             plan = "poke"
