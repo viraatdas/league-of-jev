@@ -1831,8 +1831,9 @@ class Player:
                 else:
                     self.intent = "objective"
                     self._obj_pt, self._obj_label = pt, label
-                if label != getattr(self, "_obj_logged", None):
-                    self._obj_logged = label
+                seen = self._obj_logged_at = getattr(self, "_obj_logged_at", {})
+                if now - seen.get(label, 0.0) > 30.0:  # labels alternate: once per label per 30 s
+                    seen[label] = now
                     self.log_lines.append(f"objective: {label}")
         if self.kit.support and self.intent in ("go_to", "group", "trade", "all_in", "push_tower"):
             self.intent = "farm"  # support: stay with the carry (shadow them) instead of roaming or engaging alone
