@@ -832,6 +832,11 @@ class Player:
             plan = "escape" if fr.in_danger >= 0.85 else "back_off"
         if plan in ("all_in", "trade") and ch is None:
             plan = "farm"
+        if plan == "back_off" and fr.in_danger < 0.4 and mi.hp_pct >= 50 and sc.enemy_champs <= 1:
+            # Jev backed off 75% of the time at a median 90% HP against one champion (g09) while
+            # its own danger read said 0.2-0.3; poke (skillshots from range, else farm) had the best
+            # measured trades (-3.7% mine vs -16% theirs per 3 s). Its danger score decides.
+            plan = "poke"
         if plan == "all_in" and fr.win_all_in < 0.55:
             plan = "trade" if fr.trade_worth >= 0.55 else "farm"
         if plan == "trade" and (fr.trade_worth < 0.55 or now < getattr(mi, "trade_cooldown_until", 0.0)):

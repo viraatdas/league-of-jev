@@ -69,6 +69,8 @@ def questions(state: dict, role_text: str) -> dict[str, Any]:
     qs: dict[str, Any] = {
         "plan": Choice(
             instructions=(f"You are `me`, {role_text}, and an enemy champion is close. Plan the next three seconds. "
+                          "In lane most moments are farm or poke; back off or escape only when they can take more HP than "
+                          "I can afford, and trade or all in when my burst clearly wins the exchange. "
                           "Weigh `numbers` first (how many of them and of us are close, how long I last), then HP and how it "
                           "has been moving (`hp_last_1s`, `hp_last_3s`), what I have ready, levels and items, minions around "
                           "each of us, towers, and enemies who may arrive (`map`)."),
