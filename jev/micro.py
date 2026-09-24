@@ -241,6 +241,7 @@ class Micro:
         self.mode_since = 0.0
         self.summoners: list[str | None] = []   # set by the loop each tick (flash, ignite, ...)
         self.hp_pct = 100.0                     # own HP, set by the loop each tick
+        self._summoner_cast_at: dict[int, float] = {}
         self.last_action = ""
         self.last_seq = 0
         self.orders = 0
@@ -258,12 +259,16 @@ class Micro:
             self.mode, self.mode_since = mode, now
 
     def summoner_slot(self, name: str, ready: dict) -> int | None:
+        now = time.time()
         for i, (n, hud) in enumerate(zip(self.summoners, "DF"), 1):
-            if n == name and ready.get(hud):
+            # A summoner just cast still reads ready for a few frames: ignite went out five times in
+            # one second (g18). Two seconds after a cast it counts as used.
+            if n == name and ready.get(hud) and now - self._summoner_cast_at.get(i, 0.0) > 2.0:
                 return i
         return None
 
     def cast_summoner(self, slot: int, x: float, y: float) -> None:
+        self._summoner_cast_at[slot] = time.time()
         self.ctl.cast(self.kb.summoner(slot), *self._pt(x, y), self.kb.quick(f"evtCastAvatarSpell{slot}"))
 
     def later(self, delay_s: float, fn) -> None:
