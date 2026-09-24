@@ -92,7 +92,19 @@ class Kit:
 
     def poke(self, mi: Micro, sc: Scene, now: float, aspd: float) -> bool:
         """What reaches from here and nothing that walks or dashes in; farm otherwise."""
-        return self.continuous(mi, sc, now, aspd, "farm", False)
+        return self.poke_auto(mi, sc, now, aspd) or self.continuous(mi, sc, now, aspd, "farm", False)
+
+    def poke_auto(self, mi: Micro, sc: Scene, now: float, aspd: float) -> bool:
+        """An auto on the champion when she walks into my reach, a last hit first. Poke only threw
+        skills, and Q was on cooldown from last hits in 92 of the 165 reads where Jev wanted a
+        trade: Nasus farmed next to Yasuo for seven minutes and took no auto (g29)."""
+        ch, d = sc.champ, sc.champ_dist or 9e9
+        if (ch is None or d > VC.auto_range + 40 or sc.killable_auto or sc.soon_killable
+                or self.minions_near_champ(sc) >= 3 or mi.hp_pct < ch.unit.hp * 100 - 10
+                or not mi._can_order(now) or not mi.attack_ready(now, aspd)):
+            return False
+        mi.attack(ch, now, "poke: auto the champion")
+        return True
 
     def escape(self, mi: Micro, sc: Scene, now: float, home: tuple[float, float]) -> bool:
         """A kit move that gets us away (a dash toward `home`, a screen direction); False if none."""
@@ -413,7 +425,7 @@ class Yasuo(Kit):
                     self.tornado_at = now
                 mi._ordered(now, "poke: Q3 tornado" if q3 else "poke: Q the champion")
                 return True
-        return self.continuous(mi, sc, now, aspd, "farm", False)
+        return self.poke_auto(mi, sc, now, aspd) or self.continuous(mi, sc, now, aspd, "farm", False)
 
     def fight(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str) -> bool:
         """Yasuo's combo, one order per tick: R on an airborne target; Q3 tornado from range (led
@@ -535,7 +547,9 @@ class Yasuo(Kit):
             return None  # two of them in view and none of us: not a trade
         if self.minions_near_champ(sc) >= 3 and ch.unit.hp > 0.35:
             return None  # trading into her full wave: Yasuo took the minions' aggro and lost 78% -> 59% (g04)
-        eq = rdy.get("E") and rdy.get("Q") and d <= VC.e_range + 150
+        # (E reach plus a step: opened at up to 625 units, the E was out of range and the trade became
+        # a walk after her, "trade: chase", g29.)
+        eq = rdy.get("E") and rdy.get("Q") and d <= VC.e_range + 50
         tornado = rdy.get("Q") and self.q.q3(now) and d <= VC.q3_range * 0.85
         if not (eq or tornado):
             return None
@@ -868,7 +882,7 @@ class LeeSin(Kit):
             self.q_at = now
             mi._ordered(now, "poke: Q Sonic Wave")
             return True
-        return self.continuous(mi, sc, now, aspd, "farm", False)
+        return self.poke_auto(mi, sc, now, aspd) or self.continuous(mi, sc, now, aspd, "farm", False)
 
     def e2_up(self, sc: Scene, now: float) -> bool:
         return bool(sc.ready.get("E")) and 0.35 < now - self.e_at < 3.0

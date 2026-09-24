@@ -223,3 +223,42 @@ assert p._fight_plan_held == "back_off", p._fight_plan_held  # the second one do
 p._apply_fight_read(fr("trade", 0.55, 4), sc, p.micro, now + 1.5)
 assert p._fight_plan_held == "trade", p._fight_plan_held     # a sure one at once
 print("HYSTERESIS OK")
+
+# Jev wants a trade but its trade_worth is under the floor (poke): the kit's window opens it when EQ
+# is up and she is in E reach with no wave around her. Out of E reach, no trade (no walk after her).
+from jev.kits import Yasuo
+for dist_u, want in [(420, "trade"), (600, "poke")]:
+    p = setup(now)
+    p.kit = Yasuo()
+    p.fights = SimpleNamespace(log=FightLog(None))
+    p.micro.hp_pct = 90.0
+    e = track(dist_u, 0.8, 1, now)
+    p.champ_tracker.tracks = {1: e}
+    sc = Scene(me_xy=ME, ready={"Q": True, "E": True})
+    sc.champ, sc.champ_dist, sc.enemy_champs = e, sc.dist(e), 1
+    read = fr("trade", 0.45, 1)
+    read.trade_worth = 0.47
+    p._apply_fight_read(read, sc, p.micro, now)
+    print(f"jev trade at {dist_u}u, worth 0.47:", p.micro.mode, list(p.log_lines)[-1:])
+    assert p.micro.mode == want, p.micro.mode
+
+# Poke: she walks into auto range and no minion is up for a last hit: auto her. A killable minion first.
+p = setup(now)
+p.kit = Yasuo()
+mi = p.micro
+mi.set_mode("poke", now)
+e = track(200, 0.8, 1, now)
+sc = Scene(me_xy=ME, ready={})
+sc.champ, sc.champ_dist, sc.enemy_champs = e, sc.dist(e), 1
+mi.last_order = 0
+p.kit.poke(mi, sc, now, 0.7)
+print("poke, she is in reach:", mi.last_action)
+assert mi.last_action == "poke: auto the champion"
+m = track(150, 0.1, 7, now)
+m.unit.kind = "minion"
+sc.minions, sc.killable_auto = [m], [m]
+mi.last_order, mi.last_attack = 0, 0
+p.kit.poke(mi, sc, now + 2, 0.7)
+print("poke, a minion to last hit:", mi.last_action)
+assert mi.last_action != "poke: auto the champion"
+print("TRADE WINDOW OK")

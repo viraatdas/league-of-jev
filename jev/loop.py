@@ -807,19 +807,25 @@ class Player:
             self._commit(ch, mi, now, f"kill window ({ch.unit.hp * 100:.0f}% at {d:.0f}u), all in")
             mi.flash_in_ok = ch.unit.hp < 0.2 and mi.hp_pct > 40
             return
-        if not (self.jungle_state is not None and getattr(self, "_at_camp", False)):
-            me_lvl = int((self.state.get("me") or {}).get("level") or 1)
-            opp_lvl = int((self.state.get("lane_opponent") or {}).get("level") or me_lvl)
-            mode = self.kit.trade_window(mi, sc, now, me_lvl - opp_lvl)
-            if mode:
-                mi.set_mode(mode, now)
-                self.log_lines.append(f"fight: trade window, {mode} ({ch.unit.hp * 100:.0f}% at {d:.0f}u, me {mi.hp_pct:.0f}%)")
-                return
+        mode = self._kit_trade_window(sc, mi, now)
+        if mode:
+            mi.set_mode(mode, now)
+            self.log_lines.append(f"fight: trade window, {mode} ({ch.unit.hp * 100:.0f}% at {d:.0f}u, me {mi.hp_pct:.0f}%)")
+            return
         dd = self.decision
         if (dd is not None and dd.intent == "all_in" and dd.intent_confidence >= 0.5 and d < 900 and mi.hp_pct > 40
                 and now - dd.ts < 2.0 and mi.mode != "back_off"):
             mi.set_mode("all_in", now)
             self.log_lines.append(f"fight: strategy says all in (p={dd.intent_confidence:.2f})")
+
+    def _kit_trade_window(self, sc, mi, now: float) -> str | None:
+        """The kit's own trade opener (EQ or the tornado in reach, me at least as healthy and as high
+        level, her wave not around her), or None; not while clearing a camp."""
+        if sc.champ is None or (self.jungle_state is not None and getattr(self, "_at_camp", False)):
+            return None
+        me_lvl = int((self.state.get("me") or {}).get("level") or 1)
+        opp_lvl = int((self.state.get("lane_opponent") or {}).get("level") or me_lvl)
+        return self.kit.trade_window(mi, sc, now, me_lvl - opp_lvl)
 
     def _levels_behind(self) -> float:
         """Their team's average level minus mine (0 when unknown)."""
@@ -1112,6 +1118,20 @@ class Player:
         if plan in ("all_in", "trade") and getattr(self, "_near_enemy_tower", False) and not (
                 ch is not None and ch.unit.hp < 0.25 and fr.win_all_in >= 0.8):
             plan = "poke"
+        if (plan in ("poke", "farm") and ch is not None and fr.in_danger < 0.5 and not outnumbered
+                and not getattr(self, "_near_enemy_tower", False) and now >= getattr(mi, "trade_cooldown_until", 0.0)
+                and mi.mode not in ("trade", "all_in")):
+            # A fresh Jev read skipped the kit's trade opener altogether, and Jev's trade_worth sat under
+            # its 0.55 floor 107 of 165 times it wanted a trade: no trade on Nasus in seven minutes (g29).
+            # With Jev's danger low, the kit's concrete window (EQ or the tornado in reach, me at least as
+            # healthy, her wave not around her) opens it.
+            window = self._kit_trade_window(sc, mi, now)
+            if window == "all_in" and fr.win_all_in < 0.4:
+                window = "trade"
+            if window:
+                plan = window
+                self.log_lines.append(f"fight: trade window under Jev's {fr.plan}, {window} "
+                                      f"({ch.unit.hp * 100:.0f}% at {sc.champ_dist or 0:.0f}u, me {mi.hp_pct:.0f}%)")
         mode = {"all_in": "all_in", "trade": "trade", "poke": "poke", "farm": "farm", "back_off": "back_off", "escape": "back_off"}[plan]
         if mi.mode != mode and not (mode == "trade" and mi.mode == "trade"):
             if not (mi.mode == "trade" and mode in ("poke", "farm") and now - mi.mode_since < 2.0):  # let a started trade finish
