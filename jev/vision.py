@@ -120,29 +120,37 @@ class VisionReader:
             return out
         if want == "minion":
             (lo_h, hi_h), lo_w, hi_w = vc.minion_bar_h, 2, vc.minion_bar_w + 2
-            kind, full, (dx, dy) = "minion", vc.minion_bar_w, vc.minion_body_offset
+            kind, base_full, (dx, dy) = "minion", vc.minion_bar_w, vc.minion_body_offset
         else:
             (lo_h, hi_h), lo_w, hi_w = vc.champ_bar_h, 3, vc.champ_bar_w + 4
-            kind, full, (dx, dy) = "champion", vc.champ_bar_w, vc.champ_body_offset
+            kind, base_full, (dx, dy) = "champion", vc.champ_bar_w, vc.champ_body_offset
         # Vectorised size filter: only plausible bars reach the per-bar checks. Bars are solid.
         keep = np.nonzero((st[:, 3] >= lo_h) & (st[:, 3] <= hi_h) & (st[:, 2] >= lo_w) & (st[:, 2] <= hi_w)
                           & (st[:, 4] >= 0.7 * st[:, 2] * st[:, 3]) & (st[:, 1] >= 1) & (st[:, 1] + st[:, 3] < H))[0]
         for i in keep:
             x, y, w, h, _area = (int(v) for v in st[i])
-            unit_kind, unit_full = kind, full
+            unit_kind, unit_full = kind, base_full  # (a monster's measured width must not carry to the next bar)
             if kind == "champion":
                 # A champion bar has its level box just left of it: a dark block. Without one, a
                 # champion-height red bar is a large jungle monster (buffs, gromp, krugs, raptors...).
                 # Large monsters also sit in a gold frame (with their HP number above): the red
                 # buff's dark frame interior passed as a level box and it was read as a champion,
                 # and its fill was measured against a champion's width (g05).
+                # From level 10 the two-digit level lights up the box (0.35-0.41 dark, against the old
+                # 0.35 bar) and every enemy champion read as a monster: Yasuo stood in Urgot and
+                # Kayle's damage seeing "no champ" and died from 77% (g15). The gold frame is the
+                # reliable sign (monsters 0.93-1.0 of the row above, champions 0.04-0.10); an
+                # unframed bar is a monster only with no level box and no name text above.
                 box = dark[y:y + h, max(0, x - 20):max(0, x - 4)]
                 gold = getattr(self, "_gold", None)
                 mid = y + h // 2
                 red_fill = np.count_nonzero(masks["enemy"][mid, x:x + w]) > np.count_nonzero(masks["ally"][mid, x:x + w])
                 framed = red_fill and gold is not None and max(
-                    (float((gold[r, x:x + max(w, 30)] > 0).mean()) for r in range(max(0, y - 5), max(1, y - 1))), default=0.0) >= 0.6
-                if framed or box.size == 0 or box.mean() < 0.35:
+                    (float((gold[r, x:x + max(w, 30)] > 0).mean()) for r in range(max(0, y - 7), max(1, y - 1))), default=0.0) >= 0.6
+                white = getattr(self, "_white", None)
+                above_txt = white[max(0, y - 22):max(0, y - 5), x:x + 100] if white is not None else None
+                named = above_txt is not None and above_txt.size > 0 and float((above_txt > 0).mean()) >= 0.008
+                if framed or box.size == 0 or (box.mean() < 0.2 and not named):
                     row = y + h // 2
                     if not masks["enemy"][row, x:x + w].any():
                         continue

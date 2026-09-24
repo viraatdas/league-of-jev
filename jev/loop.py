@@ -1789,9 +1789,23 @@ class Player:
                 order = list(self.kit.items.starters[:1])
             else:
                 order = [b for b in self.kit.items.boots[:1]] + list(self.kit.items.core)
+            def have(it) -> bool:
+                # An owned upgrade counts: Berserker's Greaves turns into Gunmetal Greaves and the
+                # fallback kept trying to buy the boots again (g15).
+                seen, todo = set(), [it]
+                while todo:
+                    x = todo.pop()
+                    if x.name in owned:
+                        return True
+                    for i in x.into_ids:
+                        if i not in seen and i in cat.items:
+                            seen.add(i)
+                            todo.append(cat.items[i])
+                return False
+
             for name in order:
                 it = cat.get(name)
-                if it is None or name in owned:
+                if it is None or have(it):
                     continue
                 names = [b.name for b in cat.purchases(it, owned, gold)]
                 if names:
