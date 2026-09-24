@@ -345,7 +345,12 @@ class Micro:
             return
         self.ctl.move_to(*self._pt(x, y))
         self.last_move = now
+        # A move does not close the order gate (its own `every` spaces moves): holding, backing out and
+        # sidestepping every 0.15-0.3 s kept the 0.11 s gate shut when minions became killable, and 22
+        # last hits in six minutes were "not taken (order rate limit)" (g29).
+        last = self.last_order
         self._ordered(now, what)
+        self.last_order = last
 
     def cast(self, idx: int, x: float, y: float) -> None:
         """Ability `idx` (1-4) at a screen point, honouring the player's quick-cast setting."""

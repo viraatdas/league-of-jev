@@ -204,3 +204,16 @@ assert y.continuous(mi, sc, now, 0.7, "farm", True)
 print("push:", mi.last_action)
 assert mi.last_action.startswith("push: Q")
 print("FIGHT OK (push)")
+
+# A move just before a minion becomes killable must not block the last hit (the order gate, g29).
+mi, log = micro()
+mi.fwd = (1.0, 0.0)
+mi.move_screen(ME[0] - 50, ME[1], now, "farm: hold behind the wave", every=0.0)
+low = track(unit("minion", 150, 0, 0.1), now)
+sc = scene(None, [low], "")
+sc.killable_auto = [low]
+assert mi._can_order(now + 0.01), "a move closed the order gate"
+mi.farm_step(sc, now + 0.01, 0.7)
+print("after a move:", mi.last_action)
+assert mi.last_action.startswith("last hit"), mi.last_action
+print("FIGHT OK (order gate)")
