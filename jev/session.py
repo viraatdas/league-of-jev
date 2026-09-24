@@ -282,16 +282,22 @@ def night(rotation: str = "yasuo,leesin", minutes: float = 16.0, games: int = 30
         tags = sorted((f.stem for f in logs.glob("g*_*.log")), key=lambda t: int(re.match(r"g(\d+)_", t).group(1)))
         if game_alive() and tags:
             tag = tags[-1]
-            champ = tag.split("_", 1)[1]
+            champ = tag.split("_")[1]
+            diff = "RSINTERMEDIATE"
             _say(f"=== supervising the running game {tag} ===")
         else:
             rot_file = logs / "rotation.txt"
             rot = [r.strip() for r in (rot_file.read_text() if rot_file.exists() else rotation).split(",") if r.strip()]
             n = (int(re.match(r"g(\d+)_", tags[-1]).group(1)) if tags else 0) + 1
             champ = rot[(n - 1) % len(rot)]
-            tag = f"g{n:02d}_{champ}"
-            _say(f"=== game {tag} ===")
-        r = subprocess.run(["uv", "run", "jev", "session", "--champion", champ, "--minutes", str(minutes), "--tag", tag],
+            # Bot difficulty, re-read each game from logs/night/difficulty.txt (RSINTRO, RSBEGINNER,
+            # RSINTERMEDIATE); a game below intermediate carries it in its tag so results never mix.
+            diff_file = logs / "difficulty.txt"
+            diff = (diff_file.read_text().strip().upper() if diff_file.exists() else "") or "RSINTERMEDIATE"
+            tag = f"g{n:02d}_{champ}" + ("" if diff == "RSINTERMEDIATE" else f"_{diff[2:].lower()}")
+            _say(f"=== game {tag} ({diff}) ===")
+        r = subprocess.run(["uv", "run", "jev", "session", "--champion", champ, "--minutes", str(minutes), "--tag", tag,
+                            "--difficulty", diff],
                            stdout=sys.stdout, stderr=subprocess.STDOUT)
         _say(f"=== {tag} session exited with {r.returncode} ===")
         if not (logs / f"{tag}.log").exists():
