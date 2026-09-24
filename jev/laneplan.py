@@ -180,7 +180,8 @@ class LanePlanner:
         notes = []
         ch = sc.champ
         if ch is not None:
-            her_reach = float(lane.get("opp_range", 550.0)) + 150.0
+            # her reach with the spells she has up (enemies.py): Brand's Q 1050, Nasus's slow 700
+            her_reach = float(lane.get("opp_reach", float(lane.get("opp_range", 550.0)) + 150.0))
             d = _units(self._dist_px(s, (ch.unit.x, ch.unit.y)))
             if d < her_reach:
                 ahead = mi.hp_pct - ch.unit.hp * 100
@@ -314,6 +315,8 @@ class LanePlanner:
             fac = 1.0 if behind <= 10 else (0.6 if behind <= 25 else 0.25)
             if mi.hp_pct < 35:
                 fac *= 0.3
+            if lane.get("her_spells_down"):
+                fac *= 1.4  # her burst is on cooldown: the window every laner trades in
             champ_w = CHAMP_HP_GOLD * agg * trade_w * fac * (1.3 if ch.unit.hp < 0.4 else 1.0)
         if e_ok:
             for tr in sc.minions:

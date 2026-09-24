@@ -12,6 +12,7 @@ dependencies = [
     "pyobjc-framework-cocoa>=12.2.2",
     "pyobjc-framework-quartz>=12.2.2",
     "pyobjc-framework-screencapturekit>=12.2.2",
+    "pyobjc-framework-vision>=12.2.2",
     "python-dotenv>=1.2.3",
     "rich>=15.0.0",
     "typer>=0.27.2",

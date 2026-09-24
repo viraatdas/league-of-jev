@@ -34,6 +34,8 @@ from jev import actions
 from jev.tactics import TacticalBrain, TacticInput, menu
 from jev.fight import FightBrain, FightRead
 from jev.lanelearn import LaneLearner
+from jev.enemies import EnemyKnowledge
+from jev import namereader
 from jev.vision import View, VisionReader
 
 console = Console()
@@ -204,6 +206,10 @@ class Player:
         self.tactics: TacticalBrain | None = None
         self.fights: FightBrain | None = None
         self._self_trail: collections.deque[tuple[float, float]] = collections.deque(maxlen=60)  # (t, hp%) every 0.1 s
+        self.enemy_kn = EnemyKnowledge()        # her spells: ranges, cooldowns, what she just used
+        self._enemy_names: list[str] = []       # enemy team champion names (for reading the bar labels)
+        self._name_marks: collections.deque = collections.deque(maxlen=40)  # (t, x, y, name) from the bar labels
+        self._name_tried = 0.0
         self.micro: Micro | None = None
         self.scene = None
         self.data: dict | None = None
@@ -299,6 +305,7 @@ class Player:
                         v = self.vision.read(frame)
                         v.ts = f.ts  # latency is measured from when the frame was captured
                         self.view = v
+                        self._read_names(frame, v, f.ts)
                     if f.ts - getattr(self, "_dialog_checked", 0.0) >= 1.5:
                         self._dialog_checked = f.ts
                         self._dialog_ok = self._find_dialog_ok(frame)
@@ -607,6 +614,7 @@ class Player:
         fwd = self._wave_fwd(view, raw_minions, world if camp_pt is None else None)
         mi.dodge_lines = self._opponent_throws_lines()
         champs = self.champ_tracker.update(view.enemies("champion"), now)
+        self._name_tracks(champs, now)
         if not minions and not champs and not (self.kit.support and view.allies("champion")):
             self.scene = None
             return False
@@ -620,12 +628,12 @@ class Player:
                          aspd=aspd, move_speed=float(stats.get("moveSpeed", 345.0)),
                          fwd=fwd, e_dmg=kit.e_minion_damage(e_rank, ad, int(ap.get("level", 1))))
         mi.dash_ok = not getattr(self, "_near_enemy_tower", False)
-        sc.lane = self._lane_info(view, stats)
+        sc.lane = self._lane_info(view, stats, sc, now)
         lr = getattr(mi, "learner", None)
         if lr is not None:
-            lr.opponent = str((self.state.get("lane_opponent") or {}).get("champion") or "").lower()
+            lr.opponent = str(sc.lane.get("opp") or "").lower()
             her = sc.champ
-            reach = float(sc.lane.get("opp_range", 550.0)) + 150.0
+            reach = float(sc.lane.get("opp_reach", float(sc.lane.get("opp_range", 550.0)) + 150.0))
             lr.exposure(now, inp_hp(data), None if her is None else sc.dist(her) < reach)
             lr.tick(now, inp_hp(data), her.unit.hp if her is not None else None)
         if kit.support:
@@ -838,16 +846,32 @@ class Player:
             mi.set_mode("all_in", now)
             self.log_lines.append(f"fight: strategy says all in (p={dd.intent_confidence:.2f})")
 
-    def _lane_info(self, view, stats: dict) -> dict:
-        """What the lane planner needs beyond the screen: her reach and HP pool, their tower on
-        screen, Jev's aggression."""
+    def _lane_info(self, view, stats: dict, sc=None, now: float = 0.0) -> dict:
+        """What the lane planner needs beyond the screen: who she is, her reach with the spells she
+        has up, her HP pool, their tower on screen, Jev's aggression."""
         st = self.state or {}
         opp = st.get("lane_opponent") or {}
+        data = self.data or {}
+        me = find_me(data) or {}
+        self._enemy_names = [str(p.get("championName")) for p in data.get("allPlayers", [])
+                             if p.get("team") and p.get("team") != me.get("team") and p.get("championName")]
+        name = self._her_name(sc) if sc is not None else str(opp.get("champion") or "")
+        her = next((p for p in data.get("allPlayers", []) if str(p.get("championName")) == name), None)
+        lvl = int((her or {}).get("level") or opp.get("level") or (st.get("me") or {}).get("level") or 1)
         cat = self.shop_brain.catalog if self.shop_brain is not None else None
-        rng = cat.attack_range(str(opp.get("champion") or "")) if cat is not None else None
-        lvl = int(opp.get("level") or (st.get("me") or {}).get("level") or 1)
+        rng = cat.attack_range(name) if cat is not None else None
+        if sc is not None and sc.champ is not None:
+            # A burst on me from her: which spell, and how long it is down (enemies.py).
+            drop = -(self._trail_change(0.4, now) or 0.0)
+            used = self.enemy_kn.burst(now, name, sc.champ_dist or 9e9, drop, lvl)
+            if used:
+                self.log_lines.append(self.enemy_kn.events[-1])
+        reach = self.enemy_kn.reach_now(name, now)
+        down = self.enemy_kn.spells_down(name, now)
         d = self.decision
-        info = {"opp_range": rng if rng is not None else 550.0, "opp_hp": 640.0 + 95.0 * (lvl - 1),
+        info = {"opp": name, "opp_range": rng if rng is not None else 550.0, "opp_hp": 640.0 + 95.0 * (lvl - 1),
+                "opp_reach": reach if reach is not None else (rng if rng is not None else 550.0) + 150.0,
+                "her_spells_down": down,
                 "aggression": d.aggression if d is not None else 1.0,
                 "tower_farm_ok": bool(getattr(self, "_tower_farm_ok", False))}
         t, mm = getattr(self, "_enemy_tower_map", None), self.mm_state
@@ -1066,6 +1090,41 @@ class Player:
             return []
         return [e for e in mm.enemy_champions if dist(mm.pos, e) <= radius]
 
+    def _read_names(self, frame, v, ts: float) -> None:
+        """The name above an enemy champion's bar (the champion, for bots), once per new champion
+        on screen and at most every 0.3 s (~25 ms each). The actor gives it to the nearest track."""
+        if not self._enemy_names or not namereader.available() or ts - self._name_tried < 0.3:
+            return
+        for u in v.enemies("champion"):
+            named = any(getattr(t, "name", "") and math.hypot(t.unit.x - u.x, t.unit.y - u.y) < 80
+                        for t in list(self.champ_tracker.tracks.values()))
+            if named or any(ts - t0 < 1.0 and math.hypot(x - u.x, y - u.y) < 80 for t0, x, y, _ in self._name_marks):
+                continue
+            self._name_tried = ts
+            try:
+                name = namereader.identify(frame, u.bar, self._enemy_names)
+            except Exception:  # noqa: BLE001  a reader failure only costs the name
+                name = None
+            if name:
+                self._name_marks.append((ts, u.x, u.y, name))
+            return
+
+    def _name_tracks(self, champs: list, now: float) -> None:
+        for tr in champs:
+            if getattr(tr, "name", ""):
+                continue
+            for t0, x, y, name in reversed(self._name_marks):
+                if now - t0 < 1.5 and math.hypot(tr.unit.x - x, tr.unit.y - y) < 90:
+                    tr.name = name
+                    self.log_lines.append(f"on screen: {name}")
+                    break
+
+    def _her_name(self, sc) -> str:
+        """The champion in front of me: her bar label when read, else the lane opponent."""
+        if sc.champ is not None and getattr(sc.champ, "name", ""):
+            return sc.champ.name
+        return str((self.state.get("lane_opponent") or {}).get("champion") or "")
+
     def _trail_change(self, seconds: float, now: float) -> float | None:
         old = [h for t, h in self._self_trail if now - t >= seconds - 0.05]
         return (self._self_trail[-1][1] - old[-1]) if old and self._self_trail else None
@@ -1096,8 +1155,16 @@ class Player:
                 "moving": "toward me" if approach > 90 else ("away from me" if approach < -90 else "holding"),
                 "enemy_minions_around_them": around,
             }
-            info["describe"] = (f"enemy champion at {info['hp_percent']}% HP, {info['distance']} units {info['direction']}, "
-                                f"{info['moving']}")
+            name = getattr(tr, "name", "")
+            if name:
+                down = self.enemy_kn.spells_down(name, now)
+                prof = self.enemy_kn.profile(name)
+                info["champion"] = name
+                if prof is not None:
+                    info["threat_reach"] = rnd(prof.reach(self.enemy_kn.up(name, now)))
+                info["her_spells_on_cooldown"] = down
+            info["describe"] = (f"{name or 'enemy champion'} at {info['hp_percent']}% HP, {info['distance']} units {info['direction']}, "
+                                f"{info['moving']}" + (f", {'/'.join(info['her_spells_on_cooldown'])} on cooldown" if info.get("her_spells_on_cooldown") else ""))
             enemies[f"enemy_champion_{tr.id}"] = info
         my_around = sum(1 for t in sc.minions if sc.dist(t) <= 500)
         summ = {n: ("ready" if sc.ready.get(k) else "not ready") for n, k in zip(mi.summoners, "DF") if n}

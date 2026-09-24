@@ -197,3 +197,28 @@ best, top = pl2.choose(sc, mi, now, False)
 print("E in with a way out:", best.kind, "through", best.target.id, best.why, [(o.kind, round(o.value, 1)) for o in top[1:]])
 assert best.kind in ("e", "eq") and best.target in (gate, back) and "dash out ready" in best.why and " then 0 " not in best.why
 print("LANEPLAN OK (lookahead)")
+
+# Enemy knowledge: Nasus reaches 700 with his slow, not 125; a burst at 600 units is his E, down for
+# its cooldown; the planner trades harder in that window.
+from jev.enemies import EnemyKnowledge
+kn = EnemyKnowledge()
+if kn.profile("Nasus") is not None:
+    assert kn.reach_now("Nasus", 0.0) == 700.0
+    used = kn.burst(100.0, "Nasus", 600.0, 12.0, 5)
+    print("burst at 600u:", used, kn.events[-1], "| down:", kn.spells_down("Nasus", 101.0))
+    assert used == "E" and kn.spells_down("Nasus", 101.0) == ["E"] and not kn.spells_down("Nasus", 115.0)
+    assert kn.burst(103.0, "Nasus", 100.0, 7.0, 5) is None   # an auto in his range is not a spell
+    y3 = Yasuo()
+    y3.q.hud = False
+    pl3 = LanePlanner(y3)
+    mi = micro()
+    her = tr("champion", 420, 0, 0.8, 9, role="")
+    sc = scene([tr("minion", 600, 0, 1.0, 40)], champ=her, ready="Q")
+    v0 = max(o.value for o in pl3.options(sc, mi, now, False) if o.kind == "q_champ")
+    sc.lane["her_spells_down"] = ["E"]
+    v1 = max(o.value for o in pl3.options(sc, mi, now, False) if o.kind == "q_champ")
+    print(f"Q on her: {v0:.1f} -> {v1:.1f} with her E down")
+    assert v1 > v0
+    print("LANEPLAN OK (enemy knowledge)")
+else:
+    print("(no Data Dragon cache: enemy knowledge check skipped)")

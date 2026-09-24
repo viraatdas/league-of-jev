@@ -94,3 +94,12 @@ print("pos filter, recall to base:", outs)
 assert outs[:4] == [None] * 4 and outs[4] == (400, 400)
 assert MinimapState(self_from_icon=(9000, 2000)).pos is None  # the icon read is not a position
 print("VISION OK (pos filter)")
+
+# The name above an enemy champion's bar (bots are named after their champion): Nasus, g29.
+from jev import namereader
+if namereader.available():
+    img = cv2.imread("tests/fixtures/frames/nasus_label.png")
+    got = namereader.identify(img, (120, 60, 58, 11), ["Nasus", "Fiddlesticks", "Annie", "Kayle", "Ashe"])
+    print("bar label:", got)
+    assert got == "Nasus", got
+    print("VISION OK (names)")

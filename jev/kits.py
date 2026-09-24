@@ -713,7 +713,9 @@ class Yasuo(Kit):
                 and self.minions_near_champ(sc) < 4):
             self._last_window = now
             return "all_in"
-        if mi.hp_pct < 50 or mi.hp_pct < ch.unit.hp * 100 - 5:
+        # Her burst on cooldown (enemies.py): the window laners trade in, a few points behind or not.
+        slack = 15 if sc.lane.get("her_spells_down") else 5
+        if mi.hp_pct < 50 or mi.hp_pct < ch.unit.hp * 100 - slack:
             return None
         if sc.enemy_champs >= 2 and not sc.ally_champs:
             return None  # two of them in view and none of us: not a trade
