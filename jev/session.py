@@ -296,7 +296,12 @@ def night(rotation: str = "yasuo,leesin", minutes: float = 16.0, games: int = 30
             diff = (diff_file.read_text().strip().upper() if diff_file.exists() else "") or "RSINTERMEDIATE"
             tag = f"g{n:02d}_{champ}" + ("" if diff == "RSINTERMEDIATE" else f"_{diff[2:].lower()}")
             _say(f"=== game {tag} ({diff}) ===")
-        r = subprocess.run(["uv", "run", "jev", "session", "--champion", champ, "--minutes", str(minutes), "--tag", tag,
+        mins_file = logs / "minutes.txt"  # game time limit, re-read each game (a limit ends the game with /ff)
+        try:
+            game_minutes = float(mins_file.read_text().strip()) if mins_file.exists() else minutes
+        except ValueError:
+            game_minutes = minutes
+        r = subprocess.run(["uv", "run", "jev", "session", "--champion", champ, "--minutes", str(game_minutes), "--tag", tag,
                             "--difficulty", diff],
                            stdout=sys.stdout, stderr=subprocess.STDOUT)
         _say(f"=== {tag} session exited with {r.returncode} ===")
