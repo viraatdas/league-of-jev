@@ -863,6 +863,17 @@ class Player:
         if plan != getattr(self, "_last_fight_plan", None):
             self._last_fight_plan = plan
             self.log_lines.append(f"fight(jev): {plan} <- {fr.summary()}")
+        if plan in ("back_off", "escape"):
+            enemies = (fr.state.get("enemies_on_screen") or {}).values()
+            coming = sum(1 for v in enemies if v.get("moving") == "toward me")
+            close = int((fr.state.get("numbers") or {}).get("enemy_champions_within_1000") or 0)
+            if fr.in_danger >= 0.5 or close >= 2 or coming >= 2 or fr.gank_coming >= 0.6 or plan == "escape":
+                # A real retreat, not a step: backing off 260 units while the strategy still said farm
+                # let two full-HP champions walk up and burst Yasuo from 62% (g11, 14:12).
+                self.guards.retreat_until = max(self.guards.retreat_until, now + 3.0)
+                if getattr(self, "_retreat_logged", 0.0) < now - 3.0:
+                    self._retreat_logged = now
+                    self.log_lines.append(f"fight(jev): retreat ({close} close, {coming} coming, danger {fr.in_danger:.2f}, gank {fr.gank_coming:.2f})")
         mi.fight_owned_until = now + 0.9  # the tactical head's mode picks stand down meanwhile
         mi.flash_in_ok = plan == "all_in" and fr.win_all_in >= 0.75 and ch is not None and ch.unit.hp < 0.3
         if plan == "escape":

@@ -7,7 +7,7 @@ import sys
 import time
 
 os.chdir(os.path.join(os.path.dirname(__file__), ".."))
-PAT = re.compile(r"order: .*(R Last|R kick|ignite|Flash|tornado)|fight\(jev\): (all_in|escape)|fight:|escape|shop: b|dialog|lasthits|smite|jungle: cleared|error|Error|Traceback|paused|===|surrender|score|game \d+:|deaths:|launch [^2]|launch failed")
+PAT = re.compile(r"order: .*(R Last|R kick|ignite|Flash|tornado)|fight\(jev\): (all_in|escape|retreat)|fight:|escape|shop: b|dialog|lasthits|smite|jungle: cleared|error|Error|Traceback|paused|===|surrender|score|game \d+:|deaths:|launch [^2]|launch failed")
 seen: dict[str, int] = {}
 while True:
     evs = sorted(glob.glob("logs/night/g*.log.events"), key=os.path.getmtime)
