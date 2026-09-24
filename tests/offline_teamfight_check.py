@@ -202,3 +202,24 @@ p._fight_triggers(sc, p.micro, now)
 print("nothing up:", p.micro.mode, list(p.log_lines)[-1])
 assert p.micro.mode == "back_off" and p.guards.retreat_until > now
 print("NOTHING UP OK")
+
+# Jev hysteresis: a low-confidence plan change needs a second read; a confident one takes over at once.
+from types import SimpleNamespace
+from jev.fight import FightLog, FightRead
+p = setup(now)
+p.fights = SimpleNamespace(log=FightLog(None))
+e = track(500, 0.8, 1, now)
+p.champ_tracker.tracks = {1: e}
+sc = Scene(me_xy=ME)
+sc.champ, sc.champ_dist, sc.enemy_champs = e, sc.dist(e), 1
+def fr(plan, prob, seq):
+    return FightRead(seq=seq, ts=now, latency_ms=100, plan=plan, plan_probs={plan: prob}, win_all_in=0.3, trade_worth=0.6,
+                     in_danger=0.1, gank_coming=0.1, state={"enemies_on_screen": {"enemy_champion_1": {"hp_percent": 80}}})
+p._apply_fight_read(fr("farm", 0.6, 1), sc, p.micro, now)
+p._apply_fight_read(fr("back_off", 0.35, 2), sc, p.micro, now + 0.5)
+assert p._fight_plan_held == "farm", p._fight_plan_held      # one unsure read does not flip
+p._apply_fight_read(fr("back_off", 0.35, 3), sc, p.micro, now + 1.0)
+assert p._fight_plan_held == "back_off", p._fight_plan_held  # the second one does
+p._apply_fight_read(fr("trade", 0.55, 4), sc, p.micro, now + 1.5)
+assert p._fight_plan_held == "trade", p._fight_plan_held     # a sure one at once
+print("HYSTERESIS OK")

@@ -1053,6 +1053,18 @@ class Player:
                 sc.champ, sc.champ_dist = pick, sc.dist(pick)
         ch = sc.champ
         plan = fr.plan
+        # Hysteresis: a new plan takes over only when Jev is sure of it (p >= 0.5) or reads it twice in a
+        # row. At p 0.3-0.4 the plan flipped between back_off, poke and farm every half second and Yasuo
+        # never traded Nasus once (g29). Danger and escapes are never held back.
+        held = getattr(self, "_fight_plan_held", None)
+        if held is not None and plan != held and fr.plan_probs.get(plan, 0.0) < 0.5 and fr.in_danger < 0.75 and plan != "escape":
+            if getattr(self, "_fight_plan_pending", None) != plan:
+                self._fight_plan_pending = plan
+                plan = held
+            else:
+                self._fight_plan_pending = None
+        if plan != "escape":
+            self._fight_plan_held = plan
         if fr.in_danger >= 0.75 and plan not in ("escape", "back_off"):
             plan = "escape" if fr.in_danger >= 0.85 else "back_off"
         if plan in ("all_in", "trade") and ch is None:
