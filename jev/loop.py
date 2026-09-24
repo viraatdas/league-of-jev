@@ -26,7 +26,7 @@ from jev import places as map_places
 from jev.kits import FIGHT_MODES, Kit, kit_for
 from jev.lanes import LANE_LETTER, Lane, lane_for
 from jev.micro import HP_MODEL, Micro, UnitTracker, build_scene
-from jev.minimap import MinimapReader, MinimapState, PosFilter, dist, lane_progress, lane_wave
+from jev.minimap import MinimapReader, MinimapState, PosFilter, TowerWatch, dist, lane_progress, lane_wave
 from jev.riot_api import FixtureRecorder, RiotLiveClient
 from jev.screen import Screen
 from jev.state import Perception, build_state, find_me
@@ -176,6 +176,9 @@ class Player:
         self._gold_hist: collections.deque[tuple[float, float, int]] = collections.deque()
         self.mm: MinimapReader | None = MinimapReader(self.screen) if (config.GEOMETRY.minimap and not dry_run) else None
         self.mm_filter = PosFilter()
+        self.tower_watch = TowerWatch()
+        self._towers_seen_dead: collections.deque = collections.deque()   # (team, index) from the minimap icons
+        self._tower_checked = 0.0
         self.mm_state: MinimapState | None = None
         self.side = "ORDER"
         self.dead_enemy_mid_towers: set[int] = set()
@@ -301,6 +304,10 @@ class Player:
                         st = self.mm.read(frame[y0:y0 + side, x0:x0 + side])
                         st.ts = f.ts
                         self.mm_state = self.mm_filter.apply(st)
+                        if st.self_pos is not None and f.ts - self._tower_checked >= 2.0:
+                            self._tower_checked = f.ts   # (the box found: the minimap is on screen)
+                            for key in self.tower_watch.update(frame[y0:y0 + side, x0:x0 + side], self.mm):
+                                self._towers_seen_dead.append(key)
                     if self.vision is not None:
                         v = self.vision.read(frame)
                         v.ts = f.ts  # latency is measured from when the frame was captured
@@ -1737,6 +1744,31 @@ class Player:
         self._rehome_own_tower()
         self.log_lines.append(f"lane -> {name}")
 
+    TOWER_NAMES = ["top outer", "top inner", "top inhibitor", "mid outer", "mid inner", "mid inhibitor",
+                   "bot outer", "bot inner", "bot inhibitor"]
+
+    def _towers_from_minimap(self) -> None:
+        """Towers the minimap shows gone (TowerWatch): ours move our tower line back (retreats and holds
+        go behind the frontmost one standing); theirs stop counting as a threat."""
+        from jev.lanes import LANE_TOWER_BASE
+
+        ours = "blue" if self.side == "ORDER" else "red"
+        while self._towers_seen_dead:
+            team, i = self._towers_seen_dead.popleft()
+            ln = ("top", "mid", "bot")[i // 3]
+            num = (5, 4, 3)[i % 3]
+            if team == ours:
+                tag = "T1" if self.side == "ORDER" else "T2"
+                self._dead_turrets = getattr(self, "_dead_turrets", set())
+                self._dead_turrets.add(f"Turret_{tag}_{LANE_LETTER[ln]}_{num:02d}_A")
+                self.log_lines.append(f"towers (minimap): our {self.TOWER_NAMES[i]} is down")
+                self._rehome_own_tower()
+            else:
+                if i in self.lane.enemy_tower_ids():
+                    self.dead_enemy_mid_towers.add(self.lane.enemy_tower_ids()[i])
+                self._dead_enemy_idx = getattr(self, "_dead_enemy_idx", set()) | {i}
+                self.log_lines.append(f"towers (minimap): their {self.TOWER_NAMES[i]} is down")
+
     def _rehome_own_tower(self) -> None:
         """Our tower in this lane is the frontmost one still standing: retreats, step-backs and holds
         go behind it. With the outer tower gone, Yasuo "retreated" to its ruins in the middle of the
@@ -1805,6 +1837,8 @@ class Player:
         self.jungle_state = None
         self.mm_state = None
         self.mm_filter = PosFilter()
+        self.tower_watch = TowerWatch()
+        self._towers_seen_dead.clear()
         self.view = None
         self.scene = None
         self.min_tracker = UnitTracker()
@@ -2028,14 +2062,17 @@ class Player:
                         m.aim_dir = None
                 else:
                     m.aim_dir = None
-        # Track destroyed enemy mid towers from the event log.
+        # Track destroyed towers from the event log, and from the minimap icons (the event names never
+        # matched ours in g22-g26: every real name is logged once so the format can be checked).
         enemy_tag = "T2" if self.side == "ORDER" else "T1"
+        self._towers_from_minimap()
         for e in (data.get("events") or {}).get("Events", []):
             tk = str(e.get("TurretKilled", ""))
             if e.get("EventName") == "TurretKilled" and tk:
                 self._dead_turrets = getattr(self, "_dead_turrets", set())
                 if tk not in self._dead_turrets:
                     self._dead_turrets.add(tk)
+                    self.log_lines.append(f"tower killed (event): {tk}")
                     self._rehome_own_tower()
             if e.get("EventName") == "TurretKilled" and f"Turret_{enemy_tag}_{LANE_LETTER[self.lane.name]}_" in tk:
                 try:
@@ -2286,7 +2323,17 @@ class Player:
                     m.go_map(safe, now, attack=False, every=0.8)
                     m.last_action = "retreat: toward " + ("base" if safe == home else "our tower")
                 else:
-                    m.retreat(move_speed, now)
+                    v = self.view
+                    close = bool(self._enemies_near_on_map(1500)) or (v is not None and bool(v.enemies("champion")))
+                    if hp_pct < 40 or (hp_pct < 55 and close):
+                        # Low, or half HP with them close: home, not our tower. Holding at the tower at
+                        # 19% with a full-HP champion 700 units away was a death in g24 (21:17), and the
+                        # "tower" was often a dead one (g22-g26).
+                        home = config.BLUE_FOUNTAIN if self.side == "ORDER" else config.RED_FOUNTAIN
+                        m.go_map(home, now, attack=False, every=0.8)
+                        m.last_action = "retreat: home (low)"
+                    else:
+                        m.retreat(move_speed, now)
         elif self.intent == "step_back":
             m.step_back(move_speed, now)
         elif self.intent == "defend":

@@ -87,3 +87,33 @@ assert p._recall_threat(_t.time())
 p.view = _V(units=[me], me=me, ts=_t.time())
 assert not p._recall_threat(_t.time())
 print("LANES OK (recall spot)")
+
+# Towers from the minimap icons: seen standing, then gone three checks in a row -> dead. Our mid
+# outer gone moves our mid line back (the retreat spot Yasuo died at in g22-g26).
+import cv2 as _cv2
+from jev.minimap import MinimapReader as _MR, TowerWatch
+from jev.screen import Screen as _S
+from jev import config as _c
+_r = _MR(_S())
+x0, y0, side = (int(v) for v in _c.GEOMETRY.minimap)
+early = _cv2.imread("tests/fixtures/frames/minimap_merged_allies.png")
+tw = TowerWatch()
+assert tw.update(early, _r) == []
+import numpy as _np
+blank = early.copy()
+px, py = _r.map_to_px(*_c.BLUE_TOWERS[3])
+blank[int(py) - 10:int(py) + 11, int(px) - 10:int(px) + 11] = (40, 40, 40)   # the mid outer icon gone
+got = []
+for _ in range(3):
+    got += tw.update(blank, _r)
+print("minimap tower watch:", got)
+assert ("blue", 3) in got
+p = _P(dry_run=True)
+p.side = "ORDER"
+p._switch_lane("mid")
+before = p.lane.own_tower
+p._towers_seen_dead.extend(got)
+p._towers_from_minimap()
+print("own mid line", round(before, 3), "->", round(p.lane.own_tower, 3), list(p.log_lines)[-2:])
+assert p.lane.own_tower < before - 0.05
+print("LANES OK (tower watch)")

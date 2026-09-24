@@ -207,6 +207,47 @@ class MinimapReader:
         return out
 
 
+class TowerWatch:
+    """Lane towers standing or not, from their minimap icons: the TurretKilled events never moved our
+    tower line in g22-g26 (no name matched), and Yasuo "retreated" to our dead outer mid tower and died
+    there over and over (the same spot, 5896,6260, in four games). A tower is dead once it was seen
+    standing (15+ icon pixels) and then shows none (<= 2) on three checks in a row; only frames with
+    the camera box found count (the end screens have no minimap)."""
+
+    ALIVE, GONE, CONFIRM = 15, 2, 3
+
+    def __init__(self) -> None:
+        self.seen = {}      # (team, i) -> seen standing
+        self.gone = {}      # (team, i) -> consecutive empty checks
+        self.dead: set[tuple[str, int]] = set()
+
+    def update(self, crop_bgr: np.ndarray, reader: "MinimapReader") -> list[tuple[str, int]]:
+        hsv = cv2.cvtColor(crop_bgr[:, :, :3], cv2.COLOR_BGR2HSV)
+        new = []
+        for team, towers in (("blue", config.BLUE_TOWERS), ("red", config.RED_TOWERS)):
+            for i, t in enumerate(towers[:9]):
+                key = (team, i)
+                if key in self.dead:
+                    continue
+                px, py = reader.map_to_px(*t)
+                win = hsv[max(0, int(py) - 9):int(py) + 10, max(0, int(px) - 9):int(px) + 10]
+                h, s, v = win[..., 0], win[..., 1], win[..., 2]
+                if team == "blue":
+                    n = int(((h >= 88) & (h <= 112) & (s > 90) & (v > 110)).sum())
+                else:
+                    n = int((((h <= 8) | (h >= 170)) & (s > 120) & (v > 110)).sum())
+                if n >= self.ALIVE:
+                    self.seen[key], self.gone[key] = True, 0
+                elif n <= self.GONE and self.seen.get(key):
+                    self.gone[key] = self.gone.get(key, 0) + 1
+                    if self.gone[key] >= self.CONFIRM:
+                        self.dead.add(key)
+                        new.append(key)
+                else:
+                    self.gone[key] = 0
+        return new
+
+
 class PosFilter:
     """Drops a camera-box read that jumps farther than a champion moves (a dash or Flash is within
     1500 units), unless the new spot repeats for `confirm` reads in a row (a recall, a respawn). A
