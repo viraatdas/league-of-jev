@@ -189,12 +189,15 @@ def session(champion: str = typer.Option("yasuo", help="yasuo | leesin | thresh"
             tag: str = typer.Option("", help="Name for the log and frames (default: date_champion)"),
             difficulty: str = typer.Option("RSINTERMEDIATE", help="Bot difficulty"),
             explore: float = typer.Option(0.0, help="Passed to jev play"),
-            position: str = typer.Option("", help="top | middle | jungle | bottom | utility (default: the champion's)")) -> None:
-    """One unattended bot game end to end: lobby, pick, the harness playing, time limit, score."""
+            position: str = typer.Option("", help="top | middle | jungle | bottom | utility (default: the champion's)"),
+            skip_check: bool = typer.Option(False, help="Start without the pre-game check (scripts/pregame_check.py)")) -> None:
+    """One unattended bot game end to end: pre-game check, lobby, pick, the harness playing, time limit, score."""
     from jev.session import run
 
     extra = ["--explore", str(explore)] if explore else []
-    run(champion, minutes, tag, difficulty, extra, position=position)
+    res = run(champion, minutes, tag, difficulty, extra, position=position, skip_check=skip_check)
+    if isinstance(res, dict) and res.get("result") == "pre-game check failed":
+        raise typer.Exit(3)
 
 
 @app.command()

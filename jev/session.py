@@ -84,8 +84,44 @@ def stop_harness() -> None:
     subprocess.run(["pkill", "-f", "jev pla[y]"], check=False)
 
 
+def code_hash() -> str:
+    import hashlib
+
+    h = hashlib.sha1()
+    for f in sorted(Path("jev").glob("*.py")):
+        h.update(f.name.encode())
+        h.update(f.read_bytes())
+    return h.hexdigest()[:16]
+
+
+def pregame_ok() -> bool:
+    """scripts/pregame_check.py (every offline test, the lane planner replayed on recorded games
+    against the baseline) when the code changed since its last pass. A failing build plays no game."""
+    import json
+
+    stamp = Path("logs/pregame_ok.json")
+    h = code_hash()
+    try:
+        if json.loads(stamp.read_text()).get("hash") == h:
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    _say("pre-game check: the code changed since the last pass, running it")
+    r = subprocess.run(["uv", "run", "python", "scripts/pregame_check.py"], capture_output=True, text=True, timeout=1800)
+    for line in r.stdout.strip().splitlines()[-10:]:
+        _say("  " + line)
+    if r.returncode != 0:
+        return False
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.write_text(json.dumps({"hash": h, "t": time.time()}))
+    return True
+
+
 def run(champion: str = "yasuo", minutes: float = 18.0, tag: str = "", difficulty: str = "RSINTERMEDIATE",
-        extra_args: list[str] | None = None, position: str = "") -> dict:
+        extra_args: list[str] | None = None, position: str = "", skip_check: bool = False) -> dict:
+    if not skip_check and not game_alive() and not pregame_ok():
+        _say("pre-game check FAILED: not starting a game on this build (jev session --skip-check to override)")
+        return {"result": "pre-game check failed"}
     champion = champion.lower().replace(" ", "")
     pos = (position or POSITION.get(champion, "middle")).lower()
     tag = tag or time.strftime("%m%d_%H%M") + f"_{champion}"
@@ -309,6 +345,9 @@ def night(rotation: str = "yasuo,leesin", minutes: float = 16.0, games: int = 30
                             "--difficulty", diff] + (["--position", lane_pos] if lane_pos else []),
                            stdout=sys.stdout, stderr=subprocess.STDOUT)
         _say(f"=== {tag} session exited with {r.returncode} ===")
+        if r.returncode == 3:
+            _say("the pre-game check failed on this build: ending the night loop (fix it, or rerun with a passing build)")
+            return
         if not (logs / f"{tag}.log").exists():
             time.sleep(60)  # no game was played (lobby or pick failed): do not spin
         if r.returncode != 0:

@@ -24,25 +24,26 @@ from jev.minimap import MinimapReader  # noqa: E402
 from jev.screen import Screen  # noqa: E402
 from jev.vision import Unit, View, VisionReader  # noqa: E402
 
-tag = sys.argv[1]
-lane_name = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("-") else ("top" if "_top" in tag else "mid")
-show = int(sys.argv[sys.argv.index("--show") + 1]) if "--show" in sys.argv else 0
-only = sys.argv[sys.argv.index("--kind") + 1] if "--kind" in sys.argv else None
-fdir = f"snapshots/night/{tag}"
-rows = [json.loads(line) for line in open(f"{fdir}/vision.jsonl")]
-
 
 def wall(f: str) -> float:
     return int(f[:2]) * 3600 + int(f[2:4]) * 60 + int(f[4:6]) + int(f[6:9]) / 1000
 
 
-screen = Screen()
-vr, mr = VisionReader(), MinimapReader(screen)
-lane = Lane(lane_name, "ORDER")
-x0, y0, side = config.GEOMETRY.minimap
+_readers: dict = {}
 
 
-def run(planner: bool) -> tuple[collections.Counter, list]:
+def run(tag: str, lane_name: str, planner: bool) -> tuple[collections.Counter, list]:
+    """Replay `tag`'s frames through Yasuo's lane layer (the planner or the old rules). Counts of
+    order kinds, plus "_died": (kind, target died within 1.5 s) -> n."""
+    if not _readers:
+        _readers["screen"] = Screen()
+        _readers["vr"], _readers["mr"] = VisionReader(), MinimapReader(_readers["screen"])
+    screen, vr, mr = _readers["screen"], _readers["vr"], _readers["mr"]
+    fdir = f"snapshots/night/{tag}"
+    rows = [json.loads(line) for line in open(f"{fdir}/vision.jsonl")]
+    lane = Lane(lane_name, "ORDER")
+    x0, y0, side = config.GEOMETRY.minimap
+    saved = config.FAST.lane_planner
     config.FAST.lane_planner = planner
     kit = Yasuo()
     mi = Micro(Controller(dry_run=True, log=lambda m: None), screen, keybinds.load(), "ORDER")
@@ -111,21 +112,39 @@ def run(planner: bool) -> tuple[collections.Counter, list]:
     for kind, tid, t in hits:
         died[(kind, last_seen.get(tid, t) - t <= 1.5)] += 1
     counts["_died"] = died
+    config.FAST.lane_planner = saved
     return counts, picks
 
 
-t0 = time.time()
-for label, planner in (("old rules", False), ("planner", True)):
-    c, picks = run(planner)
+def metrics(tag: str, lane_name: str | None = None) -> dict:
+    """The planner's numbers on one recorded game (the pre-game check compares these)."""
+    lane_name = lane_name or ("top" if "_top" in tag else "mid")
+    c, _ = run(tag, lane_name, True)
     died = c.pop("_died")
     tot = sum(v for k, v in c.items() if k != "hold / nothing")
-    print(f"{label:10s} orders {tot:4d} | " + "  ".join(f"{k} {v} ({v / max(1, tot):.0%})" for k, v in c.most_common() if k != "hold / nothing")
-          + f"  | idle ticks {c['hold / nothing']}")
-    kinds = sorted({k for k, _ in died})
-    print(" " * 11 + "last-hit targets that died within 1.5 s: "
-          + "  ".join(f"{k} {died[(k, True)]}/{died[(k, True)] + died[(k, False)]}" for k in kinds))
-    if planner and show:
-        picks = [pk for pk in picks if only is None or pk[1]["pick"]["kind"] == only]
-        for f, pl in picks[:: max(1, len(picks) // show)][:show]:
-            print("   ", f, pl["pick"], "| also", [(o["kind"], o["value"]) for o in pl["also"]])
-print(f"({time.time() - t0:.0f} s)")
+    ok = sum(v for (k, d), v in died.items() if d)
+    tried = sum(died.values())
+    return {"orders": tot, "moves": round(c["move"] / max(1, tot), 3), "e": c["E"] + c["E+Q"],
+            "lasthits": tried, "lasthit_died": round(ok / max(1, tried), 3)}
+
+
+if __name__ == "__main__":
+    tag = sys.argv[1]
+    lane_name = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("-") else ("top" if "_top" in tag else "mid")
+    show = int(sys.argv[sys.argv.index("--show") + 1]) if "--show" in sys.argv else 0
+    only = sys.argv[sys.argv.index("--kind") + 1] if "--kind" in sys.argv else None
+    t0 = time.time()
+    for label, planner in (("old rules", False), ("planner", True)):
+        c, picks = run(tag, lane_name, planner)
+        died = c.pop("_died")
+        tot = sum(v for k, v in c.items() if k != "hold / nothing")
+        print(f"{label:10s} orders {tot:4d} | " + "  ".join(f"{k} {v} ({v / max(1, tot):.0%})" for k, v in c.most_common() if k != "hold / nothing")
+              + f"  | idle ticks {c['hold / nothing']}")
+        kinds = sorted({k for k, _ in died})
+        print(" " * 11 + "last-hit targets that died within 1.5 s: "
+              + "  ".join(f"{k} {died[(k, True)]}/{died[(k, True)] + died[(k, False)]}" for k in kinds))
+        if planner and show:
+            picks = [pk for pk in picks if only is None or pk[1]["pick"]["kind"] == only]
+            for f, pl in picks[:: max(1, len(picks) // show)][:show]:
+                print("   ", f, pl["pick"], "| also", [(o["kind"], o["value"]) for o in pl["also"]])
+    print(f"({time.time() - t0:.0f} s)")
