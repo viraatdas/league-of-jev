@@ -188,12 +188,13 @@ def session(champion: str = typer.Option("yasuo", help="yasuo | leesin | thresh"
             minutes: float = typer.Option(18.0, help="Leave the game (surrender) at this game time"),
             tag: str = typer.Option("", help="Name for the log and frames (default: date_champion)"),
             difficulty: str = typer.Option("RSINTERMEDIATE", help="Bot difficulty"),
-            explore: float = typer.Option(0.0, help="Passed to jev play")) -> None:
+            explore: float = typer.Option(0.0, help="Passed to jev play"),
+            position: str = typer.Option("", help="top | middle | jungle | bottom | utility (default: the champion's)")) -> None:
     """One unattended bot game end to end: lobby, pick, the harness playing, time limit, score."""
     from jev.session import run
 
     extra = ["--explore", str(explore)] if explore else []
-    run(champion, minutes, tag, difficulty, extra)
+    run(champion, minutes, tag, difficulty, extra, position=position)
 
 
 @app.command()

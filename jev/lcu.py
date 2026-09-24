@@ -25,7 +25,7 @@ PICKS_BY_POSITION = {"middle": [YASUO, LEE_SIN], "jungle": [LEE_SIN, YASUO], "ut
 DEFAULT_PICKS = [YASUO, LEE_SIN]
 BANS = [238, 91, 7]  # Zed, Talon, LeBlanc: first one not already banned or hovered
 # Summoner spells per position (ids): Flash 4, Ignite 14, Smite 11, Exhaust 3, Heal 7, Teleport 12.
-SPELLS_BY_POSITION = {"middle": (4, 14), "jungle": (4, 11), "utility": (4, 3), "bottom": (4, 7), "top": (4, 12), "": (4, 14)}
+SPELLS_BY_POSITION = {"middle": (4, 14), "jungle": (4, 11), "utility": (4, 3), "bottom": (4, 7), "top": (4, 14), "": (4, 14)}
 
 
 def find_lockfile() -> Path | None:

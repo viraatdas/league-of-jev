@@ -13,7 +13,7 @@ from jev.lcu import CHAMPIONS, LCU, YASUO
 from jev.riot_api import RiotLiveClient
 
 POSITION = {"yasuo": "middle", "leesin": "jungle", "thresh": "utility"}
-ROLE = {"middle": "MIDDLE", "jungle": "JUNGLE", "utility": "UTILITY"}
+ROLE = {"middle": "MIDDLE", "jungle": "JUNGLE", "utility": "UTILITY", "top": "TOP", "bottom": "BOTTOM"}
 POST_GAME = ("PreEndOfGame", "EndOfGame", "WaitingForStats", "Reconnect")
 
 
@@ -85,9 +85,9 @@ def stop_harness() -> None:
 
 
 def run(champion: str = "yasuo", minutes: float = 18.0, tag: str = "", difficulty: str = "RSINTERMEDIATE",
-        extra_args: list[str] | None = None) -> dict:
+        extra_args: list[str] | None = None, position: str = "") -> dict:
     champion = champion.lower().replace(" ", "")
-    pos = POSITION.get(champion, "middle")
+    pos = (position or POSITION.get(champion, "middle")).lower()
     tag = tag or time.strftime("%m%d_%H%M") + f"_{champion}"
     logs = Path("logs/night")
     logs.mkdir(parents=True, exist_ok=True)
@@ -286,18 +286,19 @@ def night(rotation: str = "yasuo,leesin", minutes: float = 16.0, games: int = 30
         if game_alive() and tags:
             tag = tags[-1]
             champ = tag.split("_")[1]
-            diff = "RSINTERMEDIATE"
+            diff, lane_pos = "RSINTERMEDIATE", ""
             _say(f"=== supervising the running game {tag} ===")
         else:
             rot_file = logs / "rotation.txt"
             rot = [r.strip() for r in (rot_file.read_text() if rot_file.exists() else rotation).split(",") if r.strip()]
             n = (int(re.match(r"g(\d+)_", tags[-1]).group(1)) if tags else 0) + 1
             champ = rot[(n - 1) % len(rot)]
+            champ, _, lane_pos = champ.partition("@")  # "yasuo@top": the champion in another position
             # Bot difficulty, re-read each game from logs/night/difficulty.txt (RSINTRO, RSBEGINNER,
             # RSINTERMEDIATE); a game below intermediate carries it in its tag so results never mix.
             diff_file = logs / "difficulty.txt"
             diff = (diff_file.read_text().strip().upper() if diff_file.exists() else "") or "RSINTERMEDIATE"
-            tag = f"g{n:02d}_{champ}" + ("" if diff == "RSINTERMEDIATE" else f"_{diff[2:].lower()}")
+            tag = f"g{n:02d}_{champ}" + (f"_{lane_pos}" if lane_pos else "") + ("" if diff == "RSINTERMEDIATE" else f"_{diff[2:].lower()}")
             _say(f"=== game {tag} ({diff}) ===")
         mins_file = logs / "minutes.txt"  # game time limit, re-read each game (a limit ends the game with /ff)
         try:
@@ -305,7 +306,7 @@ def night(rotation: str = "yasuo,leesin", minutes: float = 16.0, games: int = 30
         except ValueError:
             game_minutes = minutes
         r = subprocess.run(["uv", "run", "jev", "session", "--champion", champ, "--minutes", str(game_minutes), "--tag", tag,
-                            "--difficulty", diff],
+                            "--difficulty", diff] + (["--position", lane_pos] if lane_pos else []),
                            stdout=sys.stdout, stderr=subprocess.STDOUT)
         _say(f"=== {tag} session exited with {r.returncode} ===")
         if not (logs / f"{tag}.log").exists():
