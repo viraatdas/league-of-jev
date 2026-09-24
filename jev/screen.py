@@ -12,10 +12,15 @@ import Quartz
 class Screen:
     def __init__(self, monitor_index: int = 1) -> None:
         self.sct = mss.mss()
-        self.mon = self.sct.monitors[monitor_index]
+        mons = self.sct.monitors
+        self.mon = mons[monitor_index] if len(mons) > monitor_index else mons[0]
         bounds = Quartz.CGDisplayBounds(Quartz.CGMainDisplayID())
         self.logical_w = float(bounds.size.width)
         self.logical_h = float(bounds.size.height)
+        if not self.mon.get("width"):
+            # No display (screen off or locked): the laptop's layout, so offline checks still run.
+            self.mon = {"left": 0, "top": 0, "width": 1728, "height": 1117}
+            self.logical_w, self.logical_h = 1728.0, 1117.0
         self.px_w = int(self.mon["width"])
         self.px_h = int(self.mon["height"])
         self.scale = self.px_w / self.logical_w if self.logical_w else 1.0

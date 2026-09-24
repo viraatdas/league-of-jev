@@ -393,14 +393,26 @@ class Controller:
         time.sleep(0.02 if self._ui else self.fast.hover_s)
         self.click(x, y, "left")
 
+    def _aim(self, x: float, y: float) -> None:
+        """Cursor to (x, y) for a key that fires at the cursor. The game reads the cursor once per
+        frame (~17 ms): 12 ms after one move event, Q went toward the previous move click, behind
+        Yasuo, and 29 of 30 Q last hits missed (g29, the thrust pointing at the move marker). Two
+        moves, the second one frame later, and the key after it."""
+        self.move(x, y)
+        if not self._allowed() or self._ui:
+            time.sleep(self._hover_s())
+            return
+        time.sleep(self.fast.aim_s / 2)
+        self._post(CGEventCreateMouseEvent(None, kCGEventMouseMoved, (x, y), kCGMouseButtonLeft))
+        time.sleep(self.fast.aim_s / 2)
+
     def cast(self, bind, x: float, y: float, quick_cast: bool | None) -> None:
         """Quick cast fires at the cursor. Classic cast needs a confirming left click.
 
         When quick_cast is None (League config not read yet) the click is sent anyway: with
         quick cast on it is a harmless left click, with it off it confirms the cast.
         """
-        self.move(x, y)
-        time.sleep(self._hover_s())
+        self._aim(x, y)
         self.press(bind)
         if not quick_cast:
             time.sleep(self._hover_s())
@@ -408,6 +420,5 @@ class Controller:
 
     def tap(self, bind, x: float, y: float) -> None:
         """Cursor to (x, y) and press a key: targeted spells with quick cast, or R on a target."""
-        self.move(x, y)
-        time.sleep(self._hover_s())
+        self._aim(x, y)
         self.press(bind)
