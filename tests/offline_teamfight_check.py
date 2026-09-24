@@ -187,3 +187,16 @@ p._fight_triggers(sc, p.micro, now)
 print("trade won:", p.micro.mode, list(p.log_lines)[-1])
 assert p.micro.mode == "all_in"
 print("TRADE UPGRADE OK")
+
+# Q and E down, a healthier champion at 300 units, no ally: retreat.
+p = setup(now)
+p.micro.hp_pct = 65.0
+e = track(300, 0.99, 1, now)
+p.champ_tracker.tracks = {1: e}
+sc = Scene(me_xy=ME)
+sc.champ, sc.champ_dist, sc.enemy_champs = e, sc.dist(e), 1
+sc.ready = {"W": True}
+p._fight_triggers(sc, p.micro, now)
+print("nothing up:", p.micro.mode, list(p.log_lines)[-1])
+assert p.micro.mode == "back_off" and p.guards.retreat_until > now
+print("NOTHING UP OK")

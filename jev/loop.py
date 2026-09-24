@@ -757,6 +757,14 @@ class Player:
             # Lane kill pressure: she is under 45% and I am well ahead in HP, with no full wave around her.
             self._commit(ch, mi, now, f"kill pressure ({their * 100:.0f}% vs me {mi.hp_pct:.0f}% at {d:.0f}u), all in")
             return
+        if (d < 700 and not sc.ready.get("Q") and not sc.ready.get("E") and mi.hp_pct < 80 and not sc.ally_champs
+                and ch.unit.hp * 100 > mi.hp_pct + 10 and mi.mode not in ("back_off", "all_in")):
+            # Nothing up to answer with and she is healthier: Lee kept hitting a camp while a full-HP
+            # champion hit him from 200 units, 72% -> 0 in seven seconds (g23). Leave now.
+            mi.set_mode("back_off", now)
+            self.guards.retreat_until = max(self.guards.retreat_until, now + 3.0)
+            self.log_lines.append(f"fight: Q and E down, she is healthier ({ch.unit.hp * 100:.0f}% vs me {mi.hp_pct:.0f}%), retreating")
+            return
         if mi.hp_pct < 55 and ch.unit.hp * 100 > mi.hp_pct + 20 and d < 900 and mi.mode != "back_off":
             # Outmatched: half HP with a healthy champion walking up. Farming on cost the second
             # death of g06 (50% -> 0 in five seconds, Flash at 23% too late). Back off now.
