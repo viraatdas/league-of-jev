@@ -145,12 +145,21 @@ assert LeeSin("JUNGLE").trade_window(mi, scene(track(unit("champion", 800, 0, 0.
 # Trades wind down: after the burst, step back, then farm again.
 y = Yasuo()
 mi, log = micro()
+mi.hp_pct = 75.0  # not ahead of her 80%: one auto after the burst, then step back
 mi.set_mode("trade", now)
 y.burst_at = now + 0.01
 sc = scene(track(unit("champion", 380, 0, 0.8), now), [], "")
 y.step(mi, sc, now + 1.0, 0.7, "trade", False)
 print("trade wind-down:", mi.last_action)
 assert mi.last_action == "trade: step back"
+# Ahead of her by 10+ and she is not in her wave: still trading a second after the burst.
+y2 = Yasuo()
+mi2, _ = micro()
+mi2.hp_pct = 95.0
+mi2.set_mode("trade", now)
+y2.burst_at = now + 0.01
+y2.step(mi2, scene(track(unit("champion", 380, 0, 0.8), now), [], ""), now + 1.0, 0.7, "trade", False)
+assert mi2.last_action != "trade: step back", mi2.last_action
 y.step(mi, sc, now + 3.0, 0.7, "trade", False)
 assert mi.mode == "farm"
 print("FIGHT OK")

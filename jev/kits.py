@@ -117,7 +117,10 @@ class Kit:
         back for 1.2 s and return to farming. True while the trade is winding down."""
         t0 = mi.mode_since
         burst = getattr(self, "burst_at", 0.0)
-        end = (burst + 0.7) if burst >= t0 else (t0 + 2.5)
+        # Winning the exchange and she is not in her wave: stay for two or three autos, not one.
+        # One auto after the burst left champions at 60-80% and no trade ever became a kill (g22-g24).
+        ahead = sc.champ is not None and mi.hp_pct >= sc.champ.unit.hp * 100 + 10 and self.minions_near_champ(sc) < 3
+        end = (burst + (1.8 if ahead else 0.7)) if burst >= t0 else (t0 + 2.5)
         if now < end:
             return False
         mi.trade_cooldown_until = max(mi.trade_cooldown_until, end + 4.0)
