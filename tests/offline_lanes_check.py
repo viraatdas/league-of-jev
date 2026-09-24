@@ -76,3 +76,14 @@ print("top corner: lane dir at me", tuple(round(c, 2) for c in at_me), "at the w
 assert at_me[1] < -0.8 and f[0] > 0.8, (at_me, f)
 assert p._wave_fwd(v, v.enemies("minion"), None) == at_me  # no position: the lane at our own spot
 print("LANES OK (wave direction)")
+
+# Recall: not with an enemy champion 600 units away on screen; with nothing near, yes.
+from jev.vision import Unit as _U, View as _V
+p = _P(dry_run=True)
+me = _U("champion", "self", 862.0, 490.0, 0.9, (830, 400, 100, 10))
+nasus = _U("champion", "enemy", 862.0 + 600 * ppu, 490.0, 0.8, (0, 0, 100, 10))
+p.view = _V(units=[nasus, me], me=me, ts=_t.time())
+assert p._recall_threat(_t.time())
+p.view = _V(units=[me], me=me, ts=_t.time())
+assert not p._recall_threat(_t.time())
+print("LANES OK (recall spot)")

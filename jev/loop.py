@@ -819,6 +819,18 @@ class Player:
             mi.set_mode("all_in", now)
             self.log_lines.append(f"fight: strategy says all in (p={dd.intent_confidence:.2f})")
 
+    def _recall_threat(self, now: float) -> bool:
+        """An enemy champion within 1300 units or an enemy minion within 700 on screen: a channel
+        there is hit and cancelled. Behind the lane centre by the minimap, Yasuo channelled in the
+        middle of both waves with Nasus next to him (g29, 5:31)."""
+        v = self.view
+        if v is None or v.me is None or now - v.ts > 0.5:
+            return False
+        ppu = config.VISION.px_per_unit
+        d = lambda u: math.hypot(u.x - v.me.x, u.y - v.me.y) / ppu
+        return (any(d(u) < 1300 for u in v.enemies("champion"))
+                or any(d(u) < 700 for u in v.enemies("minion")))
+
     def _kit_trade_window(self, sc, mi, now: float) -> str | None:
         """The kit's own trade opener (EQ or the tornado in reach, me at least as healthy and as high
         level, her wave not around her), or None; not while clearing a camp."""
@@ -2147,7 +2159,7 @@ class Player:
         elif self.intent == "group":
             m.group(move_speed, now)
         elif self.intent == "recall":
-            if m.nav.progress > self.lane.center - self.lane.frac(590) or lost > 0:
+            if m.nav.progress > self.lane.center - self.lane.frac(590) or lost > 0 or self._recall_threat(now):
                 m.retreat(move_speed, now)  # walk back first, never channel in the middle of the lane
             else:
                 m.start_recall(now)
