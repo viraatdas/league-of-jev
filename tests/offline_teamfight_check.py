@@ -139,3 +139,23 @@ p.micro.set_mode("farm", now)
 p._fight_triggers(sc, p.micro, now + 5)
 assert p.micro.mode != "all_in" or "under our tower" not in list(p.log_lines)[-1]
 print("TOWER OK")
+
+# Execute: a champion steady at 8% within Q range gets the Q, even while I am at 20% and backing off.
+p = setup(now)
+p.micro.hp_pct = 20.0
+p.micro.set_mode("back_off", now)
+low = track(400, 0.08, 9, now)
+p.champ_tracker.tracks = {9: low}
+sc = Scene(me_xy=ME)
+sc.champ, sc.champ_dist, sc.enemy_champs = low, sc.dist(low), 1
+sc.ready = {"Q": True, "E": True}
+assert p._execute(p.kit, p.micro, sc, now), list(p.log_lines)[-1:]
+print("execute:", list(p.log_lines)[-1])
+assert "Q the low champion" in p.micro.last_action
+# A flickering bar (one reading at 60%) is not a kill.
+flick = track(400, 0.08, 10, now)
+flick.hist[2] = (flick.hist[2][0], 0.6)
+p.champ_tracker.tracks = {10: flick}
+p.micro.last_order = 0
+assert not p._execute(p.kit, p.micro, sc, now + 0.01)
+print("EXECUTE OK")

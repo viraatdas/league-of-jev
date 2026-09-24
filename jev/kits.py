@@ -29,6 +29,7 @@ class Kit:
 
     name = "?"
     champ_id = 0
+    execute_ok = True  # the kill-secure reflex (a support keeps it too: an auto or ignite)
     default_role = "MIDDLE"
     skill_order: list[str] = []
     items: ItemProfile
@@ -156,6 +157,21 @@ class Kit:
         x, y = ch.lead(now, 0.25)
         mi.move_screen(x, y, now, f"{mode}: stick to the champion" if d <= rng else f"{mode}: chase", every=0.12)
         return True
+
+    def execute(self, mi: Micro, sc: Scene, tr, now: float) -> bool:
+        """An enemy champion about to die within reach: one order that finishes it, whatever my own
+        HP or mode (Fiddlesticks sat at 8% within 520 units while Yasuo backed off at 22%, g16).
+        Base: ignite, else an auto in range."""
+        d = sc.dist(tr)
+        slot = mi.summoner_slot("ignite", sc.ready)
+        if slot and d <= 600:
+            mi.cast_summoner(slot, tr.unit.x, tr.unit.y)
+            mi._ordered(now, "execute: ignite")
+            return True
+        if d <= VC.auto_range + 40:
+            mi.attack(tr, now, "execute: auto the low champion")
+            return True
+        return False
 
     def ignite_if_kill(self, mi: Micro, sc: Scene, now: float, mode: str) -> bool:
         slot = mi.summoner_slot("ignite", sc.ready)
@@ -501,6 +517,24 @@ class Yasuo(Kit):
         self._last_window = now
         return "all_in" if (ch.unit.hp < 0.45 and mi.hp_pct > 60) else "trade"
 
+    def execute(self, mi: Micro, sc: Scene, tr, now: float) -> bool:
+        d = sc.dist(tr)
+        q3 = self.q.q3(now)
+        if sc.ready.get("Q") and d <= (VC.q3_range * 0.9 if q3 else VC.q_range + 30):
+            x, y = tr.lead(now, (0.3 + d / 1500) if q3 else 0.25)
+            mi.cast(1, x, y)
+            self.q.cast(True, now)
+            if q3:
+                self.tornado_at = now
+            mi._ordered(now, "execute: Q the low champion")
+            return True
+        if sc.ready.get("E") and d <= VC.e_range and tr.e_marked_until <= now:
+            mi.cast(3, tr.unit.x, tr.unit.y)
+            tr.e_marked_until = now + 10.0
+            mi._ordered(now, "execute: E onto the low champion")
+            return True
+        return super().execute(mi, sc, tr, now)
+
     def reflex(self, mi: Micro, sc: Scene, now: float, plan: dict) -> bool:
         """R the moment our own tornado lifts the target, if the fight read is favourable; the wind
         wall whenever a champion out of melee range is taking HP off us fast (any mode: Kayle's autos
@@ -798,6 +832,30 @@ class LeeSin(Kit):
 
     def e2_up(self, sc: Scene, now: float) -> bool:
         return bool(sc.ready.get("E")) and 0.35 < now - self.e_at < 3.0
+
+    def execute(self, mi: Micro, sc: Scene, tr, now: float) -> bool:
+        d = sc.dist(tr)
+        if sc.ready.get("R") and d <= self.R_RANGE + 40:
+            mi.cast(4, tr.unit.x, tr.unit.y)
+            mi._ordered(now, "execute: R kick")
+            return True
+        if self.q2_up(sc, now) and d <= 1300 and now - self.q_at > 0.35:
+            mi.ctl.press(mi.kb.ability(1))
+            self.q_at = 0.0
+            mi._ordered(now, "execute: Q2 onto the low champion")
+            return True
+        if sc.ready.get("E") and not self.e2_up(sc, now) and d <= self.E_RADIUS - 40:
+            mi.ctl.press(mi.kb.ability(3))
+            self.e_at = now
+            mi._ordered(now, "execute: E Tempest")
+            return True
+        if sc.ready.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE * 0.9:
+            x, y = tr.lead(now, 0.25 + d / 1800)
+            mi.cast(1, x, y)
+            self.q_at = now
+            mi._ordered(now, "execute: Q Sonic Wave")
+            return True
+        return super().execute(mi, sc, tr, now)
 
     def fight(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str) -> bool:
         """Lee Sin's gank / skirmish combo, one order per tick: R to finish (or to peel when I am

@@ -607,6 +607,9 @@ class Player:
         if hasattr(kit, "r_rank"):
             kit.r_rank = int(ap.get("abilities", {}).get("R", {}).get("abilityLevel", 0))
         mi.hp_lost = getattr(self, "_hp_lost", 0.0)  # HP% lost in the damage window
+        if self.kit.execute_ok and mi._can_order(now) and self._execute(kit, mi, sc, now):
+            mi.reacted("reflex", view.ts)
+            return True
         if escaping:
             # Walking out: no fight entries; reflexes only (Flash, defensive summoners, potion,
             # the kit's escape dash). Retreats used to skip this step entirely, so a Yasuo taking
@@ -769,6 +772,28 @@ class Player:
                 if dist((cx, cy), own[i]) < 775 and dist(mm.pos, own[i]) < 1000:
                     return own[i]
         return None
+
+    def _execute(self, kit, mi, sc, now: float) -> bool:
+        """The kill-secure reflex: an enemy champion whose half-second median HP is under 12% (no
+        reading above 25%: a flickering bar is not a kill) within 1100 units gets the one order that
+        finishes it, in any mode, retreating included."""
+        best = None
+        for t in self.champ_tracker.tracks.values():
+            if now - t.seen > 0.25:
+                continue
+            rec = [h for ts, h in t.hist if now - ts <= 0.5]
+            if len(rec) < 3 or max(rec) > 0.25 or sorted(rec)[len(rec) // 2] >= 0.12:
+                continue
+            if sc.dist(t) <= 1100 and (best is None or t.unit.hp < best.unit.hp):
+                best = t
+        if best is None or not self._champ_on_minimap(now):
+            return False
+        if kit.execute(mi, sc, best, now):
+            if now - getattr(self, "_exec_logged", 0.0) > 2.0:
+                self._exec_logged = now
+                self.log_lines.append(f"fight: execute ({best.unit.hp * 100:.0f}% at {sc.dist(best):.0f}u, me {mi.hp_pct:.0f}%): {mi.last_action}")
+            return True
+        return False
 
     def _commit(self, ch, mi, now: float, why: str) -> None:
         """All in on this champion, and keep it the target for four seconds (the scene's default
@@ -1636,6 +1661,20 @@ class Player:
             self.phase = "base"
             self._camera_checked = False
 
+        # The camera must follow us. Typed shop searches that miss the search box reach the game as
+        # hotkeys ("Cloak of Agility" ends in Y, the camera-lock toggle): the camera stayed on our
+        # fountain, the minimap box said we were home, and Yasuo stood in a shop loop for three
+        # minutes (g16). No self bar on screen for 2.5 s while alive: check the lock again.
+        v = self.view
+        if v is not None and now - v.ts < 0.6 and v.me is None and hp_pct > 0 and m.recall_started is None:
+            self._me_missing_since = getattr(self, "_me_missing_since", None) or now
+        else:
+            self._me_missing_since = None
+        if ((self._me_missing_since is not None and now - self._me_missing_since > 2.5)
+                or now >= getattr(self, "_camera_recheck_at", float("inf"))) and now - getattr(self, "_cam_fix_t", 0.0) > 15:
+            self._cam_fix_t, self._camera_recheck_at = now, float("inf")
+            self._camera_checked = False
+            self.log_lines.append("camera: my bar is gone (or a purchase failed): checking the lock")
         if not getattr(self, "_camera_checked", False) and self.mm is not None and self.ctl.keys_ok():
             self._camera_checked = True
             note = m.ensure_camera_locked(self.mm)
@@ -1930,7 +1969,8 @@ class Player:
                 if it is None or have(it):
                     continue
                 names = [b.name for b in cat.purchases(it, owned, gold)]
-                if names:
+                if names and (name, tuple(names)) != getattr(self, "_shop_fb_logged", None):
+                    self._shop_fb_logged = (name, tuple(names))
                     self.log_lines.append(f"shop (no Jev): toward {name}")
                 break
         if not names:
@@ -1946,6 +1986,7 @@ class Player:
             else:
                 self.log_lines.append(f"shop: could not buy {item}")
                 fails[item] = fails.get(item, 0) + 1
+                self._camera_recheck_at = time.time() + 12.0  # typed letters may have hit hotkeys: check once we are out
                 break
         # Spend the rest: re-plan with the new inventory and gold, up to two more rounds.
         for _ in range(2):
