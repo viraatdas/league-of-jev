@@ -164,8 +164,8 @@ print("EXECUTE OK")
 p = setup(now)
 mm = MinimapState()
 mm.self_pos, mm.ts = (6000.0, 6000.0), now
-e = (8000.0, 7500.0)
-mm.enemy_champions, mm.ally_champions = [e], [(8300.0, 7400.0), (7800.0, 7800.0)]
+e = (7600.0, 7800.0)
+mm.enemy_champions, mm.ally_champions = [e], [(7800.0, 7700.0), (7500.0, 8000.0)]
 j = p._join_fight_plan(mm, mm.ally_champions, 600.0, 80.0, now)
 print("join:", j, list(p.log_lines)[-1])
 assert j is not None and j[2] == "join the fight"

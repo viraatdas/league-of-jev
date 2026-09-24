@@ -1281,7 +1281,7 @@ class Player:
         return None
 
     def _join_fight_plan(self, mm, allies: list, gt: float, hp: float, now: float):
-        """A skirmish close by: enemy champions next to ours on the minimap, within 4000 units of me,
+        """A skirmish close by: enemy champions next to ours on the minimap, within 3000 units of me,
         our side not outnumbered once I arrive. Kills happen in those fights (Ashe was 7/1 at 13:00 in
         g17 while Yasuo, 0/0/0, farmed mid). Sticky for 12 s; over when nobody is left fighting."""
         j = getattr(self, "_join", None)
@@ -1298,8 +1298,8 @@ class Player:
         best = None
         for e in mm.enemy_champions:
             d = dist(mm.pos, e)
-            if not 1400 < d <= 4000:
-                continue
+            if not 1400 < d <= 3000:
+                continue  # farther than ~9 s away, the fight is over on arrival (g17 wandered after 3700-3900 ones)
             friends = [a for a in allies if dist(a, e) < 1300]
             foes = [o for o in mm.enemy_champions if dist(o, e) < 1500]
             if not friends or len(friends) + 1 < len(foes):
