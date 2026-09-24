@@ -32,11 +32,11 @@ def setup(now: float):
 
 
 now = time.time()
-# Team fight: one ally on screen, one enemy at 70%: all in.
+# Team fight: one ally on screen next to her, one enemy at 70%: all in.
 p = setup(now)
 e = track(500, 0.7, 1, now)
 p.champ_tracker.tracks = {1: e}
-sc = Scene(me_xy=ME, ally_champs=[Unit("champion", "ally", ME[0] - 50, ME[1], 0.8, (0, 0, 1, 1))])
+sc = Scene(me_xy=ME, ally_champs=[Unit("champion", "ally", e.unit.x - 100 * PPU, ME[1], 0.8, (0, 0, 1, 1))])
 sc.champ, sc.champ_dist, sc.enemy_champs = e, sc.dist(e), 1
 p._fight_triggers(sc, p.micro, now)
 print("team fight:", p.micro.mode, list(p.log_lines)[-1:])

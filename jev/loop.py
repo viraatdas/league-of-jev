@@ -742,8 +742,12 @@ class Player:
             # Intermediate bots dive and chase under towers; that fight is ours.
             self._commit(ch, mi, now, f"under our tower ({their * 100:.0f}% at {d:.0f}u, me {mi.hp_pct:.0f}%), all in")
             return
+        ppu = config.VISION.px_per_unit
+        ally_on_her = any(math.hypot(a.x - ch.unit.x, a.y - ch.unit.y) <= 450 * ppu for a in sc.ally_champs)
         if (allies and sc.enemy_champs <= allies + 1 and mi.hp_pct >= 40 and d < 800 and their is not None
-                and (their < 0.5 or (allies >= sc.enemy_champs and mi.hp_pct >= 60))):
+                and (their < 0.5 or (allies >= sc.enemy_champs and mi.hp_pct >= 60 and ally_on_her))):
+            # (Healthy targets only once an ally is on them: first in, Yasuo took the focus and spent 29%
+            # of g22's late game dead.)
             # A team fight: allied champions on screen, numbers even or better. Bots engage all game;
             # Yasuo farmed next to their fights (0 kills in g09-g15). Join on the weakest in reach.
             self._commit(ch, mi, now, f"team fight ({allies + 1} vs {sc.enemy_champs}), all in on {their * 100:.0f}% at {d:.0f}u")
