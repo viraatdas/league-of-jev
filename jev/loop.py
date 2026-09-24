@@ -62,8 +62,9 @@ def choose_intent(d: Decision | None, state: dict, p: Perception, now: float, gu
         # No fresh strategy from Jev (API down, out of credits): recall by rule, otherwise farm.
         gold = float(me.get("gold") or 0)
         enemy_near = p.nearest_enemy_champion_units is not None and p.nearest_enemy_champion_units < 1500
-        if (me["hp_percent"] < 35 and since_dmg > 4 and not enemy_near) or (gold >= 1300 and me["hp_percent"] < 60 and not enemy_near) \
-                or (gold >= 2200 and not enemy_near):
+        # Items are the kills: at 16:36 in g19 Yasuo carried 2,082 unspent gold into fights.
+        if (me["hp_percent"] < 35 and since_dmg > 4 and not enemy_near) or (gold >= 1100 and me["hp_percent"] < 65 and not enemy_near) \
+                or (gold >= 1600 and not enemy_near):
             return "recall"
         return "farm"
     if d.danger >= 2.5:
