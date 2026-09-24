@@ -241,7 +241,12 @@ class VisionReader:
             if patch.size == 0:
                 continue
             hsv = cv2.cvtColor(to_bgr(np.ascontiguousarray(patch)), cv2.COLOR_BGR2HSV)
-            lit = float((hsv[:, :, 2] > 150).mean())
+            # Bright pixels minus the white ones: a cooling-down icon is dark but its countdown text is
+            # white, and "0.6" pushed Yasuo's Q over the old 20%-bright bar: combos pressed Q and E into
+            # "That ability is not ready yet!" (g17). Ready icons 0.30-1.0, cooling down 0.00-0.04.
+            bright = hsv[:, :, 2] > 150
+            white = (hsv[:, :, 2] > 170) & (hsv[:, :, 1] < 50)
+            lit = float(bright.mean()) - float(white.mean())
             hud.lit[name] = lit
             hud.ready[name] = lit >= self.vc.icon_ready_lit
             if name == "Q":
@@ -251,8 +256,8 @@ class VisionReader:
             patch = frame[cy - r:cy + r, cx - r:cx + r]
             if patch.size == 0:
                 continue
-            v = cv2.cvtColor(to_bgr(np.ascontiguousarray(patch)), cv2.COLOR_BGR2HSV)[:, :, 2]
-            lit = float((v > 150).mean())
+            hsv = cv2.cvtColor(to_bgr(np.ascontiguousarray(patch)), cv2.COLOR_BGR2HSV)
+            lit = float((hsv[:, :, 2] > 150).mean()) - float(((hsv[:, :, 2] > 170) & (hsv[:, :, 1] < 50)).mean())
             hud.items_lit[slot] = lit
             hud.items_ready[slot] = lit >= self.vc.item_ready_lit
         return hud

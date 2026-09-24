@@ -48,3 +48,14 @@ got = units("damage_numbers")
 print("damage numbers:", got)
 assert not any(k == "champion" and t == "enemy" and hp < 0.3 for k, t, hp in got), got
 print("VISION OK (low bars)")
+
+# Ability readiness: Q with 0.6 s left (white countdown text on a dark icon) is not ready.
+from jev.vision import VisionReader as _VR
+_v = _VR()
+hud = _v.read_hud(cv2.cvtColor(cv2.imread("tests/fixtures/frames/q_cooldown_06.jpg"), cv2.COLOR_BGR2BGRA))
+print("q cooldown:", hud.ready, {k: round(v, 2) for k, v in hud.lit.items()})
+assert not hud.ready.get("Q") and hud.ready.get("W") and hud.ready.get("E"), hud.ready
+hud = _v.read_hud(cv2.cvtColor(cv2.imread("tests/fixtures/frames/qwe_ready.jpg"), cv2.COLOR_BGR2BGRA))
+print("qwe ready:", hud.ready)
+assert hud.ready.get("Q") and hud.ready.get("W") and hud.ready.get("E") and not hud.ready.get("R"), hud.ready
+print("VISION OK (hud)")
