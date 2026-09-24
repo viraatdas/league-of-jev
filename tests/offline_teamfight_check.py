@@ -174,3 +174,16 @@ p = setup(now)
 mm.enemy_champions, mm.ally_champions = [e, (8200.0, 7600.0), (7900.0, 7300.0)], [(8300.0, 7400.0)]
 assert p._join_fight_plan(mm, mm.ally_champions, 600.0, 80.0, now) is None
 print("JOIN OK")
+
+# A trade that left her at 30% while I am at 85%: upgrade to all in.
+p = setup(now)
+p.micro.hp_pct = 85.0
+p.micro.set_mode("trade", now)
+e = track(500, 0.3, 1, now)
+p.champ_tracker.tracks = {1: e}
+sc = Scene(me_xy=ME)
+sc.champ, sc.champ_dist, sc.enemy_champs = e, sc.dist(e), 1
+p._fight_triggers(sc, p.micro, now)
+print("trade won:", p.micro.mode, list(p.log_lines)[-1])
+assert p.micro.mode == "all_in"
+print("TRADE UPGRADE OK")

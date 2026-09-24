@@ -704,6 +704,15 @@ class Player:
                 self.log_lines.append("fight: no enemy champion on the minimap near me, dropping the fight")
             return
         outnumbered = sc.enemy_champs >= 2 and not sc.ally_champs
+        if mi.mode in ("trade", "poke") and ch is not None and not outnumbered:
+            # A trade that worked becomes the kill: in g19 trades took champions from ~80% to 22-31%
+            # while Yasuo lost next to nothing, then stepped back and they walked away.
+            rec = [h for t, h in ch.hist if now - t <= 0.5]
+            med = sorted(rec)[len(rec) // 2] if len(rec) >= 3 else None
+            if med is not None and med < 0.45 and max(rec) < 0.6 and mi.hp_pct >= max(45.0, med * 100 + 20) and d < 900:
+                self._commit(ch, mi, now, f"trade won ({med * 100:.0f}% vs me {mi.hp_pct:.0f}%), all in for the kill")
+                mi.flash_in_ok = med < 0.25 and mi.hp_pct >= 40
+                return
         if mi.mode in FIGHT_MODES:
             if ch is not None and mi.hp_pct < 25 and ch.unit.hp > mi.hp_pct / 100 + 0.15:
                 mi.set_mode("back_off", now)
