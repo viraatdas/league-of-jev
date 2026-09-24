@@ -696,7 +696,7 @@ class Player:
         # Within 650 units the minimap cannot confirm her (icons that close to ours are dropped as our
         # own portrait), and monsters are told apart by their gold frame now: trust vision. The check
         # dropped a real team fight at the river six times in two seconds (g18).
-        if ch is not None and d > 650 and not self._champ_on_minimap(now):
+        if ch is not None and d > 900 and not self._champ_on_minimap(now):  # (900: past every entry's reach, or they flap)
             # A champion-sized bar with no enemy champion icon near us on the minimap is a monster
             # (the dragon read as a champion at 8% and got an all-in and an ignite, game 3).
             if mi.mode in FIGHT_MODES:
