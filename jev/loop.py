@@ -620,7 +620,7 @@ class Player:
         mi.hp_lost = getattr(self, "_hp_lost", 0.0)  # HP% lost in the damage window
         if self.kit.execute_ok and mi._can_order(now) and self._execute(kit, mi, sc, now):
             mi.reacted("reflex", view.ts)
-            return True
+            return self._took(sc, "execute", True)
         if escaping:
             # Walking out: no fight entries; reflexes only (Flash, defensive summoners, potion,
             # the kit's escape dash). Retreats used to skip this step entirely, so a Yasuo taking
@@ -628,15 +628,15 @@ class Player:
             if mi.mode in FIGHT_MODES:
                 mi.set_mode("back_off", now)
             if not mi._can_order(now):
-                return False
+                return self._took(sc, "retreating", False)
             if self._escape_reflex(ctx, inp, now):
                 mi.reacted("reflex", view.ts)
-                return True
+                return self._took(sc, "retreating", True)
             fx, fy = self.lane.screen_dir(self.mech.nav.progress) if self.mech else mi.fwd
-            return bool(kit.escape(mi, sc, now, (-fx, -fy)))
+            return self._took(sc, "retreating", bool(kit.escape(mi, sc, now, (-fx, -fy))))
         self._fight_triggers(sc, mi, now)
         if not mi._can_order(now):
-            return True
+            return self._took(sc, "order rate limit", True)
         if camp_pt is not None and camp_big and self._smite_reflex(ctx, inp, now):
             mi.reacted("reflex", view.ts)
             return True
@@ -644,12 +644,12 @@ class Player:
             mi.reacted("reflex", view.ts)
             return True
         if self._potion_reflex(inp, now):
-            return True
+            return self._took(sc, "potion", True)
         if self._ward_reflex(sc, inp, view, now):
-            return True
+            return self._took(sc, "ward", True)
         if kit.reflex(mi, sc, now, plan):
             mi.reacted("reflex", view.ts)
-            return True
+            return self._took(sc, f"kit reflex: {mi.last_action[:24]}", True)
         t = self.tactics.tactic if self.tactics else None
         if t is not None and t.seq > mi.last_seq and t.age(now) < config.FAST.tactic_stale_s:
             mi.last_seq = t.seq
@@ -666,7 +666,7 @@ class Player:
             if executed:
                 return True
         if not standing and mi.mode not in FIGHT_MODES:
-            return False
+            return self._took(sc, "traveling", False)
         before = mi.orders
         if sc.champ is not None:
             self._champ_seen_t = now
@@ -872,6 +872,15 @@ class Player:
         now = time.time()
         pts = [g for t, g in gh if now - t <= seconds]
         return max((b - a for a, b in zip(pts, pts[1:])), default=0.0)
+
+    @staticmethod
+    def _took(sc, why: str, ret):
+        """Mark killable minions with what took this frame instead of the farm step (the last-hit
+        audit reports it), and pass the return value through."""
+        for t in sc.killable_auto:
+            if getattr(t, "block", "") == "farm step not reached":
+                t.block = why
+        return ret
 
     def _audit_lasthits(self, mi, now: float) -> None:
         """Every enemy minion that vanishes while low (under 35%) and within 800 units: did we try it?
