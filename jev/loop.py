@@ -867,7 +867,9 @@ class Player:
             enemies = (fr.state.get("enemies_on_screen") or {}).values()
             coming = sum(1 for v in enemies if v.get("moving") == "toward me")
             close = int((fr.state.get("numbers") or {}).get("enemy_champions_within_1000") or 0)
-            gank = fr.gank_coming >= 0.6 and (fr.in_danger >= 0.35 or mi.hp_pct < 60)  # gank risk alone is common in the jungle
+            # Jev's gank read sits near 0.6-0.7 whenever enemies are off the minimap: alone it retreated
+            # Yasuo from lane every few seconds (g13). Danger >= 0.5 and two enemies close cover the real ones.
+            gank = fr.gank_coming >= 0.75 and (fr.in_danger >= 0.4 or mi.hp_pct < 50)
             if fr.in_danger >= 0.5 or close >= 2 or coming >= 2 or gank or plan == "escape":
                 # A real retreat, not a step: backing off 260 units while the strategy still said farm
                 # let two full-HP champions walk up and burst Yasuo from 62% (g11, 14:12).
