@@ -624,6 +624,8 @@ class Player:
             return True
         if self._potion_reflex(inp, now):
             return True
+        if self._ward_reflex(sc, inp, view, now):
+            return True
         if kit.reflex(mi, sc, now, plan):
             mi.reacted("reflex", view.ts)
             return True
@@ -1021,6 +1023,30 @@ class Player:
             m.go_map(pt, now, attack=True, every=1.2)  # step onto the camp so it aggroes
             m.last_action = f"jungle: pulling {js.current}"
 
+    def _ward_reflex(self, sc, inp, view, now: float) -> bool:
+        """Ward the river flank of the lane: after 2:30, trinket ready, no fight, a minute since the
+        last ward, alternating sides. Jev never picked the ward action in three games, and ganks came
+        out of the fog (g11, g13)."""
+        mi = self.micro
+        gt = float(((self.data or {}).get("gameData") or {}).get("gameTime", 0.0))
+        if (self.kit.support or self.jungle_state is not None or gt < 150 or mi.mode in FIGHT_MODES
+                or now - getattr(self, "_ward_t", 0.0) < 60 or not view.hud.items_ready.get(6)
+                or not any(int(i.get("slot", -1)) == 6 and "ward" in str(i.get("displayName", "")).lower() for i in inp.items)):
+            return False
+        prog = self.mech.nav.progress if self.mech else 0.5
+        if not (self.lane.own_tower + 0.03 <= prog <= self.lane.center + 0.12):
+            return False
+        fx, fy = self.lane.screen_dir(prog)
+        side = 1 if int(now / 60) % 2 else -1
+        px, py = -fy * side, fx * side  # perpendicular to the lane on screen: one river flank, then the other
+        ppu = config.VISION.px_per_unit
+        x, y = sc.me_xy[0] + px * 560 * ppu, sc.me_xy[1] + py * 560 * ppu
+        mi.ctl.cast(self.kb.vision_item, *mi._pt(x, y), self.kb.quick("evtUseVisionItem"))
+        self._ward_t = now
+        mi._ordered(now, "ward the river flank")
+        self.log_lines.append(f"ward: river flank ({'one' if side > 0 else 'other'} side) at lane {prog:.0%}")
+        return True
+
     def _potion_reflex(self, inp, now: float) -> bool:
         """Drink a potion under 45% HP (every 15 s at most, not in base): Jev's potion one-shot is
         one option among twenty and was rarely picked while the HP bled out in lane and camps."""
@@ -1300,6 +1326,16 @@ class Player:
         lost = self.hp.update(hp_pct, now)
         if not self._self_trail or now - self._self_trail[-1][0] >= 0.1:
             self._self_trail.append((now, hp_pct))
+        mmg = self.mm_state
+        if (mmg is not None and mmg.pos is not None and now - mmg.ts < 1.0 and now >= self.guards.retreat_until
+                and self.jungle_state is None and self.micro is not None and self.micro.mode not in FIGHT_MODES):
+            foes = [e for e in mmg.enemy_champions if dist(mmg.pos, e) < 2200]
+            friends = [a for a in mmg.ally_champions if dist(mmg.pos, a) < 2200]
+            if len(foes) >= 2 and not friends:
+                # Two of them converging on the minimap and none of us: the gank that killed Yasuo in
+                # g08 and g11 showed there seconds before it arrived.
+                self.guards.retreat_until = now + 3.0
+                self.log_lines.append(f"gank: {len(foes)} enemy champions within 2200 on the minimap, no ally: retreat")
         bleed = self._trail_change(3.0, now)
         fr = self.fights.read if self.fights is not None else None
         winning = fr is not None and now - fr.ts < 1.0 and fr.plan == "all_in" and fr.win_all_in >= 0.6
