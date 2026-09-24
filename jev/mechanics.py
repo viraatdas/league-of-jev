@@ -281,6 +281,8 @@ class Mechanics:
         else:
             limit = ln.max_advance + (aggression - 1.0) * fr(690) + self._seek
         limit = max(ln.own_tower, min(limit, ln.hard_limit))
+        if getattr(self, "mia_cap", None) is not None:
+            limit = max(ln.own_tower, min(limit, self.mia_cap))  # three of them unseen: not past the middle
         if abs(self.nav.progress - limit) > fr(200):
             if not self.go_progress(limit, move_speed, now, attack=True):
                 self.walk(1 if limit > self.nav.progress else -1, move_speed, now, attack=True)

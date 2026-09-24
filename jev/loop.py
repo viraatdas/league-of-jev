@@ -35,6 +35,7 @@ from jev.tactics import TacticalBrain, TacticInput, menu
 from jev.fight import FightBrain, FightRead
 from jev.lanelearn import LaneLearner
 from jev.enemies import EnemyKnowledge
+from jev import macro
 from jev import namereader
 from jev.vision import View, VisionReader
 
@@ -458,6 +459,9 @@ class Player:
         enemies = list(mm.enemy_champions) if mm is not None else []
         allies = list(mm.ally_champions) if mm is not None else []
         st["map_places"] = map_places.describe(self.side, me_pos, enemies, allies, st.get("objectives", {}))
+        sit = getattr(self, "situation", None)
+        if sit is not None:
+            st["situation"] = sit.summary()  # alive/dead with timers, towers, unseen enemies, the window
         st["map"] = {
             "i_am_near": map_places.nearest(me_pos, self.side) if me_pos else "unknown",
             "my_lane": self.lane.name,
@@ -876,7 +880,13 @@ class Player:
         reach = self.enemy_kn.reach_now(name, now)
         down = self.enemy_kn.spells_down(name, now)
         d = self.decision
+        sit = getattr(self, "situation", None)
+        mia_px = None
+        if sit is not None and sit.unseen >= 3 and not sit.power_play and self.mech is not None:
+            # how far up the lane (along the lane, screen px) I may stand: the middle, with three unseen
+            mia_px = (self.lane.center + self.lane.frac(250) - self.mech.nav.progress) * self.lane.L * config.VISION.px_per_unit
         info = {"opp": name, "opp_range": rng if rng is not None else 550.0, "opp_hp": 640.0 + 95.0 * (lvl - 1),
+                "mia_limit_px": mia_px,
                 "opp_reach": reach if reach is not None else (rng if rng is not None else 550.0) + 150.0,
                 "her_spells_down": down,
                 "aggression": d.aggression if d is not None else 1.0,
@@ -1547,6 +1557,18 @@ class Player:
             g = self._gank_plan(mm, allies, gt, me, now)
             if g is not None:
                 return g
+        sit = getattr(self, "situation", None)
+        if sit is not None and sit.power_play and hp >= 50 and gt >= 300:
+            # Two or more of them dead: the time to take something. Bots push after fights; Yasuo walked
+            # back to farm (g18-g26).
+            pp = macro.power_play_target(sit, mm.pos, mm, self.side, allies)
+            obj_t = (st.get("objectives") or {})
+            if pp is None and (obj_t.get("next_dragon_in_s") or 0) <= 0 and sit.power_until - sit.game_s >= 25:
+                pit = map_places.places(self.side)["dragon_pit"][0]
+                if dist(mm.pos, pit) < 6000 and sum(1 for a in allies if dist(a, pit) < 3500) >= 1:
+                    pp = ("objective", pit, "power play: dragon")
+            if pp is not None:
+                return pp
         j = self._join_fight_plan(mm, allies, gt, hp, now)
         if j is not None:
             return j
@@ -1600,6 +1622,9 @@ class Player:
             return ("objective", j["pt"], "join the fight")
         if gt < 240 or hp < 55 or now < getattr(self, "_join_next", 0.0) or self._levels_behind() >= 2:
             return None  # (two levels behind their team, a skirmish is theirs: Lee died walking into them, g21)
+        sit = getattr(self, "situation", None)
+        if sit is not None and sit.outnumbered:
+            return None  # two or more of us dead: their five against our three wherever the fight goes
         best = None
         for e in mm.enemy_champions:
             d = dist(mm.pos, e)
@@ -1746,6 +1771,23 @@ class Player:
 
     TOWER_NAMES = ["top outer", "top inner", "top inhibitor", "mid outer", "mid inner", "mid inhibitor",
                    "bot outer", "bot inner", "bot inhibitor"]
+
+    def _situation(self, data: dict) -> "macro.Situation":
+        """Who is alive, which towers stand, how many of them are unseen (macro.py)."""
+        ours = "blue" if self.side == "ORDER" else "red"
+        tw = self.tower_watch.dead
+        dead_ours = {i for t, i in tw if t == ours}
+        dead_theirs = {i for t, i in tw if t != ours} | getattr(self, "_dead_enemy_idx", set())
+        me = find_me(data) or {}
+        s = macro.analyze(data, self.mm_state, me.get("team") or ("ORDER" if self.side == "ORDER" else "CHAOS"), dead_ours, dead_theirs)
+        prev = getattr(self, "situation", None)
+        if s.power_play and not (prev is not None and prev.power_play):
+            self.log_lines.append("macro: " + s.summary()["window"])
+        # Pushed past the middle with three of them unseen is how the pushed-up deaths went (g19, g26):
+        # the farm walk stops at the middle then, unless we are the ones with the numbers.
+        if self.mech is not None:
+            self.mech.mia_cap = (self.lane.center + self.lane.frac(250)) if (s.unseen >= 3 and not s.power_play) else None
+        return s
 
     def _towers_from_minimap(self) -> None:
         """Towers the minimap shows gone (TowerWatch): ours move our tower line back (retreats and holds
@@ -2173,6 +2215,7 @@ class Player:
             self._base_shop_done = True
             del self._base_since
 
+        self.situation = self._situation(data)
         state = self.state or build_state(data, p, self.role)
         self.intent = choose_intent(self.decision, state, p, now, self.guards)
         d0 = self.decision

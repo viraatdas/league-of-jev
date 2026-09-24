@@ -22,7 +22,7 @@ os.chdir(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, "scripts")
 sys.path.insert(0, ".")
 
-TESTS = ["offline_laneplan_check", "offline_vision_check", "offline_fight_check", "offline_teamfight_check",
+TESTS = ["offline_laneplan_check", "offline_macro_check", "offline_vision_check", "offline_fight_check", "offline_teamfight_check",
          "offline_jungle_check", "offline_lanes_check", "offline_loop_check"]
 NETWORK_TESTS = ["offline_actions_check", "offline_fighthead_check", "offline_micro_check"]
 GAMES = [("g22_yasuo_beginner", "mid"), ("g24_yasuo_beginner", "mid"), ("g29_yasuo_top_beginner", "top")]
