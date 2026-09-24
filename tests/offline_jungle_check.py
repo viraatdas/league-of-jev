@@ -43,7 +43,7 @@ data["gameData"]["gameTime"] = 300.0
 data["activePlayer"]["level"] = 4
 cs = data["activePlayer"]["championStats"]
 cs["currentHealth"] = cs["maxHealth"]  # the fixture sits at 42%: ganks need 60%
-p.mm_state = MinimapState(self_pos=camps("ORDER")["blue"], ts=time.time(),
+p.mm_state = MinimapState(self_pos=camps("ORDER")["gromp"], ts=time.time(),
                           enemy_champions=[top.point(top.center - top.frac(900))],
                           ally_champions=[top.point(top.center - top.frac(1300))])
 for i in range(3):

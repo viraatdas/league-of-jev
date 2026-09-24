@@ -103,7 +103,7 @@ top = Lane("top", "ORDER")
 enemy_at = top.point(top.center - top.frac(900))
 ally_at = top.point(top.center - top.frac(1400))
 mm = MinimapState()
-mm.self_pos, mm.ts = (3872.0, 7900.0), now  # at our blue buff
+mm.self_pos, mm.ts = (2288.0, 8448.0), now  # at our gromp
 mm.enemy_champions, mm.ally_champions = [enemy_at, (12000.0, 12000.0)], [ally_at]
 g = p._gank_plan(mm, mm.ally_champions, 300.0, {"level": 4, "hp_percent": 90}, now)
 print("gank:", g, list(p.log_lines)[-1:])
