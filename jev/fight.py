@@ -39,7 +39,7 @@ PLANS: dict[str, str] = {
     "trade": "One short exchange: my burst and an auto or two on them, then step back before they answer.",
     "poke": "Hit them only with what reaches from where I stand (a skillshot), without walking or dashing in.",
     "farm": "Ignore them for now: keep last-hitting where I am; no need to walk away.",
-    "back_off": "Walk back toward my tower, out of their reach, and wait for a better moment.",
+    "back_off": "Walk back toward my tower, out of their reach (`threat_reach`), and wait for a better moment.",
     "escape": "Get out now with everything I have (dash, Flash): staying means dying.",
 }
 
@@ -75,13 +75,16 @@ def questions(state: dict, role_text: str) -> dict[str, Any]:
                           "I can afford, and trade or all in when my burst clearly wins the exchange. "
                           "Weigh `numbers` first (how many of them and of us are close, how long I last), then HP and how it "
                           "has been moving (`hp_last_1s`, `hp_last_3s`), what I have ready, levels and items, minions around "
-                          "each of us, towers, and enemies who may arrive (`map`)."),
+                          "each of us, towers, and enemies who may arrive (`map`). An enemy whose damaging spells are on "
+                          "cooldown (`her_spells_on_cooldown`) cannot answer: that is the moment to trade; with them up, "
+                          "stay outside her `threat_reach`."),
             criteria=PLANS,
         ),
         "win_all_in": Noul(instructions=("If I commit to killing the focused enemy champion right now, do I kill them "
                                          "and survive? Count my ready abilities and summoners, both HP totals, levels, "
                                          "minions, towers and anyone else close.")),
-        "trade_worth": Noul(instructions="Would a short trade right now take more HP off them than off me?"),
+        "trade_worth": Noul(instructions=("Would a short trade right now take more HP off them than off me? Their spells "
+                                          "on cooldown (`her_spells_on_cooldown`) mean they answer with autos only.")),
         "in_danger": Noul(instructions=("Will I die in the next few seconds if I stay where I am? `numbers` says how many of "
                                         "them and of us are close and how many seconds I last at the rate I am losing HP "
                                         "now; two of them on me with no ally, or under five seconds to live, is deadly.")),
