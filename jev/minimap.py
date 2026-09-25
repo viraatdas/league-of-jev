@@ -211,24 +211,36 @@ class TowerWatch:
     """Lane towers standing or not, from their minimap icons: the TurretKilled events never moved our
     tower line in g22-g26 (no name matched), and Yasuo "retreated" to our dead outer mid tower and died
     there over and over (the same spot, 5896,6260, in four games). A tower is dead once it was seen
-    standing (15+ icon pixels) and then shows none (<= 2) on three checks in a row; only frames with
-    the camera box found count (the end screens have no minimap)."""
+    standing (15+ icon pixels) and then shows none (<= 2) on five checks in a row (~10 s), with no
+    champion icon on it; only frames with the camera box found count (the end screens have no minimap)."""
 
-    ALIVE, GONE, CONFIRM = 15, 2, 3
+    ALIVE, GONE, CONFIRM = 15, 2, 5
 
     def __init__(self) -> None:
         self.seen = {}      # (team, i) -> seen standing
         self.gone = {}      # (team, i) -> consecutive empty checks
         self.dead: set[tuple[str, int]] = set()
 
-    def update(self, crop_bgr: np.ndarray, reader: "MinimapReader") -> list[tuple[str, int]]:
+    def update(self, crop_bgr: np.ndarray, reader: "MinimapReader", blue_icons: list | None = None,
+               red_icons: list | None = None, ours: str | None = None) -> list[tuple[str, int]]:
+        """`blue_icons` / `red_icons`: blue-team and red-team champion icons this frame (map units). An
+        icon of the other colour on a tower hides its colour and would fake its death (an ally sieging
+        their tower; calling it dead walks us into its range), so that tower is not read this time.
+        An icon of its own colour can only make it look standing, never dead."""
         hsv = cv2.cvtColor(crop_bgr[:, :, :3], cv2.COLOR_BGR2HSV)
         new = []
         for team, towers in (("blue", config.BLUE_TOWERS), ("red", config.RED_TOWERS)):
+            # Our towers: a false "dead" only moves our retreat line back (the safe way), so they are
+            # called sooner and without the icon guard (Yasuo standing on the ruins kept it "standing").
+            mine = ours is not None and team == ours
+            cover = [] if mine else ((red_icons if team == "blue" else blue_icons) or [])
+            confirm = 3 if mine else self.CONFIRM
             for i, t in enumerate(towers[:11]):     # the nine lane towers and the two nexus towers
                 key = (team, i)
                 if key in self.dead:
                     continue
+                if any(dist(t, c) < 900 for c in cover):
+                    continue  # covered: no answer this time
                 px, py = reader.map_to_px(*t)
                 win = hsv[max(0, int(py) - 9):int(py) + 10, max(0, int(px) - 9):int(px) + 10]
                 h, s, v = win[..., 0], win[..., 1], win[..., 2]
@@ -240,7 +252,7 @@ class TowerWatch:
                     self.seen[key], self.gone[key] = True, 0
                 elif n <= self.GONE and self.seen.get(key):
                     self.gone[key] = self.gone.get(key, 0) + 1
-                    if self.gone[key] >= self.CONFIRM:
+                    if self.gone[key] >= confirm:
                         self.dead.add(key)
                         new.append(key)
                 else:

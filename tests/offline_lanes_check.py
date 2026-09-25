@@ -105,9 +105,17 @@ px, py = _r.map_to_px(*_c.BLUE_TOWERS[3])
 blank[int(py) - 10:int(py) + 11, int(px) - 10:int(px) + 11] = (40, 40, 40)   # the mid outer icon gone
 got = []
 for _ in range(3):
-    got += tw.update(blank, _r)
+    got += tw.update(blank, _r, ours="blue")
 print("minimap tower watch:", got)
 assert ("blue", 3) in got
+# An icon on a tower: no answer (an ally sieging their tower is not their tower gone).
+tw2 = TowerWatch()
+tw2.update(early, _r)
+blank2 = early.copy()
+rpx, rpy = _r.map_to_px(*_c.RED_TOWERS[3])
+blank2[int(rpy) - 10:int(rpy) + 11, int(rpx) - 10:int(rpx) + 11] = (40, 40, 40)
+for _ in range(6):
+    assert tw2.update(blank2, _r, blue_icons=[(_c.RED_TOWERS[3][0] + 200, _c.RED_TOWERS[3][1])]) == []
 p = _P(dry_run=True)
 p.side = "ORDER"
 p._switch_lane("mid")

@@ -308,7 +308,10 @@ class Player:
                         self.mm_state = self.mm_filter.apply(st)
                         if st.self_pos is not None and f.ts - self._tower_checked >= 2.0:
                             self._tower_checked = f.ts   # (the box found: the minimap is on screen)
-                            for key in self.tower_watch.update(frame[y0:y0 + side, x0:x0 + side], self.mm):
+                            ours = list(st.ally_champions) + [st.self_pos]
+                            blue, red = (ours, list(st.enemy_champions)) if self.side == "ORDER" else (list(st.enemy_champions), ours)
+                            for key in self.tower_watch.update(frame[y0:y0 + side, x0:x0 + side], self.mm, blue, red,
+                                                               ours="blue" if self.side == "ORDER" else "red"):
                                 self._towers_seen_dead.append(key)
                     if self.vision is not None:
                         v = self.vision.read(frame)
