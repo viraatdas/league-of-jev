@@ -8,7 +8,7 @@ the window in plain words for Jev's strategy head and gives the code the numbers
 
     power play   two or more of them dead for 12+ s more, us not fewer: take a tower or dragon
     outnumbered  two or more of us dead: no skirmishes, farm near our towers
-    unseen       three or more of them alive and off the minimap: do not push past the middle
+    unseen       four or more of them alive and off the minimap: do not push far past the middle
 """
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ class Situation:
                       "- take a tower or the dragon with the team now")
         elif self.outnumbered:
             window = f"{len(self.allies_dead)} of us dead - avoid fights, farm near our towers until they are back"
-        elif self.unseen >= 3:
+        elif self.unseen >= 4:
             window = f"{self.unseen} of them missing from the map - do not push past the middle of the lane"
         else:
             window = "even - farm, trade when ahead, group for objectives"

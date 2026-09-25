@@ -43,7 +43,7 @@ ITEM_PRICES = {
 
 INTENTS: dict[str, str] = {
     "farm": "Stay with the minion wave and last-hit minions. The default when nothing else is clearly better. "
-            "With `situation.enemies_missing_from_map` at 3 or more, farm on our half of the lane.",
+            "With `situation.enemies_missing_from_map` at 4 or more, do not push far past the middle of the lane.",
     "trade": "Take one short exchange with `lane_opponent` using Q and auto attacks, then back off.",
     "all_in": "Commit to killing `lane_opponent` now: dash in with E, land Q, use R when they are airborne.",
     "retreat": "Walk back toward your own tower immediately because staying is too dangerous "
@@ -148,7 +148,7 @@ def _core_pack(state: dict, role_text: str, support: bool) -> dict:
                 "Safe: no enemy champions visible near me and my HP is fine",
                 "Caution: an enemy champion is visible but I have HP and minions between us",
                 "Dangerous: an enemy champion is close and I am low on HP, or I am past the middle of the lane with "
-                "`situation.enemies_missing_from_map` at 3 or more",
+                "`situation.enemies_missing_from_map` at 4 or more",
                 "Leave now: I will very likely die if I stay",
             ],
         ),
