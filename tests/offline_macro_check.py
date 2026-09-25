@@ -72,3 +72,26 @@ p.situation = p._situation(base)
 print("unseen:", p.situation.unseen, "| farm cap", p.mech.mia_cap and round(p.mech.mia_cap, 3), "center", round(p.lane.center, 3))
 assert p.situation.unseen >= 3 and p.mech.mia_cap is not None and p.mech.mia_cap < p.lane.hard_limit
 print("MACRO OK")
+
+# Shove before a recall: the wave on screen gets pushed first (up to 10 s) when it is safe to.
+from jev.vision import Unit, View
+p = Player(dry_run=True)
+p.mech = Mechanics(p.ctl, p.screen, p.kb, "ORDER", lane=p.lane)
+p.situation = macro.analyze(base, None, "ORDER", set(), set())
+p.situation.unseen = 0
+me = Unit("champion", "self", 862.0, 490.0, 0.9, (830, 400, 100, 10))
+wave = [Unit("minion", "enemy", 1000.0 + 30 * k, 400.0, 0.8, (0, 0, 60, 4)) for k in range(3)]
+ours = [Unit("minion", "ally", 950.0, 450.0, 0.9, (0, 0, 60, 4))]
+p.view = View(units=wave + ours + [me], me=me, ts=time.time())
+p._micro_step = lambda *a, **k: True          # the push itself is the lane layer's (tested elsewhere)
+t0 = time.time()
+assert p._shove_first({}, {}, {}, t0, 80.0)
+print("shove first:", p.mech.last_action)
+assert not p._shove_first({}, {}, {}, t0 + 11.0, 80.0)          # 10 s at most, then home
+p._shove_t0 = -1e9
+assert not p._shove_first({}, {}, {}, t0 + 60.0, 40.0)          # hurt: straight home
+her = Unit("champion", "enemy", 1100.0, 380.0, 0.9, (0, 0, 100, 10))
+p.view = View(units=wave + ours + [me, her], me=me, ts=time.time())
+p._shove_t0 = -1e9
+assert not p._shove_first({}, {}, {}, t0 + 120.0, 80.0)         # their champion there: no
+print("MACRO OK (shove)")

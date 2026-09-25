@@ -736,9 +736,12 @@ class Player:
         # Free push: their champion has not been on screen for 3 s, our wave is here, I am healthy and
         # not under their tower. Waiting for exact last hits paid 2.3 CS a minute in g17 (killable
         # minions sat at 7-10% for a second); hitting the wave outright is more gold against bots.
-        push_free = (self.intent == "farm" and self.jungle_state is None and not kit.support and sc.champ is None
+        sit = getattr(self, "situation", None)
+        push_free = ((self.intent == "farm" or now < getattr(self, "_shove_until", 0.0)) and self.jungle_state is None
+                     and not kit.support and sc.champ is None
                      and now - getattr(self, "_champ_seen_t", 0.0) > 3.0 and mi.hp_pct >= 45 and len(sc.minions) >= 2
-                     and sc.allies > 0 and not getattr(self, "_near_enemy_tower", False))
+                     and sc.allies > 0 and not getattr(self, "_near_enemy_tower", False)
+                     and (sit is None or sit.unseen < 3 or sit.power_play))  # (three unseen: a pushed wave is a gank)
         ok = kit.step(mi, sc, now, aspd, mi.mode, self.intent in ("push_tower", "objective") or push_free)
         if mi.orders > before and mi.last_action.startswith("last hit"):
             mi.reacted("lasthit", view.ts)
@@ -911,6 +914,26 @@ class Player:
         if rng is None:
             return True
         return rng >= 300 or opp.lower() in self.LINE_MELEE
+
+    def _shove_first(self, data: dict, ap: dict, stats: dict, now: float, hp_pct: float) -> bool:
+        """Before a recall that is not urgent: push the wave on screen for up to 10 s (their minions
+        die, ours walk on to their tower) so the wave does not crash under our tower while we are
+        gone. Not below 55% HP, with their champion on screen, or with three of them unseen."""
+        v = self.view
+        if v is None or hp_pct < 55 or self.jungle_state is not None or self.kit.support:
+            return False
+        if now - getattr(self, "_shove_t0", -1e9) > 40.0:
+            self._shove_t0 = now           # a new recall decision
+        if now - self._shove_t0 > 10.0:
+            return False
+        sit = getattr(self, "situation", None)
+        if v.enemies("champion") or len(v.enemies("minion")) < 2 or not v.allies("minion") or (sit is not None and sit.unseen >= 3):
+            return False
+        self._shove_until = now + 0.5
+        if self._micro_step(data, ap, stats, now):
+            self.mech.last_action = "recall: shove the wave first"
+            return True
+        return False
 
     def _recall_threat(self, now: float) -> bool:
         """An enemy champion within 1300 units or an enemy minion within 700 on screen: a channel
@@ -2397,7 +2420,9 @@ class Player:
         elif self.intent == "group":
             m.group(move_speed, now)
         elif self.intent == "recall":
-            if m.nav.progress > self.lane.center - self.lane.frac(590) or lost > 0 or self._recall_threat(now):
+            if m.recall_started is None and self._shove_first(data, ap, cs, now, hp_pct):
+                pass  # the wave into their tower first, then home (it would crash under ours while we are gone)
+            elif m.nav.progress > self.lane.center - self.lane.frac(590) or lost > 0 or self._recall_threat(now):
                 m.retreat(move_speed, now)  # walk back first, never channel in the middle of the lane
             else:
                 m.start_recall(now)
