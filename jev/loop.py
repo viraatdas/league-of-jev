@@ -1167,7 +1167,10 @@ class Player:
             for t0, x, y, name in reversed(self._name_marks):
                 if now - t0 < 1.5 and math.hypot(tr.unit.x - x, tr.unit.y - y) < 90:
                     tr.name = name
-                    self.log_lines.append(f"on screen: {name}")
+                    last = getattr(self, "_name_logged", ("", 0.0))
+                    if name != last[0] or now - last[1] > 30.0:
+                        self._name_logged = (name, now)
+                        self.log_lines.append(f"on screen: {name}")
                     break
 
     def _opp_hint(self) -> str | None:
