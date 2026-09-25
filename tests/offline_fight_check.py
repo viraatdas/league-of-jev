@@ -297,3 +297,38 @@ for hp_her, want_farm in ((0.6, True), (0.2, False)):
     print(f"all in, she is at {hp_her:.0%} and out of reach 3 s:", mi.mode, "|", mi.last_action)
     assert (mi.mode == "farm") == want_farm, mi.mode
 print("FIGHT OK (all-in chase)")
+
+# Mechanics from the wiki: E through her lands 475 from where I start, so from 150 units the E+Q
+# circle (215) misses her: Q her there instead. From 350 the E+Q lands on her.
+y = Yasuo()
+y.q.hud = False
+for dist_u, want in ((150, "Q the champion"), (350, "E+Q onto the champion")):
+    mi, log = micro()
+    mi.hp_pct = 90.0
+    mi.set_mode("all_in", now)
+    sc = scene(track(unit("champion", dist_u, 0, 0.6), now), [], "QE")
+    y.fight(mi, sc, now, 0.7, "all_in")
+    print(f"all in at {dist_u}u:", mi.last_action)
+    assert want in mi.last_action, mi.last_action
+# No spell in an auto's swing: the auto lands first.
+mi, log = micro()
+mi.set_mode("all_in", now)
+mi.last_attack = now - 0.05
+sc = scene(track(unit("champion", 150, 0, 0.6), now), [], "QE")
+y.fight(mi, sc, now, 0.7, "all_in")
+print("in the swing:", mi.last_action or "(waits)")
+assert "Q the champion" not in mi.last_action
+# The tornado lead: cast plus flight at 1200 u/s.
+from jev.kits import tornado_lead
+print(f"tornado lead at 900u: {tornado_lead(900):.2f} s")
+assert abs(tornado_lead(900) - (config.FAST.q_cast_s + 0.75)) < 1e-6
+# R on an ally's knock-up in an even fight (no tornado of mine).
+y = Yasuo()
+mi, log = micro()
+mi.hp_pct = 70.0
+sc = scene(track(unit("champion", 600, 0, 0.6), now), [], "R", r_lit=True)
+sc.ally_champs, sc.enemy_champs = [Unit("champion", "ally", ME[0] + 300, ME[1], 0.8, (0, 0, 1, 1))], 1
+assert y.reflex(mi, sc, now, {"fight_favorable": 0.5})
+print("ally knock-up:", mi.last_action)
+assert "ally" in mi.last_action
+print("FIGHT OK (mechanics)")

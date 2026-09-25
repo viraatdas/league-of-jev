@@ -104,7 +104,9 @@ class Vision:
     # Game ranges in units (current patch, approximate); edge-to-edge adds unit radius, so auto has slack.
     auto_range: float = 240.0
     q_range: float = 450.0
-    q3_range: float = 1050.0
+    q3_range: float = 1150.0           # the tornado's reach (wiki: 1150 to its centre; casts keep a margin)
+    q3_speed: float = 1200.0           # tornado missile speed (wiki), for the lead
+    eq_min: float = 230.0              # E onto a champion from closer lands >245 past her: the E+Q circle (215) misses
     e_range: float = 475.0
     r_range: float = 1400.0
     w_range: float = 400.0
@@ -132,7 +134,7 @@ class Fast:
     caster_hp: tuple[float, float] = (296.0, 8.0)
     q_base: tuple[float, ...] = (20.0, 45.0, 70.0, 95.0, 120.0)  # plus 105% AD (approximate)
     q_ad: float = 1.05
-    e_base: tuple[float, ...] = (60.0, 70.0, 80.0, 90.0, 100.0)  # Yasuo E, magic, plus 20% bonus AD (approximate)
+    e_base: tuple[float, ...] = (70.0, 85.0, 100.0, 115.0, 130.0)  # Yasuo E, magic, plus 20% bonus AD (wiki)
     e_bonus_ad: float = 0.2
     eq_radius: float = 220.0           # Yasuo's circle Q during the dash
     lane_planner: bool = True          # Yasuo's farm/poke/push: every option scored (laneplan.py); False = the old rules

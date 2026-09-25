@@ -378,9 +378,14 @@ class LanePlanner:
                 v = sc.q_dmg / 0.88 / her_hp_units * 100 * w - aggro_cost + Q_STACK
                 out.append(Option("q_champ", v, ch, why=f"her wave {her_wave}"))
             if ready.get("Q") and q3 and cd <= VC.q3_range * 0.9:
-                v = (sc.q_dmg / 0.88 / her_hp_units * 100 + 12.0) * w - aggro_cost  # the knock-up sets up everything after it
-                out.append(Option("q3_champ", v, ch, why=f"tornado, her wave {her_wave}"))
-            if e_ok and ready.get("Q") and cd <= VC.e_range and ch.e_marked_until <= now:
+                # The tornado is Yasuo's only hard CC: worth its knock-up when something follows it (R up,
+                # E to close in, an ally there, or a kill); thrown bare it is only damage and a stack gone.
+                r_up = bool(getattr(self.kit, "r_up", lambda t: False)(now))
+                follow = r_up or (ready.get("E") and cd <= VC.e_range + 350) or bool(sc.ally_champs) or ch.unit.hp < 0.35
+                v = (sc.q_dmg / 0.88 / her_hp_units * 100 + (12.0 if follow else 2.0)) * w - aggro_cost
+                out.append(Option("q3_champ", v, ch, why=f"tornado{' with follow-up' if follow else ' bare'}, her wave {her_wave}"))
+            if e_ok and ready.get("Q") and VC.eq_min <= cd <= VC.e_range and ch.e_marked_until <= now:
+                # (from closer the dash ends 245+ past her: the circle and the next auto miss)
                 exit_ok = self._exit_after(sc, mi, self._landing(sc, ch), ch, now)
                 v = (sc.e_dmg + sc.q_dmg) / 0.85 / her_hp_units * 100 * w - aggro_cost - ((4.0 if exit_ok else 10.0) if ahead < -10 else 0.0)
                 out.append(Option("eq_champ", v, ch, why=f"ahead {ahead:+.0f} her wave {her_wave}{', dash out ready' if exit_ok else ''}"))

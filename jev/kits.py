@@ -256,6 +256,12 @@ class QStacks:
             self.last_gain = now
 
 
+def tornado_lead(d_units: float) -> float:
+    """Seconds from the Q3 press to the tornado reaching `d_units`: the cast (~0.3 s, shorter with
+    attack speed) and the flight at 1200 units/s (wiki). The lead used 1500 and fell short on walkers."""
+    return FAST.q_cast_s + d_units / VC.q3_speed
+
+
 def _line_hits(sc: Scene, x: float, y: float, rng_units: float, width_px: float = 45) -> bool:
     mx, my = sc.me_xy
     dx, dy = x - mx, y - my
@@ -531,7 +537,7 @@ class Yasuo(Kit):
         if k in ("q_champ", "q3_champ"):
             q3 = k == "q3_champ"
             d = sc.champ_dist or 0.0
-            x, y = tr.lead(now, (0.3 + d / 1500) if q3 else 0.25)
+            x, y = tr.lead(now, tornado_lead(d) if q3 else 0.25)
             mi.cast(1, x, y)
             self.q.cast(True, now)
             self.burst_at = now
@@ -602,7 +608,7 @@ class Yasuo(Kit):
         if mi._can_order(now) and rdy.get("Q"):
             q3 = self.q.q3(now)
             if (q3 and d <= VC.q3_range * 0.9) or (not q3 and d <= VC.q_range + 20):
-                x, y = ch.lead(now, 0.3 + (d / 1500 if q3 else 0))
+                x, y = ch.lead(now, tornado_lead(d) if q3 else 0.25)
                 mi.cast(1, x, y)
                 self.q.cast(True, now)
                 if q3:
@@ -629,8 +635,10 @@ class Yasuo(Kit):
             self.r_at = now
             self.burst_at = now
             return True
+        if mi.in_windup(now, aspd):
+            return True  # auto, Q, auto: a spell in the swing throws the auto away (the knock-up's R above is the exception)
         if rdy.get("Q") and q3 and d <= VC.q3_range * 0.92 and d > VC.e_range:
-            x, y = ch.lead(now, 0.3 + d / 1500)
+            x, y = ch.lead(now, tornado_lead(d))
             mi.cast(1, x, y)
             self.q.cast(True, now)
             self.tornado_at = now
@@ -644,7 +652,9 @@ class Yasuo(Kit):
             mi.trade_cooldown_until = now + 4.0
             mi.last_action = "trade: she is in her wave, back to farming"
             return False
-        if rdy.get("E") and d <= VC.e_range and ch.e_marked_until <= now and not crowded:
+        # E through her lands 475 from where I start: from under 230 units that is 245+ past her, out of
+        # the E+Q circle (215) and of auto range. Closer than that, Q and autos do it.
+        if rdy.get("E") and VC.eq_min <= d <= VC.e_range and ch.e_marked_until <= now and not crowded:
             mi.cast(3, ch.unit.x, ch.unit.y)
             ch.e_marked_until = now + 10.0
             if rdy.get("Q"):
@@ -722,7 +732,7 @@ class Yasuo(Kit):
         ch, d, rdy = sc.champ, sc.champ_dist or 9e9, sc.ready
         if now - getattr(self, "_last_window", 0.0) < 8.0 or level_diff < 0:
             return None
-        knockup = rdy.get("Q") and self.q.q3(now) and (d <= VC.q3_range * 0.85 or (rdy.get("E") and d <= VC.e_range + 150))
+        knockup = rdy.get("Q") and self.q.q3(now) and d <= VC.q3_range * 0.85
         if (self.r_up(now) and knockup and ch.unit.hp < 0.55 and mi.hp_pct >= 45 and not (sc.enemy_champs >= 2 and not sc.ally_champs)
                 and self.minions_near_champ(sc) < 4):
             self._last_window = now
@@ -737,7 +747,7 @@ class Yasuo(Kit):
             return None  # trading into her full wave: Yasuo took the minions' aggro and lost 78% -> 59% (g04)
         # (E reach plus a step: opened at up to 625 units, the E was out of range and the trade became
         # a walk after her, "trade: chase", g29.)
-        eq = rdy.get("E") and rdy.get("Q") and d <= VC.e_range + 50
+        eq = rdy.get("E") and rdy.get("Q") and VC.eq_min <= d <= VC.e_range + 50
         tornado = rdy.get("Q") and self.q.q3(now) and d <= VC.q3_range * 0.85
         if not (eq or tornado):
             return None
@@ -748,7 +758,7 @@ class Yasuo(Kit):
         d = sc.dist(tr)
         q3 = self.q.q3(now)
         if sc.ready.get("Q") and d <= (VC.q3_range * 0.9 if q3 else VC.q_range + 30):
-            x, y = tr.lead(now, (0.3 + d / 1500) if q3 else 0.25)
+            x, y = tr.lead(now, tornado_lead(d) if q3 else 0.25)
             mi.cast(1, x, y)
             self.q.cast(True, now)
             if q3:
@@ -766,9 +776,14 @@ class Yasuo(Kit):
         """R the moment our own tornado lifts the target, if the fight read is favourable; the wind
         wall whenever a champion out of melee range is taking HP off us fast (any mode: Kayle's autos
         burst Yasuo from 75% to 41% in two seconds while he farmed, g13)."""
-        if sc.r_lit and sc.champ is not None and now - self.tornado_at < FAST.r_watch_s and plan.get("fight_favorable", 0.5) >= 0.45:
+        allies_knock = (sc.r_lit and sc.champ is not None and len(sc.ally_champs) >= 1 and mi.hp_pct >= 40
+                        and sc.enemy_champs <= len(sc.ally_champs) + 1 and (sc.champ_dist or 9e9) <= VC.r_range
+                        and (sc.champ.unit.hp < 0.7 or len(sc.ally_champs) >= sc.enemy_champs))
+        if sc.r_lit and sc.champ is not None and ((now - self.tornado_at < FAST.r_watch_s and plan.get("fight_favorable", 0.5) >= 0.45)
+                                                  or allies_knock):
+            # (R lights for an ally's knock-up too: a team fight we are even in is Yasuo's best ult.)
             mi.cast(4, sc.champ.unit.x, sc.champ.unit.y)
-            mi._ordered(now, "R reflex after tornado")
+            mi._ordered(now, "R reflex after tornado" if now - self.tornado_at < FAST.r_watch_s else "R on an ally's knock-up")
             self.r_at = now
             self.tornado_at = 0.0
             if sc.champ.unit.hp < 0.65 and mi.hp_pct >= 35:
@@ -782,7 +797,7 @@ class Yasuo(Kit):
                 and now - getattr(self, "_poke_at", 0.0) > 2.0):
             # The tornado is for the champion, not a minion: it passes through the wave, knocks up, and
             # with R ready turns into the kill combo (the reflex above). Nothing chose poke without Jev.
-            x, y = sc.champ.lead(now, 0.3 + d / 1500)
+            x, y = sc.champ.lead(now, tornado_lead(d))
             mi.cast(1, x, y)
             self.q.cast(True, now)
             self.tornado_at = self._poke_at = now
