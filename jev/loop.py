@@ -892,7 +892,7 @@ class Player:
                 "mia_limit_px": mia_px,
                 "opp_reach": reach if reach is not None else (rng if rng is not None else 550.0) + 150.0,
                 "her_spells_down": down,
-                "aggression": d.aggression if d is not None else 1.0,
+                "aggression": (d.aggression if d is not None else 1.0) * macro.form(data),
                 "tower_farm_ok": bool(getattr(self, "_tower_farm_ok", False))}
         t, mm = getattr(self, "_enemy_tower_map", None), self.mm_state
         if t is not None and mm is not None and mm.pos is not None and view.me is not None:

@@ -109,3 +109,17 @@ tN = macro.power_play_target(sN, mmn.pos, MinimapState(self_pos=mmn.pos, ally_mi
 print("nexus towers down:", tN)
 assert tN is not None and tN[1] == RS[-1]
 print("MACRO OK (end game)")
+
+# Form: two deaths in the last five minutes play the lane safer; kills a little bolder.
+fd = copy.deepcopy(base)
+me_name = (fd["activePlayer"].get("riotId") or fd["activePlayer"].get("summonerName"))
+fd["gameData"]["gameTime"] = 900.0
+fd.setdefault("events", {})["Events"] = [
+    {"EventName": "ChampionKill", "EventTime": 700.0, "KillerName": "Zed", "VictimName": me_name, "Assisters": []},
+    {"EventName": "ChampionKill", "EventTime": 820.0, "KillerName": "Zed", "VictimName": me_name, "Assisters": []}]
+f2 = macro.form(fd)
+fd["events"]["Events"] = [{"EventName": "ChampionKill", "EventTime": 850.0, "KillerName": me_name, "VictimName": "Zed", "Assisters": []}]
+f3 = macro.form(fd)
+print(f"form: two deaths {f2:.2f}, one kill {f3:.2f}")
+assert f2 < 0.7 and f3 > 1.0
+print("MACRO OK (form)")

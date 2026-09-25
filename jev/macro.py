@@ -97,6 +97,26 @@ def analyze(data: dict, mm, my_team: str, dead_ours: set[int], dead_theirs: set[
     return s
 
 
+def form(data: dict, window_s: float = 300.0) -> float:
+    """Aggression multiplier from the last five minutes: my deaths take it down (two deaths: play the
+    next minutes safe, the 0/3 and 1/8 spirals of g15-g26), my kills and assists nudge it up."""
+    ap = data.get("activePlayer") or {}
+    me = (ap.get("riotId") or ap.get("summonerName") or "").split("#")[0]
+    if not me:
+        return 1.0
+    gt = float((data.get("gameData") or {}).get("gameTime", 0.0))
+    deaths = kills = 0
+    for e in (data.get("events") or {}).get("Events", []):
+        if e.get("EventName") != "ChampionKill" or gt - float(e.get("EventTime", 0.0)) > window_s:
+            continue
+        if str(e.get("VictimName", "")).split("#")[0] == me:
+            deaths += 1
+        elif str(e.get("KillerName", "")).split("#")[0] == me or me in [str(a).split("#")[0] for a in e.get("Assisters", [])]:
+            kills += 1
+    f = (1.0 if deaths == 0 else 0.8 if deaths == 1 else 0.6) * (1.0 + 0.1 * min(kills, 3))
+    return max(0.5, min(1.3, f))
+
+
 def power_play_target(s: Situation, me_pos, mm, side: str, allies: list) -> tuple[str, tuple[float, float], str] | None:
     """Where a power play goes: the dragon when it is up and near enough, else their frontmost standing
     tower that our minions or champions are at (a tower alone shoots me), nearest to me."""
