@@ -366,6 +366,7 @@ class Micro:
         self.fight_owned_until = 0.0                           # the fight head owns the mode until then
         self.dodge_lines = True                                # the lane opponent throws line skillshots (sidestep)
         self.dash_ok = True                                    # farm dashes allowed (not near their tower)
+        self.last_action_t = 0.0
         self.plan_log: collections.deque = collections.deque(maxlen=400)  # lane planner picks, for the game log
         self.ad, self.aspd = 0.0, 0.7                          # set each tick (our hits' damage for measuring minions)
         self.trade_cooldown_until = 0.0                        # no new trade before then (one just ended)
