@@ -182,6 +182,8 @@ class LanePlanner:
         if ch is not None:
             # her reach with the spells she has up (enemies.py): Brand's Q 1050, Nasus's slow 700
             her_reach = float(lane.get("opp_reach", float(lane.get("opp_range", 550.0)) + 150.0))
+            if lane.get("cautious"):
+                her_reach += 150.0   # backing off: a margin past her reach, and her reach counts double below
             d = _units(self._dist_px(s, (ch.unit.x, ch.unit.y)))
             if d < her_reach:
                 ahead = mi.hp_pct - ch.unit.hp * 100
@@ -189,6 +191,8 @@ class LanePlanner:
                 lr = getattr(mi, "learner", None)
                 rate = lr.in_reach if lr is not None else 3.0  # % HP a second she takes while I stand in reach
                 pen = (her_reach - d) / her_reach * rate * 2.5 * factor * self._hp_value(mi.hp_pct) * reach_scale
+                if lane.get("cautious"):
+                    pen *= 2.0
                 risk += pen
                 notes.append(f"her reach {pen:.0f}")
         tower = lane.get("tower_px")

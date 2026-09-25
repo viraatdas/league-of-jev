@@ -222,3 +222,20 @@ if kn.profile("Nasus") is not None:
     print("LANEPLAN OK (enemy knowledge)")
 else:
     print("(no Data Dragon cache: enemy knowledge check skipped)")
+
+# Backing off keeps farming out of her reach: last hits still taken (Q reaches the one next to her
+# from where I stand), no walking or dashing to her, no hits on her.
+y4 = Yasuo()
+y4.q.hud = False
+mi = micro()
+her = tr("champion", 520, 0, 0.9, 9, role="")
+safe = tr("minion", -150, 60, 0.1, 50)      # behind me, far from her
+risky = tr("minion", 430, 20, 0.1, 51)      # next to her
+sc = scene([safe, risky], champ=her, ready="QE")
+sc.lane["opp_reach"] = 650.0
+assert y4.continuous(mi, sc, now, 0.7, "back_off", False)
+print("back off:", mi.last_action, "|", mi.plan_log[-1]["pick"])
+pick = mi.plan_log[-1]["pick"]["kind"]
+assert pick in ("auto", "q") and "champion" not in mi.last_action   # a last hit (Q reaches the one by her), nothing on her
+assert not any(o["kind"] in ("e", "eq", "eq_champ", "q_champ", "auto_champ") for o in [mi.plan_log[-1]["pick"]])
+print("LANEPLAN OK (back off)")

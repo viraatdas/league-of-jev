@@ -547,6 +547,12 @@ class Yasuo(Kit):
     def continuous(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, pushing: bool) -> bool:
         if FAST.lane_planner and mode in ("farm", "push") and sc.minions:
             return self.plan_step(mi, sc, now, aspd, pushing or mode == "push")
+        if FAST.lane_planner and mode == "back_off" and sc.minions and sc.champ is not None and mi.hp_pct >= 30:
+            # Backing off is keeping out of her reach, not walking away from the wave: Jev's back_off was
+            # 44% of fight reads in g29 and every one of them cost the last hits. The planner, cautious:
+            # her reach counts double with a margin, no hits on her, last hits where she cannot reach.
+            sc.lane = dict(sc.lane, aggression=0.0, cautious=True)
+            return self.plan_step(mi, sc, now, aspd, False)
         if (pushing and mode in ("farm", "push") and sc.champ is None and sc.ready.get("Q") and not sc.killable_q
                 and not sc.killable_auto and mi._can_order(now)):  # a last hit first, the wave after
             # Pushing: Q into the wave on cooldown (the tornado too: it hits the whole line).
