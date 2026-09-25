@@ -1599,8 +1599,17 @@ class Player:
         if sit is not None and sit.power_play and hp >= 50 and gt >= 300:
             # Two or more of them dead: the time to take something. Bots push after fights; Yasuo walked
             # back to farm (g18-g26).
-            pp = macro.power_play_target(sit, mm.pos, mm, self.side, allies)
+            pp = None
             obj_t = (st.get("objectives") or {})
+            left = sit.power_until - sit.game_s
+            baron = map_places.places(self.side)["baron_pit"][0]
+            near_baron = sum(1 for a in allies if dist(a, baron) < 3000)
+            if gt >= 1200 and (obj_t.get("next_baron_in_s") or 0) <= 0 and len(sit.enemies_dead) >= 3 and left >= 30 \
+                    and near_baron >= 2 and dist(mm.pos, baron) < 7000:
+                pp = ("objective", baron, "power play: baron")   # three of them down for 30 s: the game-winning buff
+            elif obj_t.get("herald_available") and left >= 25 and near_baron >= 1 and dist(mm.pos, baron) < 5000:
+                pp = ("objective", baron, "power play: rift herald")
+            pp = pp or macro.power_play_target(sit, mm.pos, mm, self.side, allies)
             if pp is None and (obj_t.get("next_dragon_in_s") or 0) <= 0 and sit.power_until - sit.game_s >= 25:
                 pit = map_places.places(self.side)["dragon_pit"][0]
                 if dist(mm.pos, pit) < 6000 and sum(1 for a in allies if dist(a, pit) < 3500) >= 1:

@@ -123,3 +123,18 @@ f3 = macro.form(fd)
 print(f"form: two deaths {f2:.2f}, one kill {f3:.2f}")
 assert f2 < 0.7 and f3 > 1.0
 print("MACRO OK (form)")
+
+# Baron in a late power play: three of them dead for 30+ s, two of us near the pit.
+from jev import places as _pl
+pit = _pl.places("ORDER")["baron_pit"][0]
+d4 = with_dead(base, "CHAOS", 3, 40.0)
+d4["gameData"]["gameTime"] = 1500.0
+p = Player(dry_run=True)
+p.mech = Mechanics(p.ctl, p.screen, p.kb, "ORDER", lane=p.lane)
+p.mm_state = MinimapState(self_pos=(pit[0] - 2500, pit[1] - 2500), ts=time.time(), ally_champions=[(pit[0] + 500, pit[1]), (pit[0], pit[1] - 600)])
+p.state = {"me": {"hp_percent": 80, "alive": True, "level": 15}, "objectives": {"next_dragon_in_s": 200, "next_baron_in_s": 0}}
+p.situation = macro.analyze(d4, p.mm_state, "ORDER", set(), set())
+plan = p._objective_plan(d4, time.time())
+print("late power play:", plan)
+assert plan is not None and plan[2] == "power play: baron"
+print("MACRO OK (baron)")
