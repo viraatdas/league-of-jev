@@ -332,3 +332,22 @@ assert y.reflex(mi, sc, now, {"fight_favorable": 0.5})
 print("ally knock-up:", mi.last_action)
 assert "ally" in mi.last_action
 print("FIGHT OK (mechanics)")
+
+# Tornado angle: two of them in a line to the right and one up alone: the line through two is thrown
+# (the focus alone only on a tie). Q's cast shortens with attack speed (0.35 s -> 0.175 s).
+from jev.kits import tornado_aim, q_cast_time
+a = track(unit("champion", 600, 0, 0.8), now)
+b = track(unit("champion", 900, 40, 0.8), now)
+c = track(unit("champion", 0, -700, 0.8), now)
+a.id, b.id, c.id = 101, 102, 103
+sc = scene(c, [], "Q")
+sc.champs = [a, b, c]
+x, y = tornado_aim(sc, c, now, 0.7)
+print("tornado aim:", (round(x - ME[0]), round(y - ME[1])), "(right = the pair, up = the focus alone)")
+assert x - ME[0] > 200 and abs(y - ME[1]) < 100
+sc.champs = [c]
+x, y = tornado_aim(sc, c, now, 0.7)
+assert y - ME[1] < -200
+print(f"Q cast: {q_cast_time(0.697):.3f} s at base attack speed, {q_cast_time(1.4):.3f} s at 1.4")
+assert abs(q_cast_time(0.697) - 0.35) < 1e-3 and q_cast_time(1.4) < 0.2
+print("FIGHT OK (tornado aim)")

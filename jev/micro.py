@@ -223,6 +223,7 @@ class Scene:
     ready: dict[str, bool] = field(default_factory=dict)
     r_lit: bool = False
     ally_units: list[Unit] = field(default_factory=list)      # allied minions on screen (our wave's front)
+    champs: list[Track] = field(default_factory=list)         # every enemy champion on screen
     ad: float = 60.0
     q_dmg: float = 0.0                                        # Q on a minion, with the model margin
     e_dmg: float = 0.0                                        # E on a minion (Yasuo), with the margin
@@ -253,6 +254,7 @@ def build_scene(view: View, minions: list[Track], champs: list[Track], ad: float
     sc.ready = dict(view.hud.ready)
     sc.r_lit = bool(view.hud.ready.get("R"))
     sc.enemy_champs = len(champs)
+    sc.champs = list(champs)
     if champs:
         sc.champ = min(champs, key=sc.dist)
         sc.champ_dist = sc.dist(sc.champ)

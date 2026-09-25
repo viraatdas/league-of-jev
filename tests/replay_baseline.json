@@ -1,23 +1,23 @@
 {
  "g22_yasuo_beginner": {
-  "orders": 446,
-  "moves": 0.572,
-  "e": 45,
-  "lasthits": 83,
-  "lasthit_died": 0.916
+  "orders": 451,
+  "moves": 0.563,
+  "e": 50,
+  "lasthits": 86,
+  "lasthit_died": 0.919
  },
  "g24_yasuo_beginner": {
-  "orders": 457,
-  "moves": 0.554,
-  "e": 60,
-  "lasthits": 114,
-  "lasthit_died": 0.877
+  "orders": 455,
+  "moves": 0.549,
+  "e": 64,
+  "lasthits": 117,
+  "lasthit_died": 0.88
  },
  "g29_yasuo_top_beginner": {
-  "orders": 134,
-  "moves": 0.545,
-  "e": 14,
-  "lasthits": 25,
-  "lasthit_died": 0.8
+  "orders": 135,
+  "moves": 0.533,
+  "e": 15,
+  "lasthits": 27,
+  "lasthit_died": 0.815
  }
 }
