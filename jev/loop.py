@@ -896,6 +896,10 @@ class Player:
                 "mia_limit_px": mia_px,
                 "opp_reach": reach if reach is not None else (rng if rng is not None else 550.0) + 150.0,
                 "her_spells_down": down,
+                # Yasuo's Flow: a full bar is a shield on the next champion hit (trade with it up). Only
+                # when the API fills it (resourceMax > 0); unknown otherwise.
+                "shield_ready": (float(stats.get("resourceMax") or 0) > 0
+                                 and float(stats.get("resourceValue") or 0) >= float(stats.get("resourceMax") or 0) - 1),
                 "aggression": (d.aggression if d is not None else 1.0) * macro.form(data),
                 "tower_farm_ok": bool(getattr(self, "_tower_farm_ok", False))}
         t, mm = getattr(self, "_enemy_tower_map", None), self.mm_state
@@ -1247,6 +1251,9 @@ class Player:
             "enemy_minions_around_me": my_around, "ally_minions_on_screen": sc.allies,
             "allied_champions_on_screen": len(sc.ally_champs),
         }
+        if float(cs.get("resourceMax") or 0) > 0 and str(cs.get("resourceType", "")).upper() in ("WIND", "FLOW"):
+            full = float(cs.get("resourceValue") or 0) >= float(cs.get("resourceMax") or 0) - 1
+            me["passive_shield"] = "ready (Flow full: the next champion hit on me is shielded)" if full else "charging"
         mm = self.mm_state
         where: dict[str, Any] = {"inside_enemy_tower_range": bool(getattr(self, "_near_enemy_tower", False))}
         mapinfo: dict[str, Any] = {}

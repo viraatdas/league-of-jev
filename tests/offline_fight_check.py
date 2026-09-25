@@ -351,3 +351,21 @@ assert y - ME[1] < -200
 print(f"Q cast: {q_cast_time(0.697):.3f} s at base attack speed, {q_cast_time(1.4):.3f} s at 1.4")
 assert abs(q_cast_time(0.697) - 0.35) < 1e-3 and q_cast_time(1.4) < 0.2
 print("FIGHT OK (tornado aim)")
+
+# Beyblade: all in with the kill on (her at 30%, me healthy, R up, Flash up), her 800 units away, a
+# minion 400 units toward her: E through it, Q3 in the dash, Flash onto her. Healthy her: the tornado.
+for her_hp, want in ((0.3, "beyblade"), (0.8, "Q3 tornado")):
+    y = Yasuo()
+    y.q.hud = True
+    y.r_rank = 1
+    mi, log = micro()
+    mi.hp_pct = 85.0
+    mi.summoners = ["flash", "ignite"]
+    mi.set_mode("all_in", now)
+    her = track(unit("champion", 800, 0, her_hp), now)
+    gate = track(unit("minion", 400, 0, 0.9), now)
+    sc = scene(her, [gate], "QED")
+    y.fight(mi, sc, now, 0.7, "all_in")
+    print(f"all in, her at {her_hp:.0%} 800u away:", mi.last_action, "| queued", len(mi._later))
+    assert want in mi.last_action, mi.last_action
+print("FIGHT OK (beyblade)")

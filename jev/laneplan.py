@@ -328,6 +328,8 @@ class LanePlanner:
                 fac *= 0.3
             if lane.get("her_spells_down"):
                 fac *= 1.4  # her burst is on cooldown: the window every laner trades in
+            if lane.get("shield_ready"):
+                fac *= 1.2  # Flow full: the passive shield eats her answer
             champ_w = CHAMP_HP_GOLD * agg * trade_w * fac * (1.3 if ch.unit.hp < 0.4 else 1.0)
         if e_ok:
             for tr in sc.minions:

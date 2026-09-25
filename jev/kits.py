@@ -673,6 +673,8 @@ class Yasuo(Kit):
             return True
         if mi.in_windup(now, aspd):
             return True  # auto, Q, auto: a spell in the swing throws the auto away (the knock-up's R above is the exception)
+        if mode == "all_in" and self._beyblade_in(mi, sc, now, q3):
+            return True
         if rdy.get("Q") and q3 and d <= VC.q3_range * 0.92 and d > VC.e_range:
             x, y = tornado_aim(sc, ch, now, aspd)
             mi.cast(1, x, y)
@@ -761,6 +763,40 @@ class Yasuo(Kit):
         cd = {1: 80.0, 2: 55.0, 3: 30.0}.get(self.r_rank, 80.0)
         return self.r_rank >= 1 and now - getattr(self, "r_at", -1e9) > cd
 
+    def _beyblade_in(self, mi: Micro, sc: Scene, now: float, q3: bool) -> bool:
+        """E through a minion toward her, Q3 buffered in the dash, Flash onto her: the circle knock-up
+        lands where the Flash does (wiki), R follows on the reflex. Only when the kill is on (Jev's
+        Flash-in, or her under 35% with me healthy and R up): otherwise the tornado from range, which
+        costs no Flash, opens."""
+        ch, d, rdy = sc.champ, sc.champ_dist or 9e9, sc.ready
+        slot = mi.summoner_slot("flash", rdy)
+        if not (q3 and rdy.get("E") and rdy.get("Q") and slot and self.r_up(now) and d > VC.e_range):
+            return False
+        if not (mi.flash_in_ok or (ch.unit.hp < 0.35 and mi.hp_pct >= 60)):
+            return False
+        best = None
+        for m in sc.minions:
+            if m.e_marked_until > now or sc.dist(m) > VC.e_range:
+                continue
+            land = self._landing(sc, m)
+            dl = math.hypot(land[0] - ch.unit.x, land[1] - ch.unit.y) / VC.px_per_unit
+            if 215 < dl <= 400 + 150 and (best is None or dl < best[0]):  # Flash (400) then the circle (215) reaches her
+                best = (dl, m)
+        if best is None:
+            return False
+        m = best[1]
+        tx, ty = ch.lead(now, 0.3)
+        mi.cast(3, m.unit.x, m.unit.y)
+        m.e_marked_until = now + 10.0
+        mi.later(FAST.eq_delay_s, lambda: mi.ctl.press(mi.kb.ability(1)))
+        mi.later(FAST.eq_delay_s + 0.06, lambda: mi.cast_summoner(slot, tx, ty))
+        self.q.cast(True, now)
+        self.tornado_at = now + 0.2
+        self.burst_at = now
+        mi.flash_in_ok = False
+        mi._ordered(now, "all_in: beyblade (E+Q3+Flash onto her)")
+        return True
+
     def trade_window(self, mi: Micro, sc: Scene, now: float, level_diff: int) -> str | None:
         """EQ (or the Q3 tornado) is up, the champion is in dash or tornado reach, I am at least
         as healthy and as high level: trade. With R up and a knock-up in hand, a champion under
@@ -774,7 +810,7 @@ class Yasuo(Kit):
             self._last_window = now
             return "all_in"
         # Her burst on cooldown (enemies.py): the window laners trade in, a few points behind or not.
-        slack = 15 if sc.lane.get("her_spells_down") else 5
+        slack = (15 if sc.lane.get("her_spells_down") else 5) + (5 if sc.lane.get("shield_ready") else 0)
         if mi.hp_pct < 50 or mi.hp_pct < ch.unit.hp * 100 - slack:
             return None
         if sc.enemy_champs >= 2 and not sc.ally_champs:
