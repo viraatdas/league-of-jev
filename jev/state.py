@@ -136,7 +136,7 @@ def objective_timers(events: list[dict], now: float) -> dict[str, float | None]:
     }
 
 
-def build_state(data: dict, perception: Perception | None = None, my_role: str = "MIDDLE") -> dict:
+def build_state(data: dict, perception: Perception | None = None, my_role: str = "MIDDLE", opp_hint: str | None = None) -> dict:
     perception = perception or Perception()
     ap = data.get("activePlayer", {})
     me = find_me(data) or {}
@@ -152,7 +152,11 @@ def build_state(data: dict, perception: Perception | None = None, my_role: str =
     abilities = ap.get("abilities", {})
     ability_levels = {k: abilities.get(k, {}).get("abilityLevel", 0) for k in ("Q", "W", "E", "R")}
 
-    opp = next((p for p in enemies if p.get("position") == my_role), None)
+    opp = next((p for p in enemies if my_role and p.get("position") == my_role), None)
+    if opp is None and opp_hint:
+        # No lane info (custom games leave positions empty): the enemy champion seen most in my lane
+        # (the name above her bar), not the highest level one (Darius top for Yasuo mid).
+        opp = next((p for p in enemies if p.get("championName") == opp_hint), None)
     if opp is None and enemies:
         opp = max(enemies, key=lambda p: p.get("level", 0))  # best guess without lane info
 

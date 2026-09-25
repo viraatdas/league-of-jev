@@ -214,6 +214,7 @@ class Player:
         self._enemy_names: list[str] = []       # enemy team champion names (for reading the bar labels)
         self._name_marks: collections.deque = collections.deque(maxlen=40)  # (t, x, y, name) from the bar labels
         self._name_tried = 0.0
+        self._seen_names: collections.Counter = collections.Counter()
         self.micro: Micro | None = None
         self.scene = None
         self.data: dict | None = None
@@ -447,7 +448,7 @@ class Player:
     def _full_state(self, data: dict, perception: Perception) -> dict:
         if perception.lane_progress_pct is not None and perception.position in ("lane", "traveling"):
             perception.where_label = self.lane.where_label(perception.lane_progress_pct / 100)
-        st = build_state(data, perception, self.role)
+        st = build_state(data, perception, self.role, self._opp_hint())
         if self.shop_brain is not None:
             st["enemy_lineup"] = [{k: e[k] for k in ("champion", "class", "damage", "level", "kda")}
                                   for e in enemy_team(data, self.shop_brain.catalog, self.side)]
@@ -1156,14 +1157,25 @@ class Player:
             return
 
     def _name_tracks(self, champs: list, now: float) -> None:
+        gt = float(((self.data or {}).get("gameData") or {}).get("gameTime", 0.0))
         for tr in champs:
             if getattr(tr, "name", ""):
+                if self.phase == "lane" and gt < 840 and now - getattr(tr, "_counted", 0.0) >= 1.0:
+                    tr._counted = now
+                    self._seen_names[tr.name] += 1     # seconds on screen in lane, first 14 minutes
                 continue
             for t0, x, y, name in reversed(self._name_marks):
                 if now - t0 < 1.5 and math.hypot(tr.unit.x - x, tr.unit.y - y) < 90:
                     tr.name = name
                     self.log_lines.append(f"on screen: {name}")
                     break
+
+    def _opp_hint(self) -> str | None:
+        """The enemy champion seen longest on screen while laning (for when positions are empty)."""
+        if self.jungle_state is not None or not self._seen_names:
+            return None
+        name, secs = self._seen_names.most_common(1)[0]
+        return name if secs >= 10 else None
 
     def _her_name(self, sc) -> str:
         """The champion in front of me: her bar label when read, else the lane opponent."""
@@ -1917,6 +1929,7 @@ class Player:
         self.mm_filter = PosFilter()
         self.tower_watch = TowerWatch()
         self._towers_seen_dead.clear()
+        self._seen_names.clear()
         self.view = None
         self.scene = None
         self.min_tracker = UnitTracker()
@@ -2018,7 +2031,7 @@ class Player:
                                 self._prompt_logged = t0
                                 self.log_lines.append(f"input paused: a system prompt ({prompt}) is on screen; not clicking it")
                             perception = Perception(position=f"paused: {prompt} prompt on screen" if prompt else "paused: game window not active")
-                            self.state = build_state(data, perception, self.role)
+                            self.state = build_state(data, perception, self.role, self._opp_hint())
                             live.update(self._table(perception))
                             self._logline(perception, t0)
                             time.sleep(0.5)
@@ -2252,7 +2265,7 @@ class Player:
             del self._base_since
 
         self.situation = self._situation(data)
-        state = self.state or build_state(data, p, self.role)
+        state = self.state or build_state(data, p, self.role, self._opp_hint())
         self.intent = choose_intent(self.decision, state, p, now, self.guards)
         d0 = self.decision
         if self.intent == "retreat" and d0 is not None and d0.intent == "retreat" and now >= self.guards.retreat_until:
