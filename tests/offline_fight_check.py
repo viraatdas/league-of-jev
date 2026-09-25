@@ -281,3 +281,19 @@ assert seq[1] == "E" and seq[5] == seq[10] == seq[15] == "R"
 assert m.level_up({"Q": 3, "W": 1, "E": 1, "R": 0}, legal_level_ups(6, {"Q": 3, "W": 1, "E": 1, "R": 0})) == "R"
 assert m.level_up({"Q": 2, "W": 1, "E": 0, "R": 0}, legal_level_ups(4, {"Q": 2, "W": 1, "E": 0, "R": 0})) == "E"
 print("FIGHT OK (level-ups)")
+
+# An all in she walks out of: 2.5 s out of reach at 60% ends it; at 20% the chase goes on.
+y = Yasuo()
+y.q.hud = False
+for hp_her, want_farm in ((0.6, True), (0.2, False)):
+    mi, log = micro()
+    mi.set_mode("all_in", now)
+    ch = track(unit("champion", 900, 0, hp_her), now)
+    sc = scene(ch, [], "")
+    y._in_reach_t = now
+    for k in range(4):
+        mi.last_order = 0
+        y.hit_or_chase(mi, sc, now + 1.0 * k, 0.7, "all_in")
+    print(f"all in, she is at {hp_her:.0%} and out of reach 3 s:", mi.mode, "|", mi.last_action)
+    assert (mi.mode == "farm") == want_farm, mi.mode
+print("FIGHT OK (all-in chase)")

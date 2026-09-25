@@ -1012,6 +1012,9 @@ class Player:
     def _commit(self, ch, mi, now: float, why: str) -> None:
         """All in on this champion, and keep it the target for four seconds (the scene's default
         target is the nearest champion, which changes as a fight moves)."""
+        if (mi.mode != "all_in" and mi.last_action.startswith("all in: out of reach")
+                and now - mi.last_action_t < 4.0 and ch.unit.hp >= 0.25):
+            return  # the chase was just given up: not straight back into it (she is still out of reach)
         if mi.mode != "all_in":
             self.log_lines.append(f"fight: {why}")
         mi.set_mode("all_in", now)

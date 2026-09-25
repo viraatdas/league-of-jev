@@ -160,6 +160,14 @@ class Kit:
             mi.trade_cooldown_until = now + 4.0
             mi.last_action = "trade: out of reach, back to farming"
             return False
+        elif (mode == "all_in" and ch.unit.hp > 0.25 and not (mi.flash_in_ok and ch.unit.hp < 0.35)
+              and now - max(getattr(self, "_in_reach_t", 0.0), mi.mode_since) > 2.5):
+            # An all in she walks out of: 91 "all_in: chase" orders in g22 (Lee 61 in g25), walking after
+            # healthy champions into their team. Under 25% the chase (and the Flash) goes on.
+            mi.set_mode("farm", now)
+            mi.trade_cooldown_until = now + 4.0
+            mi.last_action, mi.last_action_t = "all in: out of reach 2.5 s, back to farming", now
+            return False
         if d <= rng and mi.attack_ready(now, aspd):
             mi.attack(ch, now, f"{mode}: auto the champion")
             return True
