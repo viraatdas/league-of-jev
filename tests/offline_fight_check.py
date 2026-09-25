@@ -369,3 +369,17 @@ for her_hp, want in ((0.3, "beyblade"), (0.8, "Q3 tornado")):
     print(f"all in, her at {her_hp:.0%} 800u away:", mi.last_action, "| queued", len(mi._later))
     assert want in mi.last_action, mi.last_action
 print("FIGHT OK (beyblade)")
+
+# Lee's Sonic Wave stops at the first unit: a minion in the line to her holds the Q; a clear line throws it.
+lee = LeeSin()
+for block, want_q in ((True, False), (False, True)):
+    mi, log = micro()
+    mi.set_mode("all_in", now)
+    her = track(unit("champion", 800, 0, 0.7), now)
+    mins = [track(unit("minion", 400, 30, 0.9), now)] if block else [track(unit("minion", 400, 400, 0.9), now)]
+    sc = scene(her, mins, "Q")
+    lee.q_at = -10.0
+    lee.fight(mi, sc, now, 0.7, "all_in")
+    print("Sonic Wave, minion in the line" if block else "Sonic Wave, line clear", "->", mi.last_action)
+    assert ("Sonic Wave" in mi.last_action) == want_q, mi.last_action
+print("FIGHT OK (sonic wave line)")

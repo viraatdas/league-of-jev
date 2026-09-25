@@ -93,6 +93,8 @@ class Vision:
     champ_bar_h: tuple[int, int] = (9, 12)
     minion_body_offset: tuple[int, int] = (0, 32)    # bar centre -> where to click the minion
     champ_body_offset: tuple[int, int] = (-10, 78)   # bar centre -> champion body
+    champ_ground_dy: int = 40          # champion body point -> the ground under it (skillshots are aimed on the
+                                       # ground: the torso point sent a sideways Q ~75 units off, g22-g29 frames)
     hud_icons: tuple[tuple[int, int], ...] = ((673, 985), (737, 985), (799, 985), (861, 985), (925, 985), (972, 985))
     icon_half: int = 20
     # Inventory slots 1-6 (API slot 0-5, top row then bottom row) and the trinket (API slot 6).

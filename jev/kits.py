@@ -270,6 +270,11 @@ def tornado_lead(d_units: float, aspd: float | None = None) -> float:
     return q_cast_time(aspd) + d_units / VC.q3_speed
 
 
+def ground(pt: tuple[float, float]) -> tuple[float, float]:
+    """A champion's body point (on its model) down to the ground under it, where skillshots land."""
+    return pt[0], pt[1] + VC.champ_ground_dy
+
+
 def tornado_aim(sc: Scene, target, now: float, aspd: float | None = None) -> tuple[float, float]:
     """Where to throw the tornado: the line (1150 long, ~155 units either side counting hitboxes) that
     catches the most enemy champions at their led positions; the target's own line on a tie."""
@@ -281,7 +286,7 @@ def tornado_aim(sc: Scene, target, now: float, aspd: float | None = None) -> tup
         if d <= VC.q3_range * 0.95:
             led.append((t, t.lead(now, tornado_lead(d, aspd))))
     if not led:
-        return target.lead(now, tornado_lead(sc.dist(target), aspd))
+        return ground(target.lead(now, tornado_lead(sc.dist(target), aspd)))
     best, best_n = None, -1
     for t, (ax, ay) in led:
         dx, dy = ax - mx, ay - my
@@ -295,7 +300,7 @@ def tornado_aim(sc: Scene, target, now: float, aspd: float | None = None) -> tup
                 hits += 1
         if hits > best_n or (hits == best_n and t is target):
             best, best_n = (ax, ay), hits
-    return best
+    return ground(best)
 
 
 def _line_hits(sc: Scene, x: float, y: float, rng_units: float, width_px: float = 45) -> bool:
@@ -573,7 +578,7 @@ class Yasuo(Kit):
         if k in ("q_champ", "q3_champ"):
             q3 = k == "q3_champ"
             d = sc.champ_dist or 0.0
-            x, y = tornado_aim(sc, tr, now, aspd) if q3 else tr.lead(now, q_cast_time(aspd) + 0.05)
+            x, y = tornado_aim(sc, tr, now, aspd) if q3 else ground(tr.lead(now, q_cast_time(aspd) + 0.05))
             mi.cast(1, x, y)
             self.q.cast(True, now)
             self.burst_at = now
@@ -644,7 +649,7 @@ class Yasuo(Kit):
         if mi._can_order(now) and rdy.get("Q"):
             q3 = self.q.q3(now)
             if (q3 and d <= VC.q3_range * 0.9) or (not q3 and d <= VC.q_range + 20):
-                x, y = tornado_aim(sc, ch, now, aspd) if q3 else ch.lead(now, q_cast_time(aspd) + 0.05)
+                x, y = tornado_aim(sc, ch, now, aspd) if q3 else ground(ch.lead(now, q_cast_time(aspd) + 0.05))
                 mi.cast(1, x, y)
                 self.q.cast(True, now)
                 if q3:
@@ -707,7 +712,7 @@ class Yasuo(Kit):
                 mi._ordered(now, f"{mode}: E onto the champion")
             return True
         if rdy.get("Q") and d <= VC.q_range + 30:
-            x, y = tornado_aim(sc, ch, now, aspd) if q3 else ch.lead(now, q_cast_time(aspd) + 0.05)
+            x, y = tornado_aim(sc, ch, now, aspd) if q3 else ground(ch.lead(now, q_cast_time(aspd) + 0.05))
             mi.cast(1, x, y)
             self.q.cast(True, now)
             if q3:
@@ -830,7 +835,7 @@ class Yasuo(Kit):
         d = sc.dist(tr)
         q3 = self.q.q3(now)
         if sc.ready.get("Q") and d <= (VC.q3_range * 0.9 if q3 else VC.q_range + 30):
-            x, y = tr.lead(now, tornado_lead(d, sc.aspd) if q3 else q_cast_time(sc.aspd) + 0.05)
+            x, y = ground(tr.lead(now, tornado_lead(d, sc.aspd) if q3 else q_cast_time(sc.aspd) + 0.05))
             mi.cast(1, x, y)
             self.q.cast(True, now)
             if q3:
@@ -1144,15 +1149,31 @@ class LeeSin(Kit):
             return None
         if sc.enemy_champs >= 2 and not sc.ally_champs:
             return None  # alone against two: not a gank
-        if sc.ready.get("Q") and d <= self.Q_RANGE * 0.9:
+        if sc.ready.get("Q") and d <= self.Q_RANGE * 0.9 and self.q_clear(sc, *ground(sc.champ.lead(now, 0.25 + d / 1800)), d):
             self._last_window = now
-            return "all_in"
+            return "all_in"   # (a minion in the line would take the Sonic Wave: no gank opener through the wave)
         return None
+
+    @staticmethod
+    def q_clear(sc: Scene, x: float, y: float, d_units: float) -> bool:
+        """Sonic Wave stops at the first unit it touches (wiki: width 120): no enemy minion in the line
+        short of her (60 half-width plus ~50 minion radius), or it is a minion that gets marked."""
+        mx, my = sc.me_xy
+        dx, dy = x - mx, y - my
+        n = math.hypot(dx, dy) or 1.0
+        for t in sc.minions:
+            px, py = t.unit.x - mx, t.unit.y - my
+            along = (px * dx + py * dy) / n / VC.px_per_unit
+            perp = abs(px * dy - py * dx) / n / VC.px_per_unit
+            if 0 < along < d_units - 40 and perp <= 110:
+                return False
+        return True
 
     def poke(self, mi: Micro, sc: Scene, now: float, aspd: float) -> bool:
         d = sc.champ_dist or 9e9
-        if mi._can_order(now) and sc.ready.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE * 0.9 and now - self.q_at > 3.0:
-            x, y = sc.champ.lead(now, 0.25 + d / 1800)
+        if mi._can_order(now) and sc.ready.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE * 0.9 and now - self.q_at > 3.0 \
+                and self.q_clear(sc, *ground(sc.champ.lead(now, 0.25 + d / 1800)), d):
+            x, y = ground(sc.champ.lead(now, 0.25 + d / 1800))
             mi.cast(1, x, y)
             self.q_at = now
             mi._ordered(now, "poke: Q Sonic Wave")
@@ -1178,8 +1199,9 @@ class LeeSin(Kit):
             self.e_at = now
             mi._ordered(now, "execute: E Tempest")
             return True
-        if sc.ready.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE * 0.9:
-            x, y = tr.lead(now, 0.25 + d / 1800)
+        if sc.ready.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE * 0.9 \
+                and self.q_clear(sc, *ground(tr.lead(now, 0.25 + d / 1800)), d):
+            x, y = ground(tr.lead(now, 0.25 + d / 1800))
             mi.cast(1, x, y)
             self.q_at = now
             mi._ordered(now, "execute: Q Sonic Wave")
@@ -1215,8 +1237,9 @@ class LeeSin(Kit):
             mi.attack(ch, now, f"{mode}: flurry auto")
             self.autos_since = getattr(self, "autos_since", 0) + 1
             return True
-        if rdy.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE * 0.9 and now - self.q_at > 3.0:
-            x, y = ch.lead(now, 0.25 + d / 1800)
+        if rdy.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE * 0.9 and now - self.q_at > 3.0 \
+                and self.q_clear(sc, *ground(ch.lead(now, 0.25 + d / 1800)), d):
+            x, y = ground(ch.lead(now, 0.25 + d / 1800))
             mi.cast(1, x, y)
             self.q_at = self.spell_at = now
             self.autos_since = 0
