@@ -745,7 +745,7 @@ class Player:
                      and not kit.support and sc.champ is None
                      and now - getattr(self, "_champ_seen_t", 0.0) > 3.0 and mi.hp_pct >= 45 and len(sc.minions) >= 2
                      and sc.allies > 0 and not getattr(self, "_near_enemy_tower", False)
-                     and (sit is None or sit.unseen < 3 or sit.power_play))  # (three unseen: a pushed wave is a gank)
+                     and (sit is None or sit.unseen < 4 or sit.power_play))  # (four unseen: a pushed wave is a gank)
         ok = kit.step(mi, sc, now, aspd, mi.mode, self.intent in ("push_tower", "objective") or push_free)
         if mi.orders > before and mi.last_action.startswith("last hit"):
             mi.reacted("lasthit", view.ts)
@@ -889,9 +889,9 @@ class Player:
         d = self.decision
         sit = getattr(self, "situation", None)
         mia_px = None
-        if sit is not None and sit.unseen >= 3 and not sit.power_play and self.mech is not None:
-            # how far up the lane (along the lane, screen px) I may stand: the middle, with three unseen
-            mia_px = (self.lane.center + self.lane.frac(250) - self.mech.nav.progress) * self.lane.L * config.VISION.px_per_unit
+        if sit is not None and sit.unseen >= 4 and not sit.power_play and self.mech is not None:
+            # how far up the lane (along the lane, screen px) I may stand: a little past the middle, with four unseen
+            mia_px = (self.lane.center + self.lane.frac(350) - self.mech.nav.progress) * self.lane.L * config.VISION.px_per_unit
         info = {"opp": name, "opp_range": rng if rng is not None else 550.0, "opp_hp": 640.0 + 95.0 * (lvl - 1),
                 "mia_limit_px": mia_px,
                 "opp_reach": reach if reach is not None else (rng if rng is not None else 550.0) + 150.0,
@@ -931,7 +931,7 @@ class Player:
         if now - self._shove_t0 > 10.0:
             return False
         sit = getattr(self, "situation", None)
-        if v.enemies("champion") or len(v.enemies("minion")) < 2 or not v.allies("minion") or (sit is not None and sit.unseen >= 3):
+        if v.enemies("champion") or len(v.enemies("minion")) < 2 or not v.allies("minion") or (sit is not None and sit.unseen >= 4):
             return False
         self._shove_until = now + 0.5
         if self._micro_step(data, ap, stats, now):
@@ -1852,7 +1852,9 @@ class Player:
         # Pushed past the middle with three of them unseen is how the pushed-up deaths went (g19, g26):
         # the farm walk stops at the middle then, unless we are the ones with the numbers.
         if self.mech is not None:
-            self.mech.mia_cap = (self.lane.center + self.lane.frac(250)) if (s.unseen >= 3 and not s.power_play) else None
+            # (Four or more: the minimap shows two or fewer enemy icons most of the game, so "three unseen"
+            # was 62-81% of the g22-g29 frames and would have kept Yasuo on our half all game.)
+            self.mech.mia_cap = (self.lane.center + self.lane.frac(350)) if (s.unseen >= 4 and not s.power_play) else None
         return s
 
     def _towers_from_minimap(self) -> None:

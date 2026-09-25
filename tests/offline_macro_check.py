@@ -66,11 +66,11 @@ p.mm_state = mm2
 assert p._join_fight_plan(mm2, mm2.ally_champions, 900.0, 90.0, time.time()) is None
 print("outnumbered: no skirmish")
 
-# Three of them unseen: the farm walk stops at the middle of the lane.
-p.mm_state = MinimapState(self_pos=(6500.0, 6500.0), ts=time.time(), enemy_champions=[(12000.0, 3000.0)])  # 4 alive, 1 seen
+# Four of them unseen: the farm walk stops a little past the middle of the lane.
+p.mm_state = MinimapState(self_pos=(6500.0, 6500.0), ts=time.time(), enemy_champions=[])  # 4 alive, none seen
 p.situation = p._situation(base)
 print("unseen:", p.situation.unseen, "| farm cap", p.mech.mia_cap and round(p.mech.mia_cap, 3), "center", round(p.lane.center, 3))
-assert p.situation.unseen >= 3 and p.mech.mia_cap is not None and p.mech.mia_cap < p.lane.hard_limit
+assert p.situation.unseen >= 4 and p.mech.mia_cap is not None and p.mech.mia_cap < p.lane.hard_limit
 print("MACRO OK")
 
 # Shove before a recall: the wave on screen gets pushed first (up to 10 s) when it is safe to.

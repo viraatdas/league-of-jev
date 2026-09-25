@@ -201,13 +201,13 @@ class LanePlanner:
             if d < 950:
                 risk += 40.0 + (950 - d) / 10.0
                 notes.append("their tower")
-        # Three of them unseen: past the middle of the lane is where the gank lands (g19, g26).
+        # Four of them unseen: well past the middle of the lane is where the gank lands (g19, g26).
         lim = lane.get("mia_limit_px")
         if lim is not None:
             a = self._along(s, sc.me_xy, mi.fwd)
             if a > lim:
                 risk += 6.0 + _units(a - lim) / 60.0
-                notes.append("past the middle, 3+ unseen")
+                notes.append("past the middle, 4+ unseen")
         # Their wave: standing in front of our own minions takes the aggro of every one of theirs.
         fwd = mi.fwd
         if sc.minions:
