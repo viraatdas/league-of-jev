@@ -383,3 +383,16 @@ for block, want_q in ((True, False), (False, True)):
     print("Sonic Wave, minion in the line" if block else "Sonic Wave, line clear", "->", mi.last_action)
     assert ("Sonic Wave" in mi.last_action) == want_q, mi.last_action
 print("FIGHT OK (sonic wave line)")
+
+# The live skillshot scorecard: a Q whose target lost HP within 0.8 s landed; one that did not, missed.
+mi, log = micro()
+hit, miss = track(unit("champion", 300, 0, 0.8), now), track(unit("champion", 300, 50, 0.8), now)
+mi.aimed("Q", hit, now)
+mi.aimed("Q", miss, now)
+hit.hist.append((now + 0.4, 0.72))
+miss.hist.append((now + 0.4, 0.80))
+hit.seen = miss.seen = now + 0.9
+mi.score_skills(now + 1.0)
+print("skillshot scorecard:", mi.skill_stats)
+assert mi.skill_stats["Q"] == [1, 2]
+print("FIGHT OK (scorecard)")

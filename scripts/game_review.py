@@ -93,6 +93,9 @@ if learned:
 if forecast:
     print("   " + forecast[-1].split(" ", 1)[1])
 print(f"   champions read on screen: {dict(names)}; her spells seen used: {len(spells)}")
+skills = [e for e in events if "skillshots on champions" in e]
+if skills:
+    print("   " + skills[-1].split(" ", 1)[1])
 for e in spells[:5]:
     print("     " + e)
 if lh:

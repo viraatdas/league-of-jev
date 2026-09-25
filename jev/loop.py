@@ -626,6 +626,7 @@ class Player:
             raw_minions = [u for u in raw_minions if self.lane.project(world(u))[1] < 900]
         minions = self.min_tracker.update(raw_minions, now)
         self._audit_lasthits(mi, now)
+        mi.score_skills(now)
         fwd = self._wave_fwd(view, raw_minions, world if camp_pt is None else None)
         mi.dodge_lines = self._opponent_throws_lines()
         champs = self.champ_tracker.update(view.enemies("champion"), now)
@@ -1129,6 +1130,9 @@ class Player:
                 self.log_lines.append(learner.summary())
                 self.log_lines.append(HP_MODEL.summary())
                 learner.save()
+            if mi.skill_stats:
+                self.log_lines.append("skillshots on champions (landed/thrown): "
+                                      + ", ".join(f"{k} {v[0]}/{v[1]}" for k, v in sorted(mi.skill_stats.items())))
             audit = getattr(self, "_lh_audit", None)
             if audit:
                 self.log_lines.append("lasthit audit (low minions that died near me): "

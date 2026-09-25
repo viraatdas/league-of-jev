@@ -369,6 +369,8 @@ class Micro:
         self.dodge_lines = True                                # the lane opponent throws line skillshots (sidestep)
         self.dash_ok = True                                    # farm dashes allowed (not near their tower)
         self.last_action_t = 0.0
+        self.skill_pending: list = []                          # (t, kind, champion track, her HP then): did it land?
+        self.skill_stats: dict = {}                            # kind -> [landed, thrown]
         self.plan_log: collections.deque = collections.deque(maxlen=400)  # lane planner picks, for the game log
         self.ad, self.aspd = 0.0, 0.7                          # set each tick (our hits' damage for measuring minions)
         self.trade_cooldown_until = 0.0                        # no new trade before then (one just ended)
@@ -425,6 +427,25 @@ class Micro:
         if self.on_fight_order is not None and any(k in what for k in self.FIGHT_WORDS):
             self.on_fight_order(what)
         self.orders += 1
+
+    def aimed(self, kind: str, tr, now: float) -> None:
+        """A skillshot thrown at a champion: scored by whether her HP drops within 0.8 s (the loop)."""
+        if tr is not None:
+            self.skill_pending.append((now, kind, tr, tr.unit.hp))
+
+    def score_skills(self, now: float) -> None:
+        keep = []
+        for t, kind, tr, hp0 in self.skill_pending:
+            if now - t < 0.8:
+                keep.append((t, kind, tr, hp0))
+                continue
+            seen = [h for th, h in tr.hist if t < th <= t + 0.8]
+            if not seen and now - tr.seen > 0.3:
+                continue  # out of sight: no answer
+            st = self.skill_stats.setdefault(kind, [0, 0])
+            st[1] += 1
+            st[0] += int(bool(seen) and min(seen) <= hp0 - 0.02)
+        self.skill_pending = keep
 
     def attack_ready(self, now: float, attack_speed: float) -> bool:
         return now - self.last_attack >= 1.0 / max(0.3, attack_speed)

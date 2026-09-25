@@ -579,6 +579,7 @@ class Yasuo(Kit):
             q3 = k == "q3_champ"
             d = sc.champ_dist or 0.0
             x, y = tornado_aim(sc, tr, now, aspd) if q3 else ground(tr.lead(now, q_cast_time(aspd) + 0.05))
+            mi.aimed("tornado" if q3 else "Q", tr, now)
             mi.cast(1, x, y)
             self.q.cast(True, now)
             self.burst_at = now
@@ -587,6 +588,7 @@ class Yasuo(Kit):
             mi._ordered(now, "plan: Q3 tornado at the champion" if q3 else "plan: Q the champion")
             return True
         if k == "eq_champ":
+            mi.aimed("E+Q onto her", tr, now)
             mi.cast(3, tr.unit.x, tr.unit.y)
             tr.e_marked_until = now + 10.0
             mi.later(FAST.eq_delay_s, lambda: mi.ctl.press(mi.kb.ability(1)))
@@ -682,6 +684,7 @@ class Yasuo(Kit):
             return True
         if rdy.get("Q") and q3 and d <= VC.q3_range * 0.92 and d > VC.e_range:
             x, y = tornado_aim(sc, ch, now, aspd)
+            mi.aimed("tornado", ch, now)
             mi.cast(1, x, y)
             self.q.cast(True, now)
             self.tornado_at = now
@@ -698,6 +701,7 @@ class Yasuo(Kit):
         # E through her lands 475 from where I start: from under 230 units that is 245+ past her, out of
         # the E+Q circle (215) and of auto range. Closer than that, Q and autos do it.
         if rdy.get("E") and VC.eq_min <= d <= VC.e_range and ch.e_marked_until <= now and not crowded:
+            mi.aimed("E+Q onto her" if rdy.get("Q") else "E onto her", ch, now)
             mi.cast(3, ch.unit.x, ch.unit.y)
             ch.e_marked_until = now + 10.0
             if rdy.get("Q"):
@@ -713,6 +717,7 @@ class Yasuo(Kit):
             return True
         if rdy.get("Q") and d <= VC.q_range + 30:
             x, y = tornado_aim(sc, ch, now, aspd) if q3 else ground(ch.lead(now, q_cast_time(aspd) + 0.05))
+            mi.aimed("tornado" if q3 else "Q", ch, now)
             mi.cast(1, x, y)
             self.q.cast(True, now)
             if q3:
@@ -1174,6 +1179,7 @@ class LeeSin(Kit):
         if mi._can_order(now) and sc.ready.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE * 0.9 and now - self.q_at > 3.0 \
                 and self.q_clear(sc, *ground(sc.champ.lead(now, 0.25 + d / 1800)), d):
             x, y = ground(sc.champ.lead(now, 0.25 + d / 1800))
+            mi.aimed("Sonic Wave", sc.champ, now)
             mi.cast(1, x, y)
             self.q_at = now
             mi._ordered(now, "poke: Q Sonic Wave")
@@ -1202,6 +1208,7 @@ class LeeSin(Kit):
         if sc.ready.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE * 0.9 \
                 and self.q_clear(sc, *ground(tr.lead(now, 0.25 + d / 1800)), d):
             x, y = ground(tr.lead(now, 0.25 + d / 1800))
+            mi.aimed("Sonic Wave", tr, now)
             mi.cast(1, x, y)
             self.q_at = now
             mi._ordered(now, "execute: Q Sonic Wave")
@@ -1240,6 +1247,7 @@ class LeeSin(Kit):
         if rdy.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE * 0.9 and now - self.q_at > 3.0 \
                 and self.q_clear(sc, *ground(ch.lead(now, 0.25 + d / 1800)), d):
             x, y = ground(ch.lead(now, 0.25 + d / 1800))
+            mi.aimed("Sonic Wave", ch, now)
             mi.cast(1, x, y)
             self.q_at = self.spell_at = now
             self.autos_since = 0
