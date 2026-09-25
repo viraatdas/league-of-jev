@@ -138,3 +138,22 @@ plan = p._objective_plan(d4, time.time())
 print("late power play:", plan)
 assert plan is not None and plan[2] == "power play: baron"
 print("MACRO OK (baron)")
+
+# A full tick: Jev says recall at 90% HP while two of them are dead for 25 s and our minions are at
+# their mid tower: the power play first, the shop after.
+from jev.brain import Decision
+d5 = with_dead(base, "CHAOS", 2, 25.0)
+d5["gameData"]["gameTime"] = 900.0
+d5["activePlayer"]["championStats"]["currentHealth"] = 0.9 * d5["activePlayer"]["championStats"]["maxHealth"]
+p = Player(dry_run=True)
+p.mech = Mechanics(p.ctl, p.screen, p.kb, "ORDER", lane=p.lane)
+p.phase = "lane"
+t5 = time.time()
+p.mm_state = MinimapState(self_pos=(7600.0, 7400.0), ts=t5, ally_minions=[(mid_outer[0] - 300, mid_outer[1] - 300)] * 3,
+                          enemy_champions=[(12000.0, 3000.0)])
+p.decision = Decision("recall", 0.8, {"recall": 0.8, "farm": 0.2}, 0.3, 0.9, 0.5, 1.0, None, 0.0, 150, "jev-test", 1400, ts=t5)
+p.state = {"me": {"hp_percent": 90, "alive": True, "level": 11}, "objectives": {"next_dragon_in_s": 120}}  # (the brain thread's, live)
+p._tick(d5, t5)
+print("recall in a power play ->", p.intent, "|", getattr(p, "_obj_label", ""))
+assert p.intent == "objective" and "power play" in getattr(p, "_obj_label", "")
+print("MACRO OK (no recall in a power play)")
