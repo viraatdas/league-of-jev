@@ -95,3 +95,17 @@ p.view = View(units=wave + ours + [me, her], me=me, ts=time.time())
 p._shove_t0 = -1e9
 assert not p._shove_first({}, {}, {}, t0 + 120.0, 80.0)         # their champion there: no
 print("MACRO OK (shove)")
+
+# A lane open to their base in a power play: the nexus tower, then the nexus.
+RS = config.RED_STRUCTURES
+d3 = with_dead(base, "CHAOS", 3, 30.0)
+mmn = MinimapState(self_pos=(11000.0, 11000.0), ts=time.time(), ally_minions=[(12500.0, 12900.0)] * 3)
+sN = macro.analyze(d3, mmn, "ORDER", set(), {3, 4, 5})
+tN = macro.power_play_target(sN, mmn.pos, mmn, "ORDER", [])
+print("mid open:", tN)
+assert tN is not None and tN[1] in (config.RED_TOWERS[9], config.RED_TOWERS[10])  # (both next to our minions)
+sN = macro.analyze(d3, mmn, "ORDER", set(), {3, 4, 5, 9, 10})
+tN = macro.power_play_target(sN, mmn.pos, MinimapState(self_pos=mmn.pos, ally_minions=[(13100.0, 13100.0)] * 3), "ORDER", [])
+print("nexus towers down:", tN)
+assert tN is not None and tN[1] == RS[-1]
+print("MACRO OK (end game)")

@@ -225,7 +225,7 @@ class TowerWatch:
         hsv = cv2.cvtColor(crop_bgr[:, :, :3], cv2.COLOR_BGR2HSV)
         new = []
         for team, towers in (("blue", config.BLUE_TOWERS), ("red", config.RED_TOWERS)):
-            for i, t in enumerate(towers[:9]):
+            for i, t in enumerate(towers[:11]):     # the nine lane towers and the two nexus towers
                 key = (team, i)
                 if key in self.dead:
                     continue

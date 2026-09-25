@@ -122,6 +122,17 @@ def power_play_target(s: Situation, me_pos, mm, side: str, allies: list) -> tupl
         score = d - 1500 * friends - 400 * minions
         if best is None or score < best[0]:
             best = (score, t, f"power play: their {TOWER_NAMES[i]} ({minions} of our minions, {friends} of us there)")
+    if best is None and any(s.frontmost_enemy_tower(k) is None for k in range(3)):
+        # A lane open to their base: the nexus towers, then the nexus (the game ends there).
+        structures = config.RED_STRUCTURES if side == "ORDER" else config.BLUE_STRUCTURES
+        standing = [theirs[i] for i in (9, 10) if s.their_towers[i]]
+        ours_at = lambda q: (sum(1 for m in (mm.ally_minions if mm is not None else []) if dist(m, q) < 1200)
+                             + 2 * sum(1 for a in allies if dist(a, q) < 1800))
+        t = max(standing, key=lambda q: (ours_at(q), -dist(me_pos, q))) if standing else structures[-1]
+        minions = sum(1 for m in (mm.ally_minions if mm is not None else []) if dist(m, t) < 1200)
+        friends = sum(1 for a in allies if dist(a, t) < 1800)
+        if (minions >= 2 or friends >= 2) and dist(me_pos, t) / 380.0 <= left + 4.0:
+            best = (0.0, t, f"power play: their {'nexus tower' if standing else 'nexus'} ({minions} of our minions, {friends} of us there)")
     if best is not None:
         return ("objective", best[1], best[2])
     return None
