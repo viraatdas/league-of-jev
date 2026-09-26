@@ -52,8 +52,11 @@ class LaneLearner:
             return
         for k in self.cal:
             if k in d.get("cal", {}):
-                self.cal[k] = [float(v) for v in d["cal"][k]]
-                self.cal_n[k] = min(20, int(d.get("cal_n", {}).get(k, 0)))  # held loosely: a new game moves them
+                a, b = (float(v) for v in d["cal"][k])
+                # Half way back to neutral and held loosely: g31's autos failed for a reason fixed since
+                # (an uncapped forecast), its curve said autos never kill, and g33 opened with 0 CS at 5:00.
+                self.cal[k] = [1.0 + (a - 1.0) * 0.5, b * 0.5]
+                self.cal_n[k] = min(10, int(d.get("cal_n", {}).get(k, 0)))
         self.in_reach = float(d.get("in_reach", self.in_reach))
         self.out_reach = float(d.get("out_reach", self.out_reach))
         self.aggro = float(d.get("aggro", self.aggro))
@@ -95,8 +98,9 @@ class LaneLearner:
         n = self.cal_n[kind]
         lr = 0.25 / math.sqrt(1.0 + n / 10.0)
         g = float(ok) - _sig(a * z + b)
-        a = max(0.3, min(3.0, a + lr * g * max(-3.0, min(3.0, z))))
-        b = max(-3.0, min(3.0, b + lr * g))
+        # Bounded: a curve that stops believing in a sure kill starves the farm (g33).
+        a = max(0.6, min(2.5, a + lr * g * max(-3.0, min(3.0, z))))
+        b = max(-1.0, min(1.0, b + lr * g))
         self.cal[kind] = [a, b]
         self.cal_n[kind] = n + 1
 

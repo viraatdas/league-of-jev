@@ -135,7 +135,8 @@ for _ in range(25):
     lr.lasthit("Q-caster", 1.5, False)
 p1 = lr.p_kill("Q", 1.5)
 print(f"Q curve at z=1.5: {p0:.2f} -> {p1:.2f} after 25 misses")
-assert p0 > 0.75 and p1 < 0.5
+assert p0 > 0.75 and p1 < 0.6
+assert lr.p_kill("Q", 4.0) > 0.8   # bounded: a big margin is still a likely kill (g33 had stopped believing)
 t, hp = 100.0, 90.0
 for k in range(40):
     lr.exposure(t + 0.25 * k, hp - 1.25 * k, True)   # 5% a second inside her reach
