@@ -287,3 +287,19 @@ mi.farm_step(sc, now, 0.7)
 print("melee opponent in range:", mi.last_action)
 assert not mi.last_action.startswith("farm: sidestep")
 print("SIDESTEP OK")
+
+# Far behind in HP against a healthy champion: Jev's trade becomes a back off (g31: 46% vs 92%, dead).
+p = setup(now)
+p.kit = Yasuo()
+p.fights = SimpleNamespace(log=FightLog(None))
+p.micro.hp_pct = 46.0
+e = track(450, 0.92, 1, now)
+p.champ_tracker.tracks = {1: e}
+sc = Scene(me_xy=ME, ready={"Q": True, "E": True})
+sc.champ, sc.champ_dist, sc.enemy_champs = e, sc.dist(e), 1
+read = fr("trade", 0.6, 1)
+read.trade_worth = 0.70
+p._apply_fight_read(read, sc, p.micro, now)
+print("trade at 46% vs 92%:", p.micro.mode)
+assert p.micro.mode == "back_off"
+print("TEAMFIGHT OK (hp gap floor)")

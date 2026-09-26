@@ -1360,6 +1360,15 @@ class Player:
         if (plan in ("all_in", "trade") and ch is not None and mi.hp_pct < 25 and ch.unit.hp > mi.hp_pct / 100 + 0.15
                 and fr.win_all_in < 0.8):
             plan = "back_off"  # losing floor: low and behind
+        if plan in ("all_in", "trade") and ch is not None and not sc.ally_champs and ch.unit.hp > 0.3:
+            # Far behind in HP against a healthy one: no trade. g31: Q-trading Mordekaiser at 46% against his
+            # 92% on Jev's trade_worth 0.70, then dead fleeing at 13:00. Tighter once this matchup's
+            # exchanges have been losing (the learner's trade edge).
+            lr = getattr(mi, "learner", None)
+            edge = lr.edge.get(lr.opponent) if lr is not None else None
+            gap = ch.unit.hp * 100 - mi.hp_pct
+            if gap > (5 if (edge is not None and edge < 0) else 20):
+                plan = "back_off" if mi.hp_pct < 50 else "poke"
         if plan in ("all_in", "trade") and getattr(self, "_near_enemy_tower", False) and not (
                 ch is not None and ch.unit.hp < 0.25 and fr.win_all_in >= 0.8):
             plan = "poke"
@@ -1706,7 +1715,7 @@ class Player:
             near = [e for e in mm.enemy_champions if dist(e, j["pt"]) < 1800]
             if near:
                 j["pt"], j["seen"] = min(near, key=lambda e: dist(e, j["pt"])), now
-            if now > j["until"] or now - j["seen"] > 3 or hp < 40:
+            if now > j["until"] or now - j["seen"] > 3 or hp < 50:   # (at 46% it still walked in, g31 13:00)
                 self._join, self._join_next = None, now + 6.0
                 return None
             return ("objective", j["pt"], "join the fight")
