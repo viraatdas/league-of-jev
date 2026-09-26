@@ -178,6 +178,13 @@ def run(champion: str = "yasuo", minutes: float = 18.0, tag: str = "", difficult
             if not harness_alive():
                 _say("harness not running: restarting it")
                 start_harness()
+            elif log.exists() and time.time() - log.stat().st_mtime > 60:
+                # Alive but silent: the harness writes its log every second. g33's froze for two minutes
+                # (no error) until stopped by hand; a hung harness now gets the same restart as a dead one.
+                _say("harness silent for 60 s: restarting it")
+                stop_harness()
+                time.sleep(2)
+                start_harness()
             if time.time() - last_note > 60:
                 last_note = time.time()
                 try:

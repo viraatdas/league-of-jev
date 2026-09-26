@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import collections
+import faulthandler
 import json
 import math
 import threading
@@ -2159,11 +2160,17 @@ class Player:
                         self.paused = False
                         if self.mech:
                             self.mech._last_move = 0.0
-                    self._pause_guard(data, t0)
-                    self._dismiss_dialog(t0)
-                    self._close_stray_shop(t0)
-                    self._lasthit_check(float((data.get("activePlayer") or {}).get("currentGold", 0.0)), t0)
-                    perception = self._tick(data, t0)
+                    # Watchdog: an iteration stuck for 30 s dumps every thread's stack to the console (g33 froze
+                    # at 17:21 for two minutes with no error; the next one names its culprit).
+                    faulthandler.dump_traceback_later(30.0, exit=False)
+                    try:
+                        self._pause_guard(data, t0)
+                        self._dismiss_dialog(t0)
+                        self._close_stray_shop(t0)
+                        self._lasthit_check(float((data.get("activePlayer") or {}).get("currentGold", 0.0)), t0)
+                        perception = self._tick(data, t0)
+                    finally:
+                        faulthandler.cancel_dump_traceback_later()
                     self.state = self._full_state(data, perception)
                     self.dlog.resolve(self._metrics())
                     if self.fights is not None:
