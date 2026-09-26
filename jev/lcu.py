@@ -265,6 +265,13 @@ class LCU:
         me = next((p for p in sess.get("myTeam", []) if p.get("cellId") == cell), {})
         return str(me.get("assignedPosition") or "-")
 
+    def smite_refused(self, position: str, sess: dict) -> bool:
+        """A jungler assigned elsewhere: Smite is set, then read back missing."""
+        if (position or "").lower() != "jungle" or self._my_position(sess).lower() in ("jungle", "-", ""):
+            return False
+        ok, _ = self.set_spell_ids(*SPELLS_BY_POSITION["jungle"], tries=1)
+        return not ok
+
     def probe_spells(self) -> str:
         """Diagnostic: switch to Flash + Smite and back, reporting what each endpoint did."""
         before = self.my_spells()
@@ -302,11 +309,26 @@ class LCU:
         t0 = time.time()
         picked = False
         tried_early = False
+        restarts = 0
         while time.time() - t0 < timeout_s:
             phase = self.gameflow()
             if phase == "ChampSelect" and not picked:
                 code, sess = self.req("GET", "/lol-champ-select/v1/session")
                 if code == 200:
+                    if not tried_early and self.smite_refused(position, sess) and restarts < 3:
+                        # Smite goes only to the assigned jungler, and custom lobbies sometimes assign us
+                        # top: g34's Lee started without Smite or a pet and was level 1 at 3:09. A new
+                        # champ select draws positions again.
+                        restarts += 1
+                        cc, cb = self.req("POST", "/lol-lobby/v1/lobby/custom/cancel-champ-select")
+                        yield f"assigned {self._my_position(sess)}, Smite refused: cancel champ select {cc} {cb if cc >= 400 else ''}"
+                        time.sleep(2.0)
+                        self.req("PUT", "/lol-lobby/v2/lobby/members/localMember/position-preferences",
+                                 {"firstPreference": position.upper(), "secondPreference": "FILL"})
+                        c, b = self.start_champ_select()
+                        yield f"start champ select again ({restarts}): {c} {b if c >= 400 else ''}"
+                        time.sleep(2.0)
+                        continue
                     if not tried_early:
                         # Spells at three moments (before the hover, after it, after the lock): a
                         # 204 alone never meant they stuck, and which moment works is not known.
