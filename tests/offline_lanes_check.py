@@ -125,3 +125,23 @@ p._towers_from_minimap()
 print("own mid line", round(before, 3), "->", round(p.lane.own_tower, 3), list(p.log_lines)[-2:])
 assert p.lane.own_tower < before - 0.05
 print("LANES OK (tower watch)")
+
+# The real TurretKilled names (g30): Turret_T{Order,Chaos}_L{0 bot,1 mid,2 top}_P{3 outer,2 inner,1 inhib}_...
+from jev.loop import tower_from_event
+assert tower_from_event("Turret_TChaos_L1_P3_2254202041_0") == ("red", 3)   # their mid outer
+assert tower_from_event("Turret_TOrder_L2_P3_1509986696_0") == ("blue", 0)  # our top outer
+assert tower_from_event("Turret_TChaos_L0_P2_528623213_0") == ("red", 7)    # their bot inner
+import copy as _copy
+from jev.riot_api import load_fixture as _lf
+p = _P(dry_run=True)
+p.mech = Mechanics(p.ctl, p.screen, p.kb, "ORDER", lane=p.lane)
+d = _lf("tests/fixtures/midgame_yasuo_vs_zed.json")
+p._tick(d, _t.time())
+before = p.lane.own_tower
+d2 = _copy.deepcopy(d)
+d2.setdefault("events", {}).setdefault("Events", []).append(
+    {"EventID": 77, "EventName": "TurretKilled", "EventTime": 900.0, "TurretKilled": "Turret_TOrder_L1_P3_1242677625_0"})
+p._tick(d2, _t.time() + 1)
+print("event Turret_TOrder_L1_P3: our mid line", round(before, 3), "->", round(p.lane.own_tower, 3))
+assert p.lane.own_tower < before - 0.05 and ("blue", 3) in p.tower_watch.dead
+print("LANES OK (tower events)")

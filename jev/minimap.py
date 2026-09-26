@@ -230,8 +230,9 @@ class TowerWatch:
         hsv = cv2.cvtColor(crop_bgr[:, :, :3], cv2.COLOR_BGR2HSV)
         new = []
         for team, towers in (("blue", config.BLUE_TOWERS), ("red", config.RED_TOWERS)):
-            # Our towers: a false "dead" only moves our retreat line back (the safe way), so they are
-            # called sooner and without the icon guard (Yasuo standing on the ruins kept it "standing").
+            # (With `ours` set, our towers are called sooner and without the icon guard. Not used live: in
+            # g30 that called our three outer towers dead 2-5 minutes early, enemies standing on them;
+            # the TurretKilled events give ours exactly now.)
             mine = ours is not None and team == ours
             cover = [] if mine else ((red_icons if team == "blue" else blue_icons) or [])
             confirm = 3 if mine else self.CONFIRM

@@ -42,6 +42,30 @@ from jev.vision import View, VisionReader
 console = Console()
 
 
+def tower_from_event(name: str) -> tuple[str, int] | None:
+    """A TurretKilled name to (team colour, tower index). This patch's names look like
+    Turret_TChaos_L1_P3_2254202041_0: T{Order,Chaos}, lane L0 bot / L1 mid / L2 top, P3 outer /
+    P2 inner / P1 inhibitor (matched against the minimap watch in g30); the older
+    Turret_T2_C_05_A form is read too. None when the name does not parse."""
+    import re as _re
+
+    m = _re.match(r"Turret_T(Order|Chaos)_L(\d)_P(\d)", name)
+    if m:
+        team = "blue" if m.group(1) == "Order" else "red"
+        lane = {0: 2, 1: 1, 2: 0}.get(int(m.group(2)))
+        tier = {3: 0, 2: 1, 1: 2}.get(int(m.group(3)))
+        if lane is None or tier is None:
+            return None
+        return team, lane * 3 + tier
+    m = _re.match(r"Turret_T([12])_([LCR])_(\d\d)_A", name)
+    if m:
+        team = "blue" if m.group(1) == "1" else "red"
+        lane = {"L": 0, "C": 1, "R": 2}[m.group(2)]
+        tier = {5: 0, 4: 1, 3: 2}.get(int(m.group(3))) if lane == 1 else {3: 0, 2: 1, 1: 2}.get(int(m.group(3)))
+        return (team, lane * 3 + tier) if tier is not None else None
+    return None
+
+
 def inp_hp(data: dict) -> float:
     cs = (data.get("activePlayer") or {}).get("championStats") or {}
     return 100.0 * float(cs.get("currentHealth", 0.0)) / max(1.0, float(cs.get("maxHealth", 1.0)))
@@ -310,8 +334,7 @@ class Player:
                             self._tower_checked = f.ts   # (the box found: the minimap is on screen)
                             ours = list(st.ally_champions) + [st.self_pos]
                             blue, red = (ours, list(st.enemy_champions)) if self.side == "ORDER" else (list(st.enemy_champions), ours)
-                            for key in self.tower_watch.update(frame[y0:y0 + side, x0:x0 + side], self.mm, blue, red,
-                                                               ours="blue" if self.side == "ORDER" else "red"):
+                            for key in self.tower_watch.update(frame[y0:y0 + side, x0:x0 + side], self.mm, blue, red):
                                 self._towers_seen_dead.append(key)
                     if self.vision is not None:
                         v = self.vision.read(frame)
@@ -2196,6 +2219,12 @@ class Player:
                 if tk not in self._dead_turrets:
                     self._dead_turrets.add(tk)
                     self.log_lines.append(f"tower killed (event): {tk}")
+                    key = tower_from_event(tk)
+                    if key is not None and key not in self.tower_watch.dead:
+                        # The event is exact and immediate: the minimap watch's answer, now.
+                        self.tower_watch.dead.add(key)
+                        self._towers_seen_dead.append(key)
+                        self._towers_from_minimap()
                     self._rehome_own_tower()
             if e.get("EventName") == "TurretKilled" and f"Turret_{enemy_tag}_{LANE_LETTER[self.lane.name]}_" in tk:
                 try:
