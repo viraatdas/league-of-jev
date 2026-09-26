@@ -278,6 +278,18 @@ def relaunch_client() -> str:
     except Exception:  # noqa: BLE001
         pass
     time.sleep(10)
+    if not RIOT_LOCKFILE.exists():
+        # The Riot Client itself is down (only crash handlers left after days): `open -a "League of
+        # Legends"` then starts nothing; its services binary does, and logs in with the saved session.
+        rcs = Path("/Users/Shared/Riot Games/Riot Client.app/Contents/MacOS/RiotClientServices")
+        if rcs.exists():
+            subprocess.Popen([str(rcs), "--launch-product=league_of_legends", "--launch-patchline=live"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            for _ in range(30):
+                if RIOT_LOCKFILE.exists():
+                    break
+                time.sleep(2)
+            time.sleep(15)  # the saved login
     try:
         _, _, port, pw, _ = RIOT_LOCKFILE.read_text().split(":")
         r = httpx.post(f"https://127.0.0.1:{port}/product-launcher/v1/products/league_of_legends/patchlines/live",
