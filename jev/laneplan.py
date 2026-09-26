@@ -95,7 +95,12 @@ class LanePlanner:
         return HP_GOLD * (1.0 + max(0.0, 60.0 - hp_pct) / 30.0)
 
     def _at(self, tr, now: float, delay: float) -> float:
-        return tr.predict_hp(now, delay) * getattr(tr, "hp_max", 400.0)
+        """HP at the moment our hit lands, counting on at most FAST.forecast_cap (40) of others' damage
+        before it: g31's forecast ran 14% off at half a second, and uncapped, "last hit" autos went at
+        minions still at 31-90% (autos paid 3/19). The rules had this cap; the planner had dropped it."""
+        hp_max = getattr(tr, "hp_max", 400.0)
+        pred = tr.predict_hp(now, delay) * hp_max
+        return max(pred, tr.unit.hp * hp_max - FAST.forecast_cap)
 
     def _gold(self, tr) -> float:
         return GOLD.get(getattr(tr, "role", "") or "", 17.0)

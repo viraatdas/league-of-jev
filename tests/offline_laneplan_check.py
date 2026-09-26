@@ -239,3 +239,15 @@ pick = mi.plan_log[-1]["pick"]["kind"]
 assert pick in ("auto", "q") and "champion" not in mi.last_action   # a last hit (Q reaches the one by her), nothing on her
 assert not any(o["kind"] in ("e", "eq", "eq_champ", "q_champ", "auto_champ") for o in [mi.plan_log[-1]["pick"]])
 print("LANEPLAN OK (back off)")
+
+# The forecast is capped: a minion at 40% falling fast by its trail is not an auto last hit (at most
+# 40 HP of others' damage is counted on before our hit), g31.
+y5 = Yasuo()
+y5.q.hud = False
+pl5 = LanePlanner(y5)
+mi = micro()
+falling = tr("minion", 150, 0, 0.40, 60, hp_max=300.0, rate=1.2)   # -120%/s by its trail: the forecast says dead
+best, top = pl5.choose(scene([falling], ready=""), mi, now, False)
+print("40% minion, steep trail:", best.kind, best.why)
+assert best.kind != "auto" or "p=0.0" in best.why or best.p < 0.5
+print("LANEPLAN OK (forecast cap)")
