@@ -1748,6 +1748,17 @@ class Player:
                 return ("objective", (cx, cy), "group with the team")
         return None
 
+    def _under_enemy_tower(self, pt) -> bool:
+        """A map point inside the reach of one of their standing towers."""
+        sit = getattr(self, "situation", None)
+        towers = config.RED_TOWERS if self.side == "ORDER" else config.BLUE_TOWERS
+        for i, t in enumerate(towers[:11]):
+            if sit is not None and i < len(sit.their_towers) and not sit.their_towers[i]:
+                continue
+            if dist(pt, t) < config.TOWER_RANGE:
+                return True
+        return False
+
     def _join_fight_plan(self, mm, allies: list, gt: float, hp: float, now: float):
         """A skirmish close by: enemy champions next to ours on the minimap, within 3000 units of me,
         our side not outnumbered once I arrive. Kills happen in those fights (Ashe was 7/1 at 13:00 in
@@ -1757,7 +1768,8 @@ class Player:
             near = [e for e in mm.enemy_champions if dist(e, j["pt"]) < 1800]
             if near:
                 j["pt"], j["seen"] = min(near, key=lambda e: dist(e, j["pt"])), now
-            if now > j["until"] or now - j["seen"] > 3 or hp < 50:   # (at 46% it still walked in, g31 13:00)
+            dive = self._under_enemy_tower(j["pt"]) and sum(1 for a in allies if dist(a, j["pt"]) < 1300) < 2
+            if now > j["until"] or now - j["seen"] > 3 or hp < 50 or dive:   # (at 46% it still walked in, g31 13:00)
                 self._join, self._join_next = None, now + 6.0
                 return None
             return ("objective", j["pt"], "join the fight")
@@ -1775,6 +1787,8 @@ class Player:
             foes = [o for o in mm.enemy_champions if dist(o, e) < 1500]
             if not friends or len(friends) + 1 < len(foes):
                 continue
+            if len(friends) < 2 and self._under_enemy_tower(e):
+                continue  # a fight at their tower is a dive: g33's Yasuo joined one on Shen there and died (6:41)
             if self.jungle_state is None and len(friends) < 2 and d > 2500:
                 continue  # a laner leaves the wave for a real fight, not every 1-on-1 across the map (CS 30 at 21:00, g26)
             score = d - 800 * len(friends)

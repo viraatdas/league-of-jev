@@ -34,6 +34,7 @@ E_MOVE_MIN = 6.0         # a dash that kills nothing must reach a clearly better
 E_MIN = 2.0              # a dash worth less than this is noise (it moves me for nothing)
 Q_COST_NEAR_HER = 5.0    # Q on cooldown when she walks in: the trade we cannot take
 MOVE_GAIN_MIN = 2.5      # a new spot must be this much better than standing still
+TOWER_HIT = 40.0       # a champion hit that draws their tower's shots (gold-equivalents; one shot is ~10% HP early)
 AUTO_MISS = 7.0          # a missed last-hit auto: its cooldown spent, and the minion often left for ours
 
 
@@ -381,11 +382,22 @@ class LanePlanner:
         if ch is not None and agg > 0.2:
             ahead = mi.hp_pct - ch.unit.hp * 100
             w = champ_w
+            # Hitting her from inside her tower's reach draws its shots (g33: dead at 2:32 chasing Shen
+            # under his tower): hits that put me next to her there cost a tower shot or two.
+            under = getattr(self.kit, "under_their_tower", None)
+            dive = getattr(self.kit, "dive_ok", None)
+            tower_hit = 0.0
+            if under is not None and not (dive is not None and dive(mi, sc)):
+                if under(sc, ch.unit.x, ch.unit.y):
+                    tower_hit = TOWER_HIT
+                i_am_under = under(sc, *sc.me_xy)
+            else:
+                i_am_under = False
             if attack_ready and cd <= VC.auto_range + 40:
-                v = sc.ad / her_hp_units * 100 * w - aggro_cost - (6.0 if ahead < -15 else 0.0)
+                v = sc.ad / her_hp_units * 100 * w - aggro_cost - (6.0 if ahead < -15 else 0.0) - tower_hit
                 out.append(Option("auto_champ", v, ch, why=f"ahead {ahead:+.0f} her wave {her_wave}"))
             if ready.get("Q") and not q3 and cd <= VC.q_range + 20:
-                v = sc.q_dmg / 0.88 / her_hp_units * 100 * w - aggro_cost + Q_STACK
+                v = sc.q_dmg / 0.88 / her_hp_units * 100 * w - aggro_cost + Q_STACK - (TOWER_HIT if i_am_under and tower_hit else 0.0)
                 out.append(Option("q_champ", v, ch, why=f"her wave {her_wave}"))
             if ready.get("Q") and q3 and cd <= VC.q3_range * 0.9:
                 # The tornado is Yasuo's only hard CC: worth its knock-up when something follows it (R up,
@@ -397,7 +409,7 @@ class LanePlanner:
             if e_ok and ready.get("Q") and VC.eq_min <= cd <= VC.e_range and ch.e_marked_until <= now:
                 # (from closer the dash ends 245+ past her: the circle and the next auto miss)
                 exit_ok = self._exit_after(sc, mi, self._landing(sc, ch), ch, now)
-                v = (sc.e_dmg + sc.q_dmg) / 0.85 / her_hp_units * 100 * w - aggro_cost - ((4.0 if exit_ok else 10.0) if ahead < -10 else 0.0)
+                v = (sc.e_dmg + sc.q_dmg) / 0.85 / her_hp_units * 100 * w - aggro_cost - ((4.0 if exit_ok else 10.0) if ahead < -10 else 0.0) - tower_hit
                 out.append(Option("eq_champ", v, ch, why=f"ahead {ahead:+.0f} her wave {her_wave}{', dash out ready' if exit_ok else ''}"))
 
         # Where to stand

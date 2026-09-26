@@ -147,12 +147,36 @@ class Kit:
         mi.set_mode("farm", now)
         return False
 
+    TOWER_DANGER = 950.0   # units from their tower's centre: its range (775) plus bodies and a step
+
+    @staticmethod
+    def under_their_tower(sc: Scene, x: float, y: float) -> bool:
+        """A screen point inside their tower's reach (the loop puts the tower's screen position in
+        sc.lane when one of theirs stands within 1700 units)."""
+        t = sc.lane.get("tower_px") if isinstance(sc.lane, dict) else None
+        if t is None:
+            return False
+        return math.hypot(x - t[0], y - t[1]) <= Kit.TOWER_DANGER * VC.px_per_unit
+
+    @staticmethod
+    def dive_ok(mi: Micro, sc: Scene) -> bool:
+        """Into their tower's reach only for a kill that is all but done."""
+        ch = sc.champ
+        return ch is not None and ch.unit.hp < 0.2 and mi.hp_pct >= 60
+
     def hit_or_chase(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, reach: float = 0.0) -> bool:
         """Auto the champion when in range, otherwise walk onto them (orb-walk: move between autos).
         A trade does not chase: out of reach for 1.2 s it is over (walking after a ranged champion
         into her wave cost HP for nothing, g06)."""
         ch, d = sc.champ, sc.champ_dist or 9e9
         rng = (reach or VC.auto_range) + 60
+        if mode in ("trade", "all_in") and self.under_their_tower(sc, ch.unit.x, ch.unit.y) and not self.dive_ok(mi, sc):
+            # Walking after her (or hitting her) inside her tower's reach draws its shots: g33's Yasuo
+            # chased Shen under his tower at 2:28, was taunted there and died 90% -> 0 in three seconds.
+            mi.set_mode("farm", now)
+            mi.trade_cooldown_until = now + 4.0
+            mi.last_action, mi.last_action_t = f"{mode}: she is under her tower, back to farming", now
+            return False
         if d <= rng:
             self._in_reach_t = now
         elif mode == "trade" and now - max(getattr(self, "_in_reach_t", 0.0), mi.mode_since) > 1.2:
@@ -708,7 +732,8 @@ class Yasuo(Kit):
             return False
         # E through her lands 475 from where I start: from under 230 units that is 245+ past her, out of
         # the E+Q circle (215) and of auto range. Closer than that, Q and autos do it.
-        if rdy.get("E") and VC.eq_min <= d <= VC.e_range and ch.e_marked_until <= now and not crowded:
+        towered = self.under_their_tower(sc, ch.unit.x, ch.unit.y) and not self.dive_ok(mi, sc)
+        if rdy.get("E") and VC.eq_min <= d <= VC.e_range and ch.e_marked_until <= now and not crowded and not towered:
             mi.aimed("E+Q onto her" if rdy.get("Q") else "E onto her", ch, now, 1.1)
             mi.cast(3, ch.unit.x, ch.unit.y)
             ch.e_marked_until = now + 10.0
@@ -742,7 +767,8 @@ class Yasuo(Kit):
             return True
         if self.ignite_if_kill(mi, sc, now, mode):
             return True
-        if rdy.get("E") and d > VC.auto_range + 120 and sc.dash_options and (mode == "all_in" or rdy.get("Q")) and not crowded:
+        if (rdy.get("E") and d > VC.auto_range + 120 and sc.dash_options and (mode == "all_in" or rdy.get("Q"))
+                and not crowded and not towered):
             tr = sc.dash_options[0][0]
             land = self._landing(sc, tr)
             mi.cast(3, tr.unit.x, tr.unit.y)
@@ -792,6 +818,8 @@ class Yasuo(Kit):
             return False
         if not (mi.flash_in_ok or (ch.unit.hp < 0.35 and mi.hp_pct >= 60)):
             return False
+        if self.under_their_tower(sc, ch.unit.x, ch.unit.y) and not self.dive_ok(mi, sc):
+            return False
         best = None
         for m in sc.minions:
             if m.e_marked_until > now or sc.dist(m) > VC.e_range:
@@ -821,6 +849,8 @@ class Yasuo(Kit):
         55% is an all in (the knock-up into R is Yasuo's kill combo; R went unused in g09-g13)."""
         ch, d, rdy = sc.champ, sc.champ_dist or 9e9, sc.ready
         if now - getattr(self, "_last_window", 0.0) < 8.0 or level_diff < 0:
+            return None
+        if self.under_their_tower(sc, ch.unit.x, ch.unit.y) and not self.dive_ok(mi, sc):
             return None
         knockup = rdy.get("Q") and self.q.q3(now) and d <= VC.q3_range * 0.85
         if (self.r_up(now) and knockup and ch.unit.hp < 0.55 and mi.hp_pct >= 45 and not (sc.enemy_champs >= 2 and not sc.ally_champs)

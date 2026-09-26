@@ -252,3 +252,18 @@ best, top = pl5.choose(scene([falling], ready=""), mi, now, False)
 print("40% minion, steep trail:", best.kind, best.why)
 assert best.kind != "auto" or "p=0.0" in best.why or best.p < 0.5
 print("LANEPLAN OK (forecast cap)")
+
+# Her tower: an auto or E+Q on her while she stands inside its reach costs a tower shot or two
+# (g33, dead at 2:32 chasing Shen under his tower). Same hits with her in the open are still taken.
+y6 = Yasuo()
+y6.q.hud = False
+pl6 = LanePlanner(y6)
+mi = micro()
+her = tr("champion", 160, 0, 0.6, 9, role="")
+sc = scene([], champ=her, ready="QE")
+open_best = {o.kind: o.value for o in pl6.options(sc, mi, now, False)}
+sc.lane["tower_px"] = (ME[0] + 900 * PPU, ME[1])     # their tower 740 units behind her
+towered = {o.kind: o.value for o in pl6.options(sc, mi, now, False)}
+print("auto on her in the open / under her tower:", round(open_best.get("auto_champ", -99), 1), round(towered.get("auto_champ", -99), 1))
+assert open_best["auto_champ"] > 0 > towered["auto_champ"]
+print("LANEPLAN OK (their tower)")

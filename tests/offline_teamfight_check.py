@@ -180,6 +180,21 @@ assert j is not None and j[2] == "join the fight"
 p = setup(now)
 mm.enemy_champions, mm.ally_champions = [e, (8200.0, 7600.0), (7900.0, 7300.0)], [(8300.0, 7400.0)]
 assert p._join_fight_plan(mm, mm.ally_champions, 600.0, 80.0, now) is None
+# One of ours on one of theirs under their standing tower: a dive, stay out (g33, 6:41); two of ours
+# there: join.
+from jev import config as _cfg
+p = setup(now)
+their = (_cfg.RED_TOWERS if p.side == "ORDER" else _cfg.BLUE_TOWERS)[3]      # their mid outer
+e = (their[0] - 300.0 if p.side == "ORDER" else their[0] + 300.0, their[1])
+mm.self_pos = (e[0] - 1700.0, e[1] - 1700.0) if p.side == "ORDER" else (e[0] + 1700.0, e[1] + 1700.0)
+mm.enemy_champions, mm.ally_champions = [e], [(e[0] - 200.0, e[1])]
+print("fight under their tower, one of ours:", p._join_fight_plan(mm, mm.ally_champions, 600.0, 80.0, now))
+assert p._join_fight_plan(mm, mm.ally_champions, 600.0, 80.0, now) is None
+p = setup(now)
+mm.ally_champions = [(e[0] - 200.0, e[1]), (e[0], e[1] - 250.0)]
+j = p._join_fight_plan(mm, mm.ally_champions, 600.0, 80.0, now)
+print("... two of ours:", j)
+assert j is not None
 print("JOIN OK")
 
 # A trade that left her at 30% while I am at 85%: upgrade to all in.

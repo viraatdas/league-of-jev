@@ -402,3 +402,25 @@ mi.score_skills(now + 1.4)
 print("skillshot scorecard:", mi.skill_stats)
 assert mi.skill_stats["Q"] == [1, 2] and mi.skill_stats["Sonic Wave"] == [1, 1]
 print("FIGHT OK (scorecard)")
+
+# Her tower: g33's Yasuo chased Shen under his tower at 2:28 and died 90% -> 0 in three seconds.
+# With her inside its reach: no chase, no E onto her, no trade window; at 15% with me healthy the
+# dive for the kill goes on. Her in the open next to the same tower's reach: the trade stands.
+tower_px = (ME[0] + 1300 * VC.px_per_unit, ME[1])      # their tower 1300 units to my right
+for her_dx, her_hp, my_hp, want_trade in ((600, 0.7, 90, False), (600, 0.15, 90, True), (250, 0.7, 90, True)):
+    y = Yasuo()
+    y.q.hud = False
+    mi, log = micro()
+    mi.hp_pct = my_hp
+    mi.set_mode("trade", now)
+    sc = scene(track(unit("champion", her_dx, 0, her_hp), now), [], "QE")
+    sc.lane = {"tower_px": tower_px}
+    under = Yasuo.under_their_tower(sc, sc.champ.unit.x, sc.champ.unit.y)
+    y.fight(mi, sc, now, 0.7, "trade")
+    window = Yasuo().trade_window(mi, sc, now, 0)
+    print(f"her {her_dx}u from me ({1300 - her_dx}u from her tower, under={under}) at {her_hp:.0%}:",
+          mi.mode, "|", mi.last_action, "| window", window)
+    assert (mi.mode == "trade") == want_trade, mi.last_action
+    if not want_trade:
+        assert window is None and "under her tower" in mi.last_action
+print("FIGHT OK (their tower)")
