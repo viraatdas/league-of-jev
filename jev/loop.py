@@ -1767,10 +1767,11 @@ class Player:
                 if (many >= 2 and friends == 0) or many > friends + 1:
                     continue
                 d = dist(mm.pos, e)
-                if d > 4500 or (friends == 0 and d > 2000):
-                    continue  # from 6400 units the walk took 18 s and they were gone (g21); alone, only a short walk
-                if prog > ln.center - ln.frac(250) and friends == 0:
-                    continue  # at the middle with none of ours there: she walks back before Lee arrives (g25 mid)
+                if d > 4000 or (friends == 0 and d > 2000):
+                    continue  # from 6400 units the walk took 18 s and they were gone (g21); g30 walked 3300-4300 units to laners at the middle
+                if prog > ln.center - ln.frac(150):
+                    continue  # at the middle she walks back before Lee arrives: g30's five ganks at 45-52% of the lane
+                              # ended "lost them" or "time"; only a laner already in our half is worth the walk
                 score = d - 1500 * friends - ln.units(ln.center - prog)  # near, with our laner there, overextended
                 if best is None or score < best[0]:
                     best = (score, name, e, prog, friends)
