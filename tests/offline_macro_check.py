@@ -200,3 +200,25 @@ p._farm_the_waves(p._lane_switched_at + 10.5)
 print("lane 10 s later, their wave in top:", p.lane.name)
 assert p.lane.name == "top"
 print("MACRO OK (lane follows the wave)")
+
+# Dragon with allies: two of ours in the pit, dragon up: go. Two of theirs next to me on the way (and
+# none of ours), or more of theirs at the pit than of us: not (g33, dead at 29:09 walking through them).
+from jev import places as _places
+p = Player(dry_run=True)
+p.mech = Mechanics(p.ctl, p.screen, p.kb, "ORDER", lane=p.lane)
+p.state = {"me": {"hp_percent": 90, "alive": True, "level": 11}, "objectives": {"next_dragon_in_s": 0}}
+p.situation = macro.analyze(base, None, "ORDER", set(), set())
+pit = _places.places("ORDER")["dragon_pit"][0]
+ours = [(pit[0] - 300.0, pit[1] + 200.0), (pit[0] + 200.0, pit[1] - 300.0)]
+p.mm_state = MinimapState(self_pos=(pit[0] - 3500.0, pit[1] + 2500.0), ts=time.time(), ally_champions=ours, enemy_champions=[])
+plan = p._objective_plan(base, time.time())
+print("dragon, two of ours there:", plan)
+assert plan is not None and plan[2] == "dragon with allies"
+me_pt = p.mm_state.self_pos
+p.mm_state.enemy_champions = [(me_pt[0] + 500.0, me_pt[1] - 400.0), (me_pt[0] + 700.0, me_pt[1] - 100.0)]
+print("... two of theirs next to me:", p._objective_plan(base, time.time()))
+assert p._objective_plan(base, time.time()) is None
+p.mm_state.enemy_champions = [(pit[0] + 600.0, pit[1] + dy) for dy in (-400.0, 0.0, 400.0, 800.0)]
+print("... four of theirs at the pit:", p._objective_plan(base, time.time()))
+assert p._objective_plan(base, time.time()) is None
+print("MACRO OK (dragon odds)")

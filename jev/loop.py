@@ -1728,17 +1728,28 @@ class Player:
             wave_there = sum(1 for m in mm.ally_minions if dist(m, tower) < 1200)
             if dist(mm.pos, tower) < 3000 and wave_there >= 3:
                 return ("push_tower", tower, "lane opponent dead and our wave at their tower: hit the tower")
+        # Their team between me and it, or at it in greater numbers, and it is theirs: g33's Yasuo walked
+        # to "dragon with allies" at 29:03 through two of them in our jungle and died 100% -> 0 in 5 s.
+        foes_here = sum(1 for e in mm.enemy_champions if dist(e, mm.pos) < 1600)
+        friends_here = sum(1 for a in allies if dist(a, mm.pos) < 1600)
+        if foes_here >= 2 and foes_here > friends_here + 1:
+            return None
+
+        def outnumbered_at(pit, near: int) -> bool:
+            return sum(1 for e in mm.enemy_champions if dist(e, pit) < 2000) > near + 1
+
         if gt >= 300 and (obj.get("next_dragon_in_s") or 0) <= 0:
             pit = places["dragon_pit"][0]
             # In the pit, not merely on the bot side of the map: at 2500 units the bot lane standing
             # in lane counted, and Yasuo walked to an untouched dragon six times before 13:00 (g17).
             near = sum(1 for a in allies if dist(a, pit) < 1300)
-            if near >= 2 or (self.jungle_state is not None and near >= 1 and int(me.get("level") or 1) >= 6):
+            if (near >= 2 or (self.jungle_state is not None and near >= 1 and int(me.get("level") or 1) >= 6)) \
+                    and not outnumbered_at(pit, near):
                 return ("objective", pit, "dragon with allies")
         if gt >= 1200 and (obj.get("next_baron_in_s") or 0) <= 0:
             pit = places["baron_pit"][0]
             near = sum(1 for a in allies if dist(a, pit) < 1500)
-            if near >= 3:
+            if near >= 3 and not outnumbered_at(pit, near):
                 return ("objective", pit, "baron with allies")
         if gt >= 1200 and len(allies) >= 3:
             best = max(allies, key=lambda a: sum(1 for b in allies if dist(a, b) < 2500))
