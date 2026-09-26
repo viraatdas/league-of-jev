@@ -60,12 +60,15 @@ class LaneLearner:
                 # (an uncapped forecast), its curve said autos never kill, and g33 opened with 0 CS at 5:00.
                 self.cal[k] = [1.0 + (a - 1.0) * 0.5, b * 0.5]
                 self.cal_n[k] = min(10, int(d.get("cal_n", {}).get(k, 0)))
-        self.in_reach = float(d.get("in_reach", self.in_reach))
-        self.out_reach = float(d.get("out_reach", self.out_reach))
+        # Half way back to the priors, and capped: g33's two tower dives left "her reach costs 9.8%/s",
+        # which would keep the next game's Yasuo out of every last hit near her for its first minutes.
+        self.in_reach = min(6.0, 3.0 + (float(d.get("in_reach", 3.0)) - 3.0) * 0.5)
+        self.out_reach = min(1.5, 0.4 + (float(d.get("out_reach", 0.4)) - 0.4) * 0.5)
         self.aggro = float(d.get("aggro", self.aggro))
         self.dash = float(d.get("dash", self.dash))
-        self.edge = {k: float(v) for k, v in d.get("edge", {}).items()}
-        self.edge_n = {k: min(5, int(v)) for k, v in d.get("edge_n", {}).items()}
+        # Held loosely too: "shen -47" came from one exchange, a dive under his tower (g33).
+        self.edge = {k: float(v) * 0.5 for k, v in d.get("edge", {}).items()}
+        self.edge_n = {k: min(3, int(v)) for k, v in d.get("edge_n", {}).items()}
 
     def save(self) -> None:
         try:
