@@ -86,7 +86,7 @@ def choose_intent(d: Decision | None, state: dict, p: Perception, now: float, gu
     since_dmg = p.seconds_since_damage if p.seconds_since_damage is not None else 99.0
     if me["hp_percent"] < 15 and since_dmg < 4:
         guard.retreat_until = now + 4.0  # survival floor, shorter than Jev's own retreat calls
-    if p.hp_lost_recent_pct >= config.TIMING.heavy_damage_pct:
+    if p.hp_lost_recent_pct >= config.TIMING.heavy_damage_pct and now >= guard.fight_back_until:
         guard.retreat_until = now + 5.0  # tower-sized chunks: step out before the next shot
     # Under their tower is fine while our wave is there taking its shots, nobody of theirs is close and
     # we are healthy: the last hits there are safe. Stepping back every time left Yasuo at 50 CS at
@@ -148,6 +148,7 @@ class Guards:
         self.last_level_t = 0.0
         self.resync_until = 0.0
         self.push_ok_until = 0.0
+        self.fight_back_until = 0.0   # fighting a diver back: the heavy-damage and bleeding retreats wait
 
 
 class HpTracker:
@@ -861,6 +862,25 @@ class Player:
             # Lane kill pressure: she is under 45% and I am well ahead in HP, with no full wave around her.
             self._commit(ch, mi, now, f"kill pressure ({their * 100:.0f}% vs me {mi.hp_pct:.0f}% at {d:.0f}u), all in")
             return
+        if ((fr is None or fr.age(now) > 3.0) and sc.enemy_champs == 1 and mi.mode not in FIGHT_MODES
+                and mi.mode != "back_off" and their is not None and now >= getattr(mi, "trade_cooldown_until", 0.0)):
+            # No read from Jev's fight head (this branch): out of API credits in g35 from 15:55, Xin Zhao
+            # walked up on a full-HP Yasuo, hit first, and Yasuo walked away until he died (20:04). Two rules
+            # stand in: the kit's own trade window, and fighting back when she is on me and I am not behind.
+            lost = getattr(self, "_hp_lost", 0.0)
+            if lost >= 8 and d < 450 and mi.hp_pct >= 35 and mi.hp_pct >= their * 100 - 15:
+                self._commit(ch, mi, now, f"she is on me ({their * 100:.0f}% at {d:.0f}u, me {mi.hp_pct:.0f}%, "
+                                          f"-{lost:.0f}%), fighting back")
+                self.guards.fight_back_until = now + 3.0
+                return
+            window = self._kit_trade_window(sc, mi, now)
+            if window:
+                if window == "all_in":
+                    self._commit(ch, mi, now, f"kit window (no Jev read), all in on {their * 100:.0f}% at {d:.0f}u")
+                else:
+                    mi.set_mode("trade", now)
+                    self.log_lines.append(f"fight: kit trade window (no Jev read), {their * 100:.0f}% at {d:.0f}u, me {mi.hp_pct:.0f}%")
+                return
         if (d < 700 and not sc.ready.get("Q") and not sc.ready.get("E") and mi.hp_pct < 80 and not sc.ally_champs
                 and ch.unit.hp * 100 > mi.hp_pct + 10 and mi.mode not in ("back_off", "all_in")):
             # Nothing up to answer with and she is healthier: Lee kept hitting a camp while a full-HP
@@ -2257,7 +2277,7 @@ class Player:
         winning = fr is not None and now - fr.ts < 1.0 and fr.plan == "all_in" and fr.win_all_in >= 0.6
         unseen = self.scene is None or self.scene.champ is None
         if (bleed is not None and ((bleed <= -12 and hp_pct < 70 and unseen) or (bleed <= -15 and hp_pct < 60 and not winning))
-                and now >= self.guards.retreat_until):
+                and now >= self.guards.retreat_until and (now >= self.guards.fight_back_until or hp_pct < 30)):
             # Hit from off screen (a ranged champion past the screen edge): Yasuo bled 60% -> 0 over
             # twelve seconds while holding the wave, no champion ever on screen (g13, 7:25).
             self.guards.retreat_until = now + 4.0

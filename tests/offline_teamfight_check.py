@@ -223,6 +223,41 @@ print("nothing up:", p.micro.mode, list(p.log_lines)[-1])
 assert p.micro.mode == "back_off" and p.guards.retreat_until > now
 print("NOTHING UP OK")
 
+# No read from Jev's fight head (g35 ran out of API credits at 15:55; at 20:04 a full-HP Xin Zhao walked
+# up, hit first, and Yasuo walked away to his death). The kit's own window opens the trade: E+Q up, her
+# at 420 units, both healthy.
+p = setup(now)
+p.micro.hp_pct = 100.0
+e = track(420, 0.99, 1, now)
+p.champ_tracker.tracks = {1: e}
+sc = Scene(me_xy=ME)
+sc.champ, sc.champ_dist, sc.enemy_champs = e, sc.dist(e), 1
+sc.ready = {"Q": True, "E": True, "W": True}
+p._fight_triggers(sc, p.micro, now)
+print("no Jev read, E+Q in reach:", p.micro.mode, list(p.log_lines)[-1])
+assert p.micro.mode == "trade"
+# She is on me and hitting (-10% in the damage window), I am not behind: fight back, and the heavy-damage
+# retreat waits 3 s.
+p = setup(now)
+p.micro.hp_pct = 88.0
+p._hp_lost = 10.0
+e = track(200, 0.97, 1, now)
+p.champ_tracker.tracks = {1: e}
+sc = Scene(me_xy=ME)
+sc.champ, sc.champ_dist, sc.enemy_champs = e, sc.dist(e), 1
+sc.ready = {"W": True}
+p._fight_triggers(sc, p.micro, now)
+print("she is on me:", p.micro.mode, list(p.log_lines)[-1])
+assert p.micro.mode == "all_in" and p.guards.fight_back_until > now
+from jev.loop import choose_intent
+from jev.state import Perception as _P
+pp = _P()
+pp.hp_lost_recent_pct = 14.0
+st = {"me": {"alive": True, "hp_percent": 74, "gold": 300}}
+assert choose_intent(None, st, pp, now + 0.5, p.guards) != "retreat"
+assert choose_intent(None, st, pp, now + 3.5, p.guards) == "retreat"
+print("NO-READ FIGHT OK")
+
 # Jev hysteresis: a low-confidence plan change needs a second read; a confident one takes over at once.
 from types import SimpleNamespace
 from jev.fight import FightLog, FightRead
