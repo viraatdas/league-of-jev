@@ -34,6 +34,7 @@ E_MOVE_MIN = 6.0         # a dash that kills nothing must reach a clearly better
 E_MIN = 2.0              # a dash worth less than this is noise (it moves me for nothing)
 Q_COST_NEAR_HER = 5.0    # Q on cooldown when she walks in: the trade we cannot take
 MOVE_GAIN_MIN = 2.5      # a new spot must be this much better than standing still
+AUTO_MISS = 7.0          # a missed last-hit auto: its cooldown spent, and the minion often left for ours
 
 
 @dataclass
@@ -270,13 +271,15 @@ class LanePlanner:
                     continue
                 d = sc.dist(tr)
                 walk = max(0.0, d - VC.auto_range) / max(250.0, sc.move_speed)
-                if walk > 1.0:
-                    continue
+                if walk > 1.0 or (walk > 0.6 and not pushing):
+                    continue  # a last hit that needs a long walk lands after our minions have taken it
                 at = self._at(tr, now, FAST.lasthit_lead_s + walk + windup)
                 p, z = self._pk(mi, "auto", sc.ad * FAST.lasthit_margin, at, getattr(tr, "hp_max", 400.0))
                 if walk == 0.0:
                     auto_p[tr.id] = p
-                v = p * self._gold(tr) - walk * 3.0
+                # A miss costs the attack's cooldown (~1.4 s without the next last hit): g31's autos paid 2/11,
+                # several taken at p 0.26-0.45.
+                v = p * self._gold(tr) - walk * 3.0 - AUTO_MISS * (1.0 - p)
                 if p < 0.15 and pushing and tr.unit.hp > 0.2:
                     v = 2.0 - walk * 3.0  # pushing: hit the wave (not the minion about to be last-hittable)
                 if v > 0.5:

@@ -602,8 +602,13 @@ class Yasuo(Kit):
         return True  # hold
 
     def continuous(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, pushing: bool) -> bool:
-        if FAST.lane_planner and mode in ("farm", "push") and sc.minions:
+        if FAST.lane_planner and mode in ("farm", "push", "trade", "all_in", "poke") and sc.minions:
+            # (A fight mode lands here for a moment when she is out of view: the old farm rules then took
+            # last hits at 5% that our minions finish first, 0/4 in g31.)
             return self.plan_step(mi, sc, now, aspd, pushing or mode == "push")
+        if FAST.lane_planner and mode == "back_off" and sc.minions and sc.champ is None:
+            sc.lane = dict(sc.lane, aggression=0.0, cautious=True)
+            return self.plan_step(mi, sc, now, aspd, False)
         if FAST.lane_planner and mode == "back_off" and sc.minions and sc.champ is not None and mi.hp_pct >= 30:
             # Backing off is keeping out of her reach, not walking away from the wave: Jev's back_off was
             # 44% of fight reads in g29 and every one of them cost the last hits. The planner, cautious:
