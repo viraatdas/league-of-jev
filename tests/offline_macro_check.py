@@ -180,3 +180,12 @@ p._no_wave_since = tv
 p.view.ts = tv + 4.0
 assert not p._farm_the_waves(tv + 4.0)     # two of them on that wave: no
 print("MACRO OK (farm the waves)")
+# The wave in mid while laning top: the lane becomes mid (the micro keeps only its lane's red bars).
+p._switch_lane("top")
+p.mm_state.enemy_champions = []
+p._no_wave_since = tv
+p.view.ts = tv + 4.0
+assert p._farm_the_waves(tv + 4.0)
+print("lane after going to the mid wave:", p.lane.name)
+assert p.lane.name == "mid"
+print("MACRO OK (lane follows the wave)")

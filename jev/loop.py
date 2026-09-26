@@ -996,6 +996,11 @@ class Player:
         if not groups:
             return False
         _, target = min(groups)
+        # The micro keeps only red bars near its own lane (jungle monsters look like minions): farming
+        # another lane's wave means playing that lane.
+        near_lane = min(("top", "mid", "bot"), key=lambda n: Lane(n, self.side).project(target)[1])
+        if near_lane != self.lane.name and Lane(near_lane, self.side).project(target)[1] < 1500:
+            self._switch_lane(near_lane)
         self.mech.go_map(target, now, attack=True, every=1.5)
         self.mech.last_action = f"farm: to their wave at {int(target[0])},{int(target[1])}"
         return True
@@ -1916,7 +1921,11 @@ class Player:
         if self.mech is not None:
             self.mech.lane = self.lane
             self.mech.nav.lane_units = self.lane.L
-        self.dead_enemy_mid_towers = set()
+        # This lane's dead enemy towers, from what is known (the tower watch and the events), not an
+        # empty set: a lane switch must not bring a dead tower back to life, or a standing one down.
+        theirs = "red" if self.side == "ORDER" else "blue"
+        ids = self.lane.enemy_tower_ids()
+        self.dead_enemy_mid_towers = {ids[i] for t, i in getattr(self, "tower_watch", TowerWatch()).dead if t == theirs and i in ids}
         self._rehome_own_tower()
         self.log_lines.append(f"lane -> {name}")
 
