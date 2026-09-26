@@ -358,6 +358,8 @@ class Player:
                         v = self.view
                         fighting = v is not None and (bool(v.enemies("champion")) or bool(v.enemies("monster")))
                         gap = min(self.save_frames_s, 0.25) if fighting else self.save_frames_s
+                        if self.micro is not None and f.ts < getattr(self.micro, "capture_until", 0.0):
+                            gap = 0.1  # a last-hit auto being watched: its swing and whether the minion dies
                         if f.ts - getattr(self, "_last_saved", 0.0) >= gap:
                             import cv2
                             from pathlib import Path

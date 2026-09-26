@@ -539,6 +539,9 @@ class Yasuo(Kit):
             if best.p >= 0.5:
                 mi.attack(tr, now, f"last hit ({int(tr.unit.hp * 100)}%)")
                 mi.lh_pending.append((now, f"auto-{role}", tr.unit.hp, best.z))
+                self._lh_n = getattr(self, "_lh_n", 0) + 1
+                if self._lh_n % 3 == 1:
+                    mi.capture_until = time.time() + 1.5  # frames at 10 Hz: which minion the swing went to, and when
             else:
                 mi.attack(tr, now, "push: attack the wave")
             return True
