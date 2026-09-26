@@ -145,3 +145,8 @@ p._tick(d2, _t.time() + 1)
 print("event Turret_TOrder_L1_P3: our mid line", round(before, 3), "->", round(p.lane.own_tower, 3))
 assert p.lane.own_tower < before - 0.05 and ("blue", 3) in p.tower_watch.dead
 print("LANES OK (tower events)")
+# A nexus tower event (Turret_TOrder_L1_P4_..., g30): marked, no lane line to move, no crash.
+p._towers_seen_dead.append(tower_from_event("Turret_TOrder_L1_P4_3675873665_0"))
+p._towers_from_minimap()
+print("nexus tower:", list(p.log_lines)[-1])
+assert "nexus tower is down" in list(p.log_lines)[-1]

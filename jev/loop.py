@@ -52,6 +52,9 @@ def tower_from_event(name: str) -> tuple[str, int] | None:
     m = _re.match(r"Turret_T(Order|Chaos)_L(\d)_P(\d)", name)
     if m:
         team = "blue" if m.group(1) == "Order" else "red"
+        if int(m.group(3)) >= 4:
+            # the nexus towers (Turret_TOrder_L1_P4_..., g30); the second one is the other index
+            return team, 9 if int(m.group(3)) == 4 else 10
         lane = {0: 2, 1: 1, 2: 0}.get(int(m.group(2)))
         tier = {3: 0, 2: 1, 1: 2}.get(int(m.group(3)))
         if lane is None or tier is None:
@@ -1871,7 +1874,7 @@ class Player:
         self.log_lines.append(f"lane -> {name}")
 
     TOWER_NAMES = ["top outer", "top inner", "top inhibitor", "mid outer", "mid inner", "mid inhibitor",
-                   "bot outer", "bot inner", "bot inhibitor"]
+                   "bot outer", "bot inner", "bot inhibitor", "nexus", "nexus"]
 
     def _situation(self, data: dict) -> "macro.Situation":
         """Who is alive, which towers stand, how many of them are unseen (macro.py)."""
@@ -1900,6 +1903,9 @@ class Player:
         ours = "blue" if self.side == "ORDER" else "red"
         while self._towers_seen_dead:
             team, i = self._towers_seen_dead.popleft()
+            if i >= 9:  # a nexus tower: the situation reads it from the watch; no lane line to move
+                self.log_lines.append(f"towers: {'our' if team == ours else 'their'} nexus tower is down")
+                continue
             ln = ("top", "mid", "bot")[i // 3]
             num = (5, 4, 3)[i % 3]
             if team == ours:
