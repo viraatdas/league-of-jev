@@ -103,3 +103,21 @@ if namereader.available():
     print("bar label:", got)
     assert got == "Nasus", got
     print("VISION OK (names)")
+
+# Low minion bars: a real one's empty part is translucent black (near black, or well under the ground
+# just outside the frame); scenery specks (torches, blue flowers on dark jungle ground) have no such
+# step. g34's Lee farmed specks like these for three minutes ("auto 0/18"); crops from g34 and g31.
+import json as _json
+import numpy as np
+from jev import config as _vcfg
+_bars = _json.load(open("tests/fixtures/frames/minion_bars.json"))
+_reader = VisionReader()
+for b in _bars:
+    crop = cv2.imread(f"tests/fixtures/frames/{b['file']}")
+    frame = np.full((1117, 1728, 3), (70, 95, 80), np.uint8)
+    frame[b["y0"]:b["y0"] + crop.shape[0], b["x0"]:b["x0"] + crop.shape[1]] = crop
+    units, _ = _reader.read_units(frame)
+    hit = [u for u in units if u.kind == "minion" and abs(u.bar[0] - b["bar"][0]) <= 2 and abs(u.bar[1] - b["bar"][1]) <= 2]
+    print(f"{b['file']}: {'read' if hit else 'not read'} (a {'real bar' if b['real'] else 'speck'}, {b['team']} {b['hp']:.0%})")
+    assert bool(hit) == b["real"], b
+print("VISION OK (minion bar specks)")

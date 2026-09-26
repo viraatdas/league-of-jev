@@ -209,6 +209,21 @@ class VisionReader:
                 empty = dark[y + h // 2, x + w + 1:x_end - 1]
                 if empty.size and empty.mean() < 0.5:
                     continue
+                val = getattr(self, "_val", None)
+                if unit_kind == "minion" and val is not None:
+                    # ... and near black (V 3-20), not just dim: torches and blue flowers on dark jungle
+                    # ground (V 35-58) read as 3-8% minions, and the farm walked to them. Lee stood in his
+                    # jungle for three minutes with "auto 0/18" (g34); most of g33's tiny bars were these.
+                    # The empty part is translucent black: near black over dark ground, and over bright
+                    # grass (V 32-40) still well under the ground just outside the frame. Scenery has no
+                    # such step: its "empty part" is the ground itself.
+                    seg = val[y + h // 2, x + w + 2:x_end - 2]
+                    if seg.size >= 4:
+                        e = float(np.median(seg))
+                        ya, yb = max(0, y - 5), min(H - 1, y + h + 4)
+                        bg = float(np.median(np.concatenate((val[ya, x + w + 2:x_end - 2], val[yb, x + w + 2:x_end - 2]))))
+                        if e > vc.bar_empty_v and e > bg - vc.bar_empty_step:
+                            continue
             # Team from the fill's colour along its middle row.
             row = y + h // 2
             counts = {t: int(np.count_nonzero(m[row, x:x + w])) for t, m in masks.items()}
@@ -238,6 +253,7 @@ class VisionReader:
         x0, y0, x1, y1 = self.view
         hsv = cv2.cvtColor(to_bgr(frame[y0:y1, x0:x1]), cv2.COLOR_BGR2HSV)
         dark = hsv[:, :, 2] < self.vc.frame_dark_v
+        self._val = hsv[:, :, 2]
         # Blank the minimap corner and the HUD so their icons are never read as units.
         mx, my, _ = self.geo.minimap or (x1, y1, 0)
         hx0, hy0, hx1, hy1 = self.vc.hud_block

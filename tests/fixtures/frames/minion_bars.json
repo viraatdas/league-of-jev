@@ -1,0 +1,114 @@
+[
+ {
+  "file": "minbar_phantom_0.png",
+  "x0": 76,
+  "y0": 896,
+  "bar": [
+   90,
+   910,
+   3,
+   5
+  ],
+  "team": "ally",
+  "hp": 0.05,
+  "real": false
+ },
+ {
+  "file": "minbar_phantom_1.png",
+  "x0": 1057,
+  "y0": 163,
+  "bar": [
+   1071,
+   177,
+   3,
+   4
+  ],
+  "team": "enemy",
+  "hp": 0.05,
+  "real": false
+ },
+ {
+  "file": "minbar_phantom_2.png",
+  "x0": 1060,
+  "y0": 183,
+  "bar": [
+   1074,
+   197,
+   4,
+   4
+  ],
+  "team": "enemy",
+  "hp": 0.07,
+  "real": false
+ },
+ {
+  "file": "minbar_phantom_3.png",
+  "x0": 1540,
+  "y0": 401,
+  "bar": [
+   1554,
+   415,
+   4,
+   3
+  ],
+  "team": "ally",
+  "hp": 0.07,
+  "real": false
+ },
+ {
+  "file": "minbar_real_0.png",
+  "x0": 1059,
+  "y0": 392,
+  "bar": [
+   1073,
+   406,
+   13,
+   3
+  ],
+  "team": "ally",
+  "hp": 0.22,
+  "real": true
+ },
+ {
+  "file": "minbar_real_1.png",
+  "x0": 1140,
+  "y0": 445,
+  "bar": [
+   1154,
+   459,
+   15,
+   3
+  ],
+  "team": "enemy",
+  "hp": 0.25,
+  "real": true
+ },
+ {
+  "file": "minbar_real_2.png",
+  "x0": 1132,
+  "y0": 483,
+  "bar": [
+   1146,
+   497,
+   6,
+   3
+  ],
+  "team": "ally",
+  "hp": 0.1,
+  "real": true
+ },
+ {
+  "file": "minbar_real_3.png",
+  "x0": 1267,
+  "y0": 361,
+  "bar": [
+   1281,
+   375,
+   3,
+   3
+  ],
+  "team": "enemy",
+  "hp": 0.05,
+  "real": true
+ }
+]

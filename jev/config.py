@@ -87,6 +87,8 @@ class Vision:
     target_block: tuple[int, int, int, int] = (0, 55, 355, 195)     # selected-target panel (its red HP bar read as minions)
     portrait_block: tuple[int, int, int, int] = (1335, 530, 1728, 705)  # teammate portraits above the minimap
     frame_dark_v: int = 60             # HSV value below this counts as the dark bar frame
+    bar_empty_v: int = 22              # a minion bar's empty part: near black (median HSV value at most this) ...
+    bar_empty_step: int = 12           # ... or at least this much darker than the ground just outside the bar
     minion_bar_w: int = 60             # fill width of a full minion bar
     minion_bar_h: tuple[int, int] = (3, 6)
     champ_bar_w: int = 106             # fill width of a full champion bar
