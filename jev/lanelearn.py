@@ -20,6 +20,9 @@ import math
 from pathlib import Path
 
 SAVE = Path("logs/lane_learned.json")
+# Bumped when what the curves were fitted on changes: before 2, the bars of scenery specks and of the
+# overlay's own panel were read as low minions and every swing at one was a "failed" last hit (g31-g34).
+VISION = 2
 
 
 def _sig(x: float) -> float:
@@ -51,7 +54,7 @@ class LaneLearner:
         except Exception:  # noqa: BLE001  first game or unreadable: the priors above
             return
         for k in self.cal:
-            if k in d.get("cal", {}):
+            if k in d.get("cal", {}) and d.get("vision") == VISION:
                 a, b = (float(v) for v in d["cal"][k])
                 # Half way back to neutral and held loosely: g31's autos failed for a reason fixed since
                 # (an uncapped forecast), its curve said autos never kill, and g33 opened with 0 CS at 5:00.
@@ -68,7 +71,7 @@ class LaneLearner:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(json.dumps({
-                "cal": self.cal, "cal_n": self.cal_n, "in_reach": self.in_reach, "out_reach": self.out_reach,
+                "vision": VISION, "cal": self.cal, "cal_n": self.cal_n, "in_reach": self.in_reach, "out_reach": self.out_reach,
                 "aggro": self.aggro, "dash": self.dash, "edge": self.edge, "edge_n": self.edge_n}, indent=1))
         except Exception:  # noqa: BLE001
             pass
