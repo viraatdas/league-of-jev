@@ -47,18 +47,22 @@ for label, part in (("before 15:00", [r for r in rows if r["gt"] < 900]), ("afte
 
 # Deaths
 print("\n-- deaths")
-prev_dead = False
+# From the KDA's death count, not the intent: a death while the harness was down (restarting) has no
+# "dead" row (g33 at 19:26).
+prev_deaths = 0
 for i, r in enumerate(rows):
-    dead = r["intent"] == "dead"
-    if dead and not prev_dead:
+    n_deaths = int(r["kda"].split("/")[1])
+    dead = n_deaths > prev_deaths
+    prev_deaths = max(prev_deaths, n_deaths)
+    if dead:
         win = rows[max(0, i - 8):i]
         hp = "->".join(str(w["hp"]) for w in win[::2])
         intents = "/".join(dict.fromkeys(w["intent"] for w in win))
         champs = sum(1 for w in win if re.search(r"champ \d+% @", w["line"]))
         acts = [re.search(r"act=([^|]*?) keys", w["line"]) for w in win[-3:]]
+        gap = r["gt"] - win[-1]["gt"] if win else 0
         print(f"   {r['gt'] // 60}:{r['gt'] % 60:02d} hp {hp} | {intents} | champion on screen {champs}/{len(win)} s | "
-              f"{'; '.join(a.group(1).strip()[:30] for a in acts if a)}")
-    prev_dead = dead
+              f"{'; '.join(a.group(1).strip()[:30] for a in acts if a)}" + (f" | (log gap {gap} s before)" if gap > 5 else ""))
 
 # Macro: power plays, objectives, towers
 print("\n-- macro")
