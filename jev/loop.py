@@ -2312,7 +2312,7 @@ class Player:
             self.intent = "farm"  # a low-confidence roam costs a laner CS and exposes them; keep laning
         sit = getattr(self, "situation", None)
         if (self.intent == "recall" and sit is not None and sit.power_play and hp_pct >= 55
-                and m.recall_started is None and self.jungle_state is None):
+                and m.recall_started is None):   # (junglers too: Lee recalled at 90% in g30's power play)
             # Two or more of them dead: a tower or the dragon now, the shop after (the window closes in
             # seconds; the gold keeps). The objective plan below picks the target.
             self.intent = "farm"
