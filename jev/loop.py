@@ -314,7 +314,8 @@ class Player:
 
         cap = open_capture(self.screen.px_w, self.screen.px_h, prefer=self.capture_backend, fps=self.capture_fps)
         self.capture_name = cap.name
-        self.log_lines.append(f"capture: {cap.name}")
+        excl = getattr(cap, "excluding", None)
+        self.log_lines.append(f"capture: {cap.name}" + ("" if excl is None else f" (overlay left out: {excl})"))
         x0, y0, side = config.GEOMETRY.minimap
         seq, n, t_rate, last_mm = 0, 0, time.time(), 0.0
         read_ms: collections.deque[float] = collections.deque(maxlen=120)
@@ -323,6 +324,9 @@ class Player:
                 f = cap.wait(seq, 0.2)
                 if f is None:
                     continue
+                if excl is False and getattr(cap, "excluding", False):
+                    excl = True
+                    self.log_lines.append("capture: the overlay is now left out of the stream")
                 seq = f.seq
                 if self.paused:
                     continue

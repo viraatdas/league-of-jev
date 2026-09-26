@@ -77,6 +77,7 @@ class SCKCapture:
         self.stream = None
         self.error: str = ""
         self.frames = 0
+        self.excluding = False   # this process's windows (the overlay) are left out of the stream
 
     def _on_sample(self, sbuf) -> None:
         import CoreMedia
@@ -130,6 +131,7 @@ class SCKCapture:
         display = next((d for d in content.displays() if d.displayID() == main_id), content.displays()[0])
         me = [a for a in content.applications() if a.processID() == os.getpid()]
         flt = SCK.SCContentFilter.alloc().initWithDisplay_excludingApplications_exceptingWindows_(display, me, [])
+        self.excluding = bool(me)
 
         cfg = SCK.SCStreamConfiguration.alloc().init()
         cfg.setWidth_(self.width)
@@ -165,7 +167,38 @@ class SCKCapture:
         if not started.wait(timeout) or box.get("start_error") is not None:
             self.error = f"start failed: {box.get('start_error')}"
             return False
+        if not me:
+            # This process has no window yet (the overlay opens on the main thread while capture starts
+            # on the worker), so there was nothing to leave out. g33 streamed the overlay all game and read
+            # its red danger bar as a 13% enemy minion at x=120: the autos went to it, 4 of 12 paid.
+            threading.Thread(target=self._exclude_me_later, args=(display,), daemon=True).start()
         return True
+
+    def _exclude_me_later(self, display, tries: int = 60) -> None:
+        """Once this process owns a window, narrow the stream's filter to leave it out."""
+        import ScreenCaptureKit as SCK
+
+        for _ in range(tries):
+            time.sleep(1.0)
+            if self.stream is None:
+                return
+            done = threading.Event()
+            box: dict = {}
+
+            def got_content(content, error):
+                box["content"] = content
+                done.set()
+
+            SCK.SCShareableContent.getShareableContentWithCompletionHandler_(got_content)
+            if not done.wait(3.0) or box.get("content") is None:
+                continue
+            me = [a for a in box["content"].applications() if a.processID() == os.getpid()]
+            if not me:
+                continue
+            flt = SCK.SCContentFilter.alloc().initWithDisplay_excludingApplications_exceptingWindows_(display, me, [])
+            self.stream.updateContentFilter_completionHandler_(flt, lambda e: None)
+            self.excluding = True
+            return
 
     def wait(self, after_seq: int, timeout: float = 0.2) -> Frame | None:
         return self.latest.wait(after_seq, timeout)
