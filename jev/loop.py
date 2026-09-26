@@ -2074,6 +2074,16 @@ class Player:
         # custom games, where the kit's default role applies); lane from the role.
         role = self.role_override or str(me.get("position") or "")
         self.kit = kit_for(self.champion_override or me.get("championName", "Yasuo"), role)
+        names = actions.summoner_names(me)
+        if getattr(self.kit, "jungle", False) and all(names) and "smite" not in names:
+            # No Smite, so no pet: camps hit a jungler several times harder, the bleeding floor walks him
+            # off each one before it dies and it resets (g34's Lee was level 1 at 6:00). Lane top instead.
+            # (Only with both spells read: at 0:00 the player list can be empty, g20.)
+            import dataclasses
+
+            self.kit = kit_for(self.champion_override or me.get("championName", "Yasuo"), "TOP")
+            self.kit.items = dataclasses.replace(self.kit.items, starters=["Doran's Blade", "Health Potion"])
+            self.log_lines.append("jungle: no Smite this game: laning top instead, starting with Doran's Blade")
         self.role = self.kit.role
         self.lane = Lane(lane_for(self.kit.role, "bot" if self.kit.support else "mid"), side)
         self.mech = Mechanics(self.ctl, self.screen, self.kb, side, lane=self.lane, skill_order=self.kit.skill_order)
@@ -2094,15 +2104,6 @@ class Player:
                     self.log_lines.append(f"jungle: resumed timers {self.jungle_state.cleared}")
             except (OSError, ValueError, KeyError):
                 pass
-        names = actions.summoner_names(me)
-        if self.jungle_state is not None and all(names) and "smite" not in names:
-            # (Only with both spells read: at 0:00 the player list can be empty, and an empty list read
-            # as "no Smite" made Lee buy the pet, undo it as the wrong item, and start with nothing, g20.)
-            # The jungle pets need Smite; without it the pet buy fails and he left base empty-handed.
-            import dataclasses
-
-            self.kit.items = dataclasses.replace(self.kit.items, starters=["Doran's Blade", "Health Potion"])
-            self.log_lines.append("jungle: no Smite this game: starting with Doran's Blade instead of a pet")
         if self.shop_brain is not None:
             self.shop_brain.profile = self.kit.items
         self.data = data
