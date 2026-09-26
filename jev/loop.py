@@ -970,6 +970,36 @@ class Player:
             return True
         return False
 
+    def _farm_the_waves(self, now: float) -> bool:
+        """After laning: farm wherever their minions are, not up and down my own lane. g31 spent 72% of
+        its farming after 15:00 with no minion on screen ("attack-move to lane N%" along an empty top
+        lane) and made 60 CS in 37 minutes. With nothing on screen for 3 s, walk to the nearest group of
+        their minions on the minimap (any lane), unless two of them stand within 1500 of it."""
+        v, mm = self.view, self.mm_state
+        gt = float(((self.data or {}).get("gameData") or {}).get("gameTime", 0.0))
+        if (self.jungle_state is not None or self.kit.support or gt < 840 or mm is None or mm.pos is None
+                or v is None or now - v.ts > 0.5):
+            return False
+        if v.enemies("minion"):
+            self._no_wave_since = None
+            return False
+        if getattr(self, "_no_wave_since", None) is None:
+            self._no_wave_since = now
+        if now - self._no_wave_since < 3.0 or not mm.enemy_minions:
+            return False
+        groups = []
+        for e in mm.enemy_minions:
+            n = sum(1 for o in mm.enemy_minions if dist(o, e) < 900)
+            danger = sum(1 for c in mm.enemy_champions if dist(c, e) < 1500)
+            if n >= 2 and danger < 2:
+                groups.append((dist(mm.pos, e) - 400 * n, e))
+        if not groups:
+            return False
+        _, target = min(groups)
+        self.mech.go_map(target, now, attack=True, every=1.5)
+        self.mech.last_action = f"farm: to their wave at {int(target[0])},{int(target[1])}"
+        return True
+
     def _recall_threat(self, now: float) -> bool:
         """An enemy champion within 1300 units or an enemy minion within 700 on screen: a channel
         there is hit and cancelled. Behind the lane centre by the minimap, Yasuo channelled in the
@@ -2475,6 +2505,8 @@ class Player:
             target = max(ln.own_tower - ln.frac(300), min(target, ln.center - ln.frac(300)))
             m.go_progress(target, move_speed, now, attack=False)
             m.last_action = f"support: shadow carry at lane {int(target * 100)}%"
+            return p
+        if self.intent == "farm" and self._farm_the_waves(now):
             return p
         if self.intent == "farm":
             contact = self._income_contact(float(ap.get("currentGold", 0)), int(me.get("scores", {}).get("creepScore", 0)), now) \

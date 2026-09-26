@@ -157,3 +157,26 @@ p._tick(d5, t5)
 print("recall in a power play ->", p.intent, "|", getattr(p, "_obj_label", ""))
 assert p.intent == "objective" and "power play" in getattr(p, "_obj_label", "")
 print("MACRO OK (no recall in a power play)")
+
+# After laning, nothing on screen for 3 s: walk to the nearest group of their minions on the minimap
+# (any lane), not up and down an empty lane (g31: 72% of late farming with no minion on screen).
+p = Player(dry_run=True)
+p.mech = Mechanics(p.ctl, p.screen, p.kb, "ORDER", lane=p.lane)
+d6 = copy.deepcopy(base)
+d6["gameData"]["gameTime"] = 1500.0
+p.data = d6
+tv = time.time()
+me6 = Unit("champion", "self", 862.0, 490.0, 0.9, (830, 400, 100, 10))
+p.view = View(units=[me6], me=me6, ts=tv)
+p.mm_state = MinimapState(self_pos=(2000.0, 9000.0), ts=tv, enemy_minions=[(6000.0, 6200.0), (6100.0, 6300.0), (6200.0, 6150.0)],
+                          enemy_champions=[(12000.0, 12000.0)])
+assert not p._farm_the_waves(tv)           # not yet 3 s without a minion
+p.view.ts = tv + 3.5                       # (a fresh frame, as live)
+assert p._farm_the_waves(tv + 3.5)
+print("late farming:", p.mech.last_action)
+assert "their wave" in p.mech.last_action
+p.mm_state.enemy_champions = [(6300.0, 6400.0), (5900.0, 6000.0)]
+p._no_wave_since = tv
+p.view.ts = tv + 4.0
+assert not p._farm_the_waves(tv + 4.0)     # two of them on that wave: no
+print("MACRO OK (farm the waves)")
