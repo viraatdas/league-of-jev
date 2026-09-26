@@ -428,18 +428,20 @@ class Micro:
             self.on_fight_order(what)
         self.orders += 1
 
-    def aimed(self, kind: str, tr, now: float) -> None:
-        """A skillshot thrown at a champion: scored by whether her HP drops within 0.8 s (the loop)."""
+    def aimed(self, kind: str, tr, now: float, window: float = 0.8) -> None:
+        """A skillshot thrown at a champion: scored by whether her HP drops before it could have landed
+        plus a margin (`window`: the cast and the flight; a Sonic Wave to 1000 units needs ~0.8 s alone,
+        and the first scorecard called hits misses, g30)."""
         if tr is not None:
-            self.skill_pending.append((now, kind, tr, tr.unit.hp))
+            self.skill_pending.append((now, kind, tr, tr.unit.hp, window))
 
     def score_skills(self, now: float) -> None:
         keep = []
-        for t, kind, tr, hp0 in self.skill_pending:
-            if now - t < 0.8:
-                keep.append((t, kind, tr, hp0))
+        for t, kind, tr, hp0, win in self.skill_pending:
+            if now - t < win:
+                keep.append((t, kind, tr, hp0, win))
                 continue
-            seen = [h for th, h in tr.hist if t < th <= t + 0.8]
+            seen = [h for th, h in tr.trail if t < th <= t + win] + [h for th, h in tr.hist if t < th <= t + win]
             if not seen and now - tr.seen > 0.3:
                 continue  # out of sight: no answer
             st = self.skill_stats.setdefault(kind, [0, 0])

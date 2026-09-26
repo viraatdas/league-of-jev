@@ -393,6 +393,12 @@ hit.hist.append((now + 0.4, 0.72))
 miss.hist.append((now + 0.4, 0.80))
 hit.seen = miss.seen = now + 0.9
 mi.score_skills(now + 1.0)
+# A slow projectile: the drop 1.0 s after the cast still counts when its window says so.
+far = track(unit("champion", 1000, 0, 0.8), now)
+mi.aimed("Sonic Wave", far, now, 0.25 + 1000 / 1800 + 0.5)
+far.hist.append((now + 0.95, 0.70))
+far.seen = now + 1.3
+mi.score_skills(now + 1.4)
 print("skillshot scorecard:", mi.skill_stats)
-assert mi.skill_stats["Q"] == [1, 2]
+assert mi.skill_stats["Q"] == [1, 2] and mi.skill_stats["Sonic Wave"] == [1, 1]
 print("FIGHT OK (scorecard)")
