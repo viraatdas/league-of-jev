@@ -426,4 +426,19 @@ class LanePlanner:
     def choose(self, sc, mi, now: float, pushing: bool) -> tuple[Option, list[Option]]:
         opts = self.options(sc, mi, now, pushing)
         opts.sort(key=lambda o: -o.value)
+        # The last-hit audit's reason for a killable minion left alone (the rule farm step, which wrote
+        # it before, does not run under the planner: g35's audit said "farm step not reached" 25 times).
+        attack_ready = mi.attack_ready(now, sc.aspd)
+        for tr in getattr(sc, "killable_auto", []):
+            if opts[0].target is tr:
+                continue
+            walk = max(0.0, sc.dist(tr) - VC.auto_range) / max(250.0, sc.move_speed)
+            if not attack_ready:
+                why = "auto on cooldown"
+            elif walk > (1.0 if pushing else 0.6):
+                why = "too far to walk"
+            else:
+                mine = max((o for o in opts if o.target is tr), key=lambda o: o.value, default=None)
+                why = f"planner chose {opts[0].kind} over " + (mine.kind if mine else "nothing on it")   # (kinds only: they are counted)
+            tr.block = why
         return opts[0], opts[:4]
