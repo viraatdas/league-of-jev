@@ -1152,7 +1152,10 @@ class Player:
             elif getattr(tr, "was_killable", False):
                 audit[f"killable, not taken ({getattr(tr, 'block', '?')}; {self.micro.mode if self.micro else '?'})"] += 1
             else:
-                audit[f"never killable {'<300' if d < 300 else '300-600' if d < 600 else '600-800'}u"] += 1
+                # (with the mode: 300-800 units away while backing off is the stand spot's caution;
+                # while farming it is the spot itself)
+                audit[f"never killable {'<300' if d < 300 else '300-600' if d < 600 else '600-800'}u"
+                      + ("" if d < 300 else f" ({self.micro.mode if self.micro else '?'})")] += 1
         if mi.attacked_ids and len(mi.attacked_ids) > 200:
             mi.attacked_ids = {k: v for k, v in mi.attacked_ids.items() if now - v < 10}
 
