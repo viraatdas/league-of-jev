@@ -1006,7 +1006,8 @@ class Player:
         # The micro keeps only red bars near its own lane (jungle monsters look like minions): farming
         # another lane's wave means playing that lane.
         near_lane = min(("top", "mid", "bot"), key=lambda n: Lane(n, self.side).project(target)[1])
-        if near_lane != self.lane.name and Lane(near_lane, self.side).project(target)[1] < 1500:
+        if (near_lane != self.lane.name and Lane(near_lane, self.side).project(target)[1] < 1500
+                and self._lane_switch_ok(now)):
             self._switch_lane(near_lane)
         self.mech.go_map(target, now, attack=True, every=1.5)
         self.mech.last_action = f"farm: to their wave at {int(target[0])},{int(target[1])}"
@@ -1919,7 +1920,7 @@ class Player:
         arrived = pos is not None and math.dist(pos, pt) < 900
         if arrived and d.destination.endswith("_lane"):
             name = d.destination.split("_")[0]
-            if name != self.lane.name:
+            if name != self.lane.name and self._lane_switch_ok(now):
                 self._switch_lane(name)
             self._micro_step(data, ap, stats, now) or m.go_map(pt, now, attack=True, every=1.5)
             return
@@ -1937,7 +1938,13 @@ class Player:
         fountain = config.BLUE_FOUNTAIN if self.side == "ORDER" else config.RED_FOUNTAIN
         return math.dist(mmp, fountain) < radius
 
+    def _lane_switch_ok(self, now: float) -> bool:
+        """One lane switch per 10 s: Jev's "go to mid lane" and the wave farming switched top/mid and
+        bot/mid three times a second in g34 (27 switches in 10 s)."""
+        return now - getattr(self, "_lane_switched_at", 0.0) >= 10.0
+
     def _switch_lane(self, name: str) -> None:
+        self._lane_switched_at = time.time()
         self.lane = Lane(name, self.side)
         if self.mech is not None:
             self.mech.lane = self.lane

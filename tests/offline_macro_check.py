@@ -182,10 +182,21 @@ assert not p._farm_the_waves(tv + 4.0)     # two of them on that wave: no
 print("MACRO OK (farm the waves)")
 # The wave in mid while laning top: the lane becomes mid (the micro keeps only its lane's red bars).
 p._switch_lane("top")
+p._lane_switched_at = tv - 60.0            # (top since a minute ago)
 p.mm_state.enemy_champions = []
 p._no_wave_since = tv
 p.view.ts = tv + 4.0
 assert p._farm_the_waves(tv + 4.0)
 print("lane after going to the mid wave:", p.lane.name)
 assert p.lane.name == "mid"
+# ... and not back again on the next tick: g34 switched top/mid three times a second (Jev's "go to
+# top lane" against the wave farming). One switch per 10 s.
+p.mm_state.enemy_minions = [(1200.0, 11000.0), (1250.0, 11100.0), (1300.0, 11050.0)]   # now a wave in top
+p.view.ts = tv + 4.5
+p._farm_the_waves(tv + 4.5)
+assert p.lane.name == "mid", p.lane.name
+p.view.ts = p._lane_switched_at + 10.5
+p._farm_the_waves(p._lane_switched_at + 10.5)
+print("lane 10 s later, their wave in top:", p.lane.name)
+assert p.lane.name == "top"
 print("MACRO OK (lane follows the wave)")
