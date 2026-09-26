@@ -52,3 +52,29 @@ for i in range(3):
 print("gank tick:", p.intent, getattr(p, "_obj_label", None), "|", p.mech.last_action)
 assert p.intent == "objective" and getattr(p, "_obj_label", "") == "gank top", (p.intent, getattr(p, "_obj_label", None))
 print("JUNGLE OK (gank)")
+
+# At a gank spot with their wave there and no champion: not a camp (no Smite, no clearing the wave),
+# on toward the laner. g32: a 30 s gank spent smiting and clearing the mid wave.
+import time as _time
+from jev.vision import Unit as _U, View as _V
+from jev.minimap import MinimapState as _MS
+from jev.riot_api import load_fixture as _lf
+tnow = _time.time()
+p._obj_pt, p._obj_label = (7000.0, 7000.0), "gank mid"
+p.mm_state = _MS(self_pos=(6800.0, 6800.0), ts=tnow)
+me_u = _U("champion", "self", 862.0, 490.0, 0.8, (830, 400, 100, 10))
+wave = [_U("minion", "enemy", 900.0 + 40 * k, 420.0, 0.3, (0, 0, 60, 4)) for k in range(4)]
+p.view = _V(units=wave + [me_u], me=me_u, ts=tnow)
+from jev.micro import Micro as _Mi
+from jev.control import Controller as _C
+from jev import keybinds as _kb
+if p.micro is None:
+    p.micro = _Mi(_C(dry_run=True, log=lambda m: None), p.screen, _kb.load(), "ORDER")
+p.micro.fwd = (1.0, 0.0)
+dd = _lf("tests/fixtures/midgame_yasuo_vs_zed.json")
+before = p.micro.orders if p.micro else 0
+p._do_objective(dd, dd["activePlayer"], dd["activePlayer"]["championStats"], tnow)
+act = p.micro.last_action if p.micro else ""
+print("at the gank spot with their wave, no champion:", repr(act), "|", p.mech.last_action)
+assert "smite" not in act.lower() and "camp" not in act.lower()
+print("JUNGLE OK (gank spot is not a camp)")

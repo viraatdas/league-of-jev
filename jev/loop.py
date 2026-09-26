@@ -1826,7 +1826,15 @@ class Player:
         if pt is None or m is None:
             return
         arrived = mm is not None and mm.pos is not None and dist(mm.pos, pt) < 1200
-        if arrived:
+        monster = any(k in label for k in ("dragon", "baron", "herald"))
+        if arrived and not monster:
+            # A gank, a fight or a tower: not a camp. In camp mode the lane minions at the spot were the
+            # "camp": Lee smote and cleared the enemy wave while the laner he came for walked off (g32,
+            # a 30 s gank at mid of smite / attack camp / E on camp / Q2 on camp). Champions only here,
+            # then on toward the spot (towers: attack-move onto them).
+            if not self._micro_step(data, ap, stats, now, standing=label.startswith("power play")):
+                m.go_map(pt, now, attack=not label.startswith("gank"), every=1.0)
+        elif arrived:
             if self.micro is not None:
                 self.micro.at_camp = True
             try:
