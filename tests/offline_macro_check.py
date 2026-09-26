@@ -222,3 +222,28 @@ p.mm_state.enemy_champions = [(pit[0] + 600.0, pit[1] + dy) for dy in (-400.0, 0
 print("... four of theirs at the pit:", p._objective_plan(base, time.time()))
 assert p._objective_plan(base, time.time()) is None
 print("MACRO OK (dragon odds)")
+
+# Shopping with the API out of credits and a stale plan whose target is owned already: the next core
+# item, not the owned one again (g35 bought Infinity Edge, then "could not buy Infinity Edge" each visit).
+from jev.kits import kit_for as _kit_for
+p = Player(dry_run=True)
+if p.shop_brain is not None:
+    p.kit = _kit_for("Yasuo", "TOP")
+    p.mech = Mechanics(p.ctl, p.screen, p.kb, "ORDER", lane=p.lane)
+    bought = []
+    p.mech.shop = lambda item, items_now: bought.append(item) or True
+    p._items_now = lambda: ["Berserker's Greaves", "Infinity Edge", "Doran's Blade"]
+    from types import SimpleNamespace as _NS
+    p.build = _NS(target="Infinity Edge", ts=time.time() - 600, buy_now=[], needs={})
+
+    def _no_credits(*a, **k):
+        raise RuntimeError("402 no credits")
+
+    p.shop_brain.decide = _no_credits
+    p.data = {"gameData": {"gameTime": 1400.0}}
+    p._shop_plan_and_buy(1300.0)
+    print("stale plan, IE owned:", bought, list(p.log_lines)[-2:])
+    assert bought and "Infinity Edge" not in bought
+    print("MACRO OK (shop without Jev)")
+else:
+    print("(no item catalog: shop check skipped)")

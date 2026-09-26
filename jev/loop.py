@@ -2718,10 +2718,27 @@ class Player:
                 gold = float((fresh.get("activePlayer") or {}).get("currentGold", gold))
             except Exception as e:  # noqa: BLE001
                 self.log_lines.append(f"build error: {e}")
+        def have(it) -> bool:
+            # An owned upgrade counts: Berserker's Greaves turns into Gunmetal Greaves and the
+            # fallback kept trying to buy the boots again (g15).
+            cat, owned = self.shop_brain.catalog, self._items_now()
+            seen, todo = set(), [it]
+            while todo:
+                x = todo.pop()
+                if x.name in owned:
+                    return True
+                for i in x.into_ids:
+                    if i not in seen and i in cat.items:
+                        seen.add(i)
+                        todo.append(cat.items[i])
+            return False
+
         if self.build is not None and self.shop_brain is not None:
             cat = self.shop_brain.catalog
             target = cat.get(self.build.target)
-            if target is not None:
+            # (A stale plan's target may be owned already: g35 bought Infinity Edge with the API out of
+            # credits, then tried to buy it again on every visit instead of the next core item.)
+            if target is not None and not have(target):
                 names = [b.name for b in cat.purchases(target, self._items_now(), gold)]
             # (No extra Health Potion: typing its name also matches every item mentioning health,
             # so it failed 16 times in two games; the starting bundle already has one.)
@@ -2741,20 +2758,6 @@ class Player:
                 order = list(self.kit.items.starters[:1])
             else:
                 order = [b for b in self.kit.items.boots[:1]] + list(self.kit.items.core)
-            def have(it) -> bool:
-                # An owned upgrade counts: Berserker's Greaves turns into Gunmetal Greaves and the
-                # fallback kept trying to buy the boots again (g15).
-                seen, todo = set(), [it]
-                while todo:
-                    x = todo.pop()
-                    if x.name in owned:
-                        return True
-                    for i in x.into_ids:
-                        if i not in seen and i in cat.items:
-                            seen.add(i)
-                            todo.append(cat.items[i])
-                return False
-
             for name in order:
                 it = cat.get(name)
                 if it is None or have(it):
