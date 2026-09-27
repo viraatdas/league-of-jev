@@ -28,6 +28,18 @@ GOLD = {"melee": 21.0, "caster": 14.0, "": 17.0}
 HP_GOLD = 1.2            # gold-equivalent of 1% of my HP in lane (more when low, below)
 CHAMP_HP_GOLD = 1.6      # gold-equivalent of 1% of her HP at aggression 1
 Q_STACK = 4.0            # a Q stack toward the tornado
+# Top laners who win the level 1-3 all-in against Yasuo: no hits on them that early (g47 1:11: an auto on
+# Tryndamere at level 1 drew his Q/E/W and crits, 100% -> 36% and Flash in 6 s, still level 1 at 2:17).
+EARLY_BULLIES = {"tryndamere", "darius", "renekton", "pantheon", "olaf", "sett", "urgot", "irelia", "jax", "fiora",
+                 "riven", "kled", "illaoi", "warwick", "camille", "garen", "trundle", "volibear", "yorick"}
+
+
+def early_bully(sc, mi) -> bool:
+    """Levels 1-3 against one of EARLY_BULLIES above half HP, without a 30-point lead: hands off her."""
+    lane, ctx, ch = sc.lane if isinstance(sc.lane, dict) else {}, sc.ctx if isinstance(sc.ctx, dict) else {}, sc.champ
+    opp = str(lane.get("opp") or "").lower().replace(" ", "").replace(".", "").replace("'", "")
+    return (ch is not None and opp in EARLY_BULLIES and int(ctx.get("level") or 6) <= 3 and ch.unit.hp > 0.5
+            and mi.hp_pct < ch.unit.hp * 100 + 30)
 MULTI_Q = 4.0           # each unit past the first in a Q line or an E+Q circle: the wave falls faster, and
                         # the goal set for Yasuo is Qs that hit several (g39: 110 of 129 Q picks aimed at one)
 Q_STACK_TO_TORNADO = 10.0  # ... the one that makes it, with her in view: the tornado then R is Yasuo's kill
@@ -378,7 +390,8 @@ class LanePlanner:
         # looked at one step further: the hit on her from the landing spot, and a dash back out.
         e_ok = ready.get("E") and sc.e_dmg > 0 and getattr(mi, "dash_ok", True)
         champ_w = 0.0
-        if ch is not None and agg > 0.2:
+        bully = early_bully(sc, mi)
+        if ch is not None and agg > 0.2 and not bully:
             # Trading while well behind in HP loses the exchange that follows it: she answers and wins.
             behind = ch.unit.hp * 100 - mi.hp_pct
             fac = 1.0 if behind <= 10 else (0.6 if behind <= 25 else 0.25)
@@ -429,7 +442,7 @@ class LanePlanner:
                         out.append(Option("eq", v2, tr, land, why=f"kill {kill:.0f} circle {len(around)} gold {qg:.0f} spot {spot - here:+.0f}", p=pk, z=ze))
 
         # The champion: hits that cost her more than they cost me
-        if ch is not None and agg > 0.2:
+        if ch is not None and agg > 0.2 and not bully:
             ahead = mi.hp_pct - ch.unit.hp * 100
             w = champ_w
             # Hitting her from inside her tower's reach draws its shots (g33: dead at 2:32 chasing Shen

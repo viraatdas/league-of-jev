@@ -335,3 +335,16 @@ print("Q pick:", best.kind, best.why, best.point is not None)
 if best.kind == "q":
     assert best.point is not None and "turned" in best.why
 print("LANEPLAN OK (Q line turned onto the wave)")
+
+# Levels 1-3 against Tryndamere (an early bully) at 90%: no auto on him; at level 4, yes (g47 1:11).
+mi = micro()
+her = tr("champion", 150, 0, 0.9, 50)
+sc = scene([tr("minion", 400, 80, 0.9, 51)], champ=her, ready="")
+sc.lane = dict(sc.lane, opp="Tryndamere")
+for lvl, want in ((1, False), (4, True)):
+    sc.ctx = {"level": lvl}
+    best, top = pl.choose(sc, mi, now, False)
+    kinds = [best.kind] + [o.kind for o in top[1:]]
+    print(f"level {lvl} vs Tryndamere at 90%:", kinds)
+    assert ("auto_champ" in kinds) == want
+print("LANEPLAN OK (early bully)")

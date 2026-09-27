@@ -968,6 +968,9 @@ class Yasuo(Kit):
             return None
         if self.under_their_tower(sc, ch.unit.x, ch.unit.y) and not self.dive_ok(mi, sc):
             return None
+        from jev.laneplan import early_bully
+        if early_bully(sc, mi):
+            return None   # (Tryndamere and the like win levels 1-3: g47)
         knockup = rdy.get("Q") and self.q.q3(now) and d <= VC.q3_range * 0.85
         if (self.r_up(now) and knockup and ch.unit.hp < 0.55 and mi.hp_pct >= 45 and not (sc.enemy_champs >= 2 and not sc.ally_champs)
                 and self.minions_near_champ(sc) < 4):
