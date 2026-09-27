@@ -436,3 +436,32 @@ for allies, want in ((0, False), (2, True)):
     print(f"her at 45% with a friend of hers by her, {allies} of ours near: mode {p.micro.mode}")
     assert (p.micro.mode == "all_in") == want
 print("INITIATE OK (not into her team)")
+
+# The hunt: a champion at 8% walking away drops out of view (a brush): walk where she went for 3 s, Q
+# there once in reach (g42 9:26, Nasus at 2% lived). Not at 30% HP myself; not for a healthy one.
+from jev.minimap import MinimapState
+p = setup(now)
+p.mm_state = MinimapState(self_pos=(5000.0, 5000.0), ts=now)
+e = track(150, 0.08, 1, now)
+sc = Scene(me_xy=ME)
+sc.champ, sc.champ_dist, sc.enemy_champs = e, sc.dist(e), 1
+sc.ready = {"Q": True}
+p.kit.q.hud = False
+p._note_last_champ(sc, p.micro, now)
+p._last_champ["v"] = (330.0, 0.0)   # walking away at 330 units/s: 414u out 0.5 s later, in Q reach
+gone = Scene(me_xy=ME)
+gone.ready = {"Q": True}
+p.micro.last_order = 0
+print("hunt, her at 8% gone 0.5 s:", p._hunt(gone, p.micro, now + 0.5), p.micro.last_action)
+assert "hunt" in p.micro.last_action and "Q" in p.micro.last_action
+p.micro.last_order = 0
+gone.ready = {}
+assert p._hunt(gone, p.micro, now + 1.2) and "after her" in p.micro.last_action
+p.micro.hp_pct = 30.0
+assert not p._hunt(gone, p.micro, now + 1.4)
+p.micro.hp_pct = 80.0
+p._last_champ["hp"] = 0.6
+assert not p._hunt(gone, p.micro, now + 1.4)
+p._last_champ["hp"] = 0.08
+assert not p._hunt(gone, p.micro, now + 3.5)   # 3 s on, she is gone
+print("HUNT OK")

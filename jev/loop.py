@@ -780,6 +780,7 @@ class Player:
         if hasattr(kit, "r_rank"):
             kit.r_rank = int(ap.get("abilities", {}).get("R", {}).get("abilityLevel", 0))
         mi.hp_lost = getattr(self, "_hp_lost", 0.0)  # HP% lost in the damage window
+        self._note_last_champ(sc, mi, now)
         if self.kit.execute_ok and mi._can_order(now) and self._execute(kit, mi, sc, now):
             mi.reacted("reflex", view.ts)
             return self._took(sc, "execute", True)
@@ -798,6 +799,8 @@ class Player:
                 return self._took(sc, "retreating", True)
             fx, fy = self.lane.screen_dir(self.mech.nav.progress) if self.mech else mi.fwd
             return self._took(sc, "retreating", bool(kit.escape(mi, sc, now, (-fx, -fy))))
+        if sc.champ is None and mi._can_order(now) and self._hunt(sc, mi, now):
+            return self._took(sc, "hunt", True)
         self._fight_triggers(sc, mi, now)
         if not mi._can_order(now):
             return self._took(sc, "order rate limit", True)
@@ -891,6 +894,64 @@ class Player:
         self._commit(ch, mi, now, f"initiate on {ch.unit.hp * 100:.0f}% at {sc.champ_dist or 0:.0f}u: {why}")
         self._committed_until = now + 5.0
         return True
+
+    def _note_last_champ(self, sc, mi, now: float) -> None:
+        """Where the champion in view is on the map and which way she walks (map units, units/s): the hunt
+        follows her from it when she drops out of view."""
+        ch, mm = sc.champ, self.mm_state
+        if ch is None or mm is None or mm.pos is None:
+            return
+        ppu = config.VISION.px_per_unit
+        vx, vy = ch.velocity(now, 0.35) if hasattr(ch, "velocity") else (0.0, 0.0)
+        mvx, mvy = mi.self_velocity(now, sc.me_xy, sc.move_speed)
+        self._last_champ = {"t": now, "hp": ch.unit.hp,
+                            "pos": (mm.pos[0] + (ch.unit.x - sc.me_xy[0]) / ppu, mm.pos[1] - (ch.unit.y - sc.me_xy[1]) / ppu),
+                            "v": ((vx + mvx) / ppu, -(vy + mvy) / ppu),
+                            "towered": self.kit.under_their_tower(sc, ch.unit.x, ch.unit.y)}
+
+    def _hunt(self, sc, mi, now: float) -> bool:
+        """A champion at 20% or less just dropped out of view (a brush, the fog at the screen's edge): for 3 s
+        walk where she is headed and Q there when it reaches (a skillshot hits in a brush). g42's Nasus
+        at 2% walked out of Yasuo's view at 9:26 and lived; the chase had stopped with the last frame of
+        her. Not under her tower, not into her team, not while I am under 40%."""
+        lc, mm = getattr(self, "_last_champ", None), self.mm_state
+        if lc is None or mm is None or mm.pos is None or sc.enemy_champs:
+            return False
+        dt = now - lc["t"]
+        if not 0.15 < dt < 3.0 or lc["hp"] > 0.2 or lc["towered"] or mi.hp_pct < 40 or mi.mode == "back_off":
+            return False
+        if self._her_team_near_pt(lc["pos"]):
+            return False
+        k = min(dt + 0.3, 1.8)
+        vx, vy = lc["v"]
+        sp = math.hypot(vx, vy)
+        if sp > 420:
+            vx, vy = vx / sp * 420, vy / sp * 420
+        tx, ty = lc["pos"][0] + vx * k, lc["pos"][1] + vy * k
+        ppu = config.VISION.px_per_unit
+        sx, sy = sc.me_xy[0] + (tx - mm.pos[0]) * ppu, sc.me_xy[1] - (ty - mm.pos[1]) * ppu
+        if self.kit.under_their_tower(sc, sx, sy):
+            return False
+        d = math.hypot(sx - sc.me_xy[0], sy - sc.me_xy[1]) / ppu
+        kit = self.kit
+        if (sc.ready.get("Q") and hasattr(getattr(kit, "q", None), "q3")
+                and d <= (config.VISION.q3_range * 0.85 if kit.q.q3(now) else config.VISION.q_range)
+                and now - getattr(self, "_hunt_q_t", 0.0) > 1.0):
+            was_q3 = kit.q.q3(now)
+            mi.cast(1, sx, sy)
+            kit.q.cast(True, now)
+            self._hunt_q_t = now
+            mi._ordered(now, f"hunt: {'Q3' if was_q3 else 'Q'} where she went ({lc['hp'] * 100:.0f}%, {dt:.1f} s ago)")
+            return True
+        mi.move_screen(sx, sy, now, f"hunt: after her ({lc['hp'] * 100:.0f}%, {dt:.1f} s ago, {d:.0f}u)", every=0.15)
+        return True
+
+    def _her_team_near_pt(self, her) -> bool:
+        """Two or more of them within 1500 units of a map point, more than of us there (me counted)."""
+        mm = self.mm_state
+        foes = sum(1 for e in mm.enemy_champions if dist(e, her) < 1500)
+        friends = 1 + sum(1 for a in mm.ally_champions if dist(a, her) < 1500)
+        return foes >= 2 and foes > friends
 
     def _fight_back(self, sc, mi, now: float) -> bool:
         """One of them is on me, hitting (8%+ lost in the damage window), within 450 units, alone (no other
