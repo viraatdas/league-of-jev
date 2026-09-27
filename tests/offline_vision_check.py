@@ -142,7 +142,8 @@ else:
 
 # Champion bars come with a dark frame (g35's Nasus) or a purple one and a hexagonal level box (g37's
 # Dr. Mundo, unread on every frame before, so Yasuo never saw his opponent): both are champions. So is a
-# nearly empty one (g42's Nasus at 2%, too dim for the red mask: he walked away from the kill unseen).
+# nearly empty one (g42's Nasus at 2%, too dim for the red mask: he walked away from the kill unseen), and a
+# shielded one (g46's Urgot: the white shield after his fill failed the dark empty-part checks).
 for b in _json.load(open("tests/fixtures/frames/champ_bars.json")):
     crop = cv2.imread(f"tests/fixtures/frames/{b['file']}")
     frame = np.full((1117, 1728, 3), (70, 95, 80), np.uint8)

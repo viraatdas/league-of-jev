@@ -212,9 +212,12 @@ class VisionReader:
             # (The left edge of the frame renders lighter on some settings, so only above/below are checked.)
             if above < 0.55 or below < 0.55:
                 continue
+            e0 = x + w + 1
+            if kind == "champion":
+                e0 = self._past_shield(y + h // 2, e0, x_end - 1)
             if w < full - 1:
                 # The empty part of the bar is dark too.
-                empty = dark[y + h // 2, x + w + 1:x_end - 1]
+                empty = dark[y + h // 2, e0:x_end - 1]
                 if empty.size and empty.mean() < 0.5:
                     continue
                 val = getattr(self, "_val", None)
@@ -243,7 +246,7 @@ class VisionReader:
                 # A real champion bar sits in a solid dark frame, empty part included: low Fiddlesticks
                 # and Kayle bars read 0.93-1.0 above, below and in the empty part; red damage numbers
                 # over Yasuo read as an 8% champion at 0.59-0.70 and drew an execute (E and ignite, g17).
-                empty_mid = dark[y + h // 2, x + w + 1:x_end - 1]
+                empty_mid = dark[y + h // 2, e0:x_end - 1]
                 if min(above, below) < 0.85 or (empty_mid.size and empty_mid.mean() < 0.85):
                     continue
             if unit_kind == "champion" and team != "self" and hp < 0.3:
@@ -257,11 +260,24 @@ class VisionReader:
             out.append(Unit(unit_kind, team, ox + x + full / 2 + dx, oy + y + h / 2 + dy, hp, (ox + x, oy + y, w, h)))
         return out
 
+    def _past_shield(self, row: int, x0: int, x1: int) -> int:
+        """Past a shield right after a champion's fill: a white-grey run (V over 80, S under 60) that the
+        empty-part checks read as \"not dark\". g46's Urgot, shielded by his W at 45%, read as no champion
+        for 3 s while he took Yasuo from 69% to 23%."""
+        val, sat = getattr(self, "_val", None), getattr(self, "_sat", None)
+        if val is None or sat is None:
+            return x0
+        i = x0
+        while i < x1 and val[row, i] > 80 and sat[row, i] < 60:
+            i += 1
+        return i
+
     def read_units(self, frame: np.ndarray) -> tuple[list[Unit], Unit | None]:
         x0, y0, x1, y1 = self.view
         hsv = cv2.cvtColor(to_bgr(frame[y0:y1, x0:x1]), cv2.COLOR_BGR2HSV)
         dark = hsv[:, :, 2] < self.vc.frame_dark_v
         self._val = hsv[:, :, 2]
+        self._sat = hsv[:, :, 1]
         self._purple = cv2.inRange(hsv, (140, 60, 40), (179, 255, 175)) > 0   # the purple champion-bar frame
         # Blank the minimap corner and the HUD so their icons are never read as units.
         mx, my, _ = self.geo.minimap or (x1, y1, 0)
