@@ -195,6 +195,22 @@ mm.ally_champions = [(e[0] - 200.0, e[1]), (e[0], e[1] - 250.0)]
 j = p._join_fight_plan(mm, mm.ally_champions, 600.0, 80.0, now)
 print("... two of ours:", j)
 assert j is not None
+# One of ours on one of theirs with three of them in the fog: stay out (g40 37:09, g41 30:15); two of ours: join.
+from jev.macro import Situation
+p = setup(now)
+mm.self_pos, e = (6000.0, 6000.0), (7600.0, 7800.0)
+mm.enemy_champions, mm.ally_champions = [e], [(7800.0, 7700.0)]
+p.situation = Situation(unseen=3)
+fog = p._join_fight_plan(mm, mm.ally_champions, 600.0, 80.0, now)
+p = setup(now)
+p.situation = Situation(unseen=3)
+mm.ally_champions = [(7800.0, 7700.0), (7500.0, 8000.0)]
+fog2 = p._join_fight_plan(mm, mm.ally_champions, 600.0, 80.0, now)
+print("1 of ours on 1, 3 unseen:", fog, "| 2 of ours:", fog2)
+assert fog is None and fog2 is not None
+# At 65% HP: no join.
+p = setup(now)
+assert p._join_fight_plan(mm, mm.ally_champions, 600.0, 65.0, now) is None
 print("JOIN OK")
 
 # A trade that left her at 30% while I am at 85%: upgrade to all in.

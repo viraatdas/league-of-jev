@@ -2122,8 +2122,9 @@ class Player:
                 self._join, self._join_next = None, now + 6.0
                 return None
             return ("objective", j["pt"], "join the fight")
-        if gt < 240 or hp < 55 or now < getattr(self, "_join_next", 0.0) or self._levels_behind() >= 2:
+        if gt < 240 or hp < 70 or now < getattr(self, "_join_next", 0.0) or self._levels_behind() >= 2:
             return None  # (two levels behind their team, a skirmish is theirs: Lee died walking into them, g21)
+            # (70%: joins from 55-70% went in half spent)
         sit = getattr(self, "situation", None)
         if sit is not None and sit.outnumbered:
             return None  # two or more of us dead: their five against our three wherever the fight goes
@@ -2140,6 +2141,10 @@ class Player:
                 continue  # a fight at their tower is a dive: g33's Yasuo joined one on Shen there and died (6:41)
             if self.jungle_state is None and len(friends) < 2 and d > 2500:
                 continue  # a laner leaves the wave for a real fight, not every 1-on-1 across the map (CS 30 at 21:00, g26)
+            if len(friends) < 2 and sit is not None and sit.unseen >= 3 and not sit.power_play:
+                # Three or more of them in the fog: a "1 of us on 1 of them" is where the rest of them are.
+                # g40 (37:09) and g41 (30:15) went from 100% to dead in seconds walking into such fights.
+                continue
             if self.jungle_state is None and gt < 840 and len(friends) < 2 and self.lane.project(e)[1] > 1200:
                 # Laning: out of my lane only for a fight two of ours are already in. g39's top Yasuo walked to
                 # "1 of us on 1 of them" fights in the river and mid twice before 10:00 and died both times
