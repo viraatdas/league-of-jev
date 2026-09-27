@@ -257,3 +257,62 @@ p._fight_triggers(sc, p.micro, time.time() + 0.5)
 print("next read back_off:", p.micro.mode)
 assert p.micro.mode == "all_in"
 print("JUNGLE OK (Lee initiation)")
+
+# A champion that jumps ~400 units in an instant at the same HP keeps its track (Lee keeps his target)
+# and the jump is recorded; with Flash in her spells it marks Flash down for 5 minutes. Ezreal's E is
+# a spell. 700 units is not a blink: a new champion.
+from jev.micro import UnitTracker
+tk = UnitTracker(max_jump_px=90, blink_px=480 * PPU)
+t0 = time.time()
+a = tk.update([Unit("champion", "enemy", ME[0] + 300 * PPU, ME[1], 0.55, (0, 0, 1, 1))], t0)[0]
+b = tk.update([Unit("champion", "enemy", ME[0] + 700 * PPU, ME[1], 0.55, (0, 0, 1, 1))], t0 + 0.02)[0]
+print("400u jump: same track", a.id == b.id, "| blinks", [round(u) for _, u in b.blinks])
+assert a.id == b.id and len(b.blinks) == 1 and 390 < b.blinks[0][1] < 410
+c = tk.update([Unit("champion", "enemy", ME[0] + 1400 * PPU, ME[1], 0.55, (0, 0, 1, 1))], t0 + 0.04)[0]
+assert c.id != b.id
+p = Player(dry_run=True, champion="leesin", role="JUNGLE")
+p.data = {"allPlayers": [{"championName": "Udyr", "summonerSpells": {"summonerSpellOne": {"displayName": "Flash"},
+                                                                    "summonerSpellTwo": {"displayName": "Smite"}}},
+                         {"championName": "Ezreal", "summonerSpells": {"summonerSpellOne": {"displayName": "Flash"}}}]}
+for name, want in (("Udyr", True), ("Ezreal", False)):
+    tr = trk(700, 0.5, "champion", 31)
+    tr.name = name
+    tr.blinks.append((t0, 400.0))
+    p._note_blinks([tr], t0)
+    print(f"{name} jumped 400u: Flash down = {p.enemy_flash_down(name, t0 + 1)} |", list(p.log_lines)[-1])
+    assert p.enemy_flash_down(name, t0 + 1) == want
+assert not p.enemy_flash_down("Udyr", t0 + 301)
+# Flash down counts double in Lee's go: a healthy laner, only "I am not behind in levels", Flash down: go.
+lee = LeeSin("JUNGLE")
+mi = Micro(Controller(dry_run=True, log=lambda m: None), Screen(), keybinds.load(), "ORDER")
+mi.hp_pct = 90.0
+sc = lee_scene(600, 0.75)
+assert lee.go(sc, mi, time.time(), 0, False) is None
+sc.ctx["target_flash_down"] = True
+print("healthy laner, Flash down:", lee.go(sc, mi, time.time(), 0, False))
+assert lee.go(sc, mi, time.time(), 0, False) is not None
+
+# Escape: W to our minion toward home; with none, a ward 600 units toward home and W to it.
+home = (-1.0, 0.0)   # home is to the left on screen
+for minion, want in ((True, "W to our unit"), (False, "ward hop (escape")):
+    lee = LeeSin("JUNGLE")
+    mi = Micro(Controller(dry_run=True, log=lambda m: None), Screen(), keybinds.load(), "ORDER")
+    mi.hp_pct = 30.0
+    sc = lee_scene(300, 0.9, ready="W")
+    sc.ctx["ward_ready"] = True
+    if minion:
+        sc.ally_units = [Unit("minion", "ally", ME[0] - 500 * PPU, ME[1] + 40 * PPU, 0.8, (0, 0, 60, 4))]
+    assert lee.escape(mi, sc, time.time(), home)
+    print("escape:", mi.last_action)
+    assert want in mi.last_action
+
+# Insec: our tower 900 units behind me, her 400 units ahead at 60%: ward 180 units past her, W, R 0.55 s later.
+lee = LeeSin("JUNGLE")
+mi = Micro(Controller(dry_run=True, log=lambda m: None), Screen(), keybinds.load(), "ORDER")
+mi.hp_pct = 80.0
+sc = lee_scene(400, 0.6, ready="QWER")
+sc.ctx.update(ward_ready=True, own_tower_px=(ME[0] - 900 * PPU, ME[1]))
+lee.fight(mi, sc, time.time(), 0.7, "all_in")
+print("insec:", mi.last_action, "| queued:", len(mi._later))
+assert "insec" in mi.last_action and len(mi._later) == 2
+print("JUNGLE OK (Flash, ward hop, insec)")

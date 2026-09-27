@@ -221,7 +221,7 @@ class Player:
         self.view: View | None = None
         self.perceive_fps = 0.0
         self.min_tracker = UnitTracker()
-        self.champ_tracker = UnitTracker(max_jump_px=90)
+        self.champ_tracker = UnitTracker(max_jump_px=90, blink_px=480 * config.VISION.px_per_unit)
         self.tactic_hz = tactic_hz
         self.explore = explore
         self.champion_override = champion
@@ -720,6 +720,7 @@ class Player:
         mi.dodge_lines = self._opponent_throws_lines()
         champs = self.champ_tracker.update(view.enemies("champion"), now)
         self._name_tracks(champs, now)
+        self._note_blinks(champs, now)
         if not minions and not champs and not (self.kit.support and view.allies("champion")):
             self.scene = None
             return False
@@ -978,7 +979,9 @@ class Player:
             # Yasuo farmed next to their fights (0 kills in g09-g15). Join on the weakest in reach.
             self._commit(ch, mi, now, f"team fight ({allies + 1} vs {sc.enemy_champs}), all in on {their * 100:.0f}% at {d:.0f}u")
             return
-        if (their is not None and their < 0.45 and max(recent) < 0.6 and mi.hp_pct >= their * 100 + 25 and d < 700
+        flash_down = self.enemy_flash_down(getattr(ch, "name", "") or "", now)
+        if (their is not None and their < (0.55 if flash_down else 0.45) and max(recent) < 0.6
+                and mi.hp_pct >= their * 100 + (15 if flash_down else 25) and d < 700
                 and sc.enemy_champs == 1 and self.kit.minions_near_champ(sc) < 4 and mi.mode != "back_off"):
             # Lane kill pressure: she is under 45% and I am well ahead in HP, with no full wave around her.
             self._commit(ch, mi, now, f"kill pressure ({their * 100:.0f}% vs me {mi.hp_pct:.0f}% at {d:.0f}u), all in")
@@ -1061,6 +1064,10 @@ class Player:
                "ad": float(stats.get("attackDamage", 60.0)),
                "bonus_ad": self._item_stat(me.get("items") or [], "FlatPhysicalDamageMod"),
                "energy": float(stats.get("resourceValue") or 0.0) if str(stats.get("resourceType", "")).upper() == "ENERGY" else None,
+               # the trinket (slot 7) is a ward and off cooldown: a ward hop is possible
+               "ward_ready": bool(self.view is not None and self.view.hud.items_ready.get(6)
+                                  and any(int(i.get("slot", -1)) == 6 and "ward" in str(i.get("displayName", "")).lower()
+                                          for i in (me.get("items") or []))),
                "ganking": getattr(self, "_gank", None) is not None and self.intent == "objective"}
         mm = self.mm_state
         if sc is not None and mm is not None and mm.pos is not None:
@@ -1071,6 +1078,7 @@ class Player:
         ch = sc.champ if sc is not None else None
         if ch is not None:
             name = getattr(ch, "name", "") or self._her_name(sc)
+            ctx["target_flash_down"] = self.enemy_flash_down(name, time.time()) if name else False
             her = next((p for p in data.get("allPlayers", []) if str(p.get("championName")) == name), None)
             prof = self.enemy_kn.profile(name) if name else None
             if her is not None and prof is not None and prof.stats:
@@ -1447,6 +1455,31 @@ class Player:
                 self._name_marks.append((ts, u.x, u.y, name))
             return
 
+    # Champions whose own spells blink (no Flash needed to jump 300-480 units in an instant).
+    BLINKERS = {"ezreal", "kassadin", "katarina", "leblanc", "shaco", "zed", "vayne", "fiora", "talon", "pyke", "qiyana"}
+
+    def _note_blinks(self, champs: list, now: float) -> None:
+        """An enemy that jumped 300-480 units in an instant (micro.UnitTracker._blinked) and has Flash
+        used it: down for ~5 minutes (the guides: a lane whose laner burned Flash is gankable for five
+        minutes; a kill without Flash to escape is a kill)."""
+        fd = self.flash_down = getattr(self, "flash_down", {})
+        for tr in champs:
+            if not tr.blinks or tr.blinks[-1][0] != now:
+                continue
+            name = getattr(tr, "name", "") or ""
+            key = name.lower().replace(" ", "").replace("'", "").replace(".", "")
+            if key in self.BLINKERS:
+                self.log_lines.append(f"enemy blink: {name} jumped {tr.blinks[-1][1]:.0f}u (a spell, not Flash)")
+                continue
+            p = next((p for p in (self.data or {}).get("allPlayers", []) if str(p.get("championName")) == name), None)
+            if p is not None and "flash" not in " ".join(str((v or {}).get("displayName", "")) for v in (p.get("summonerSpells") or {}).values()).lower():
+                continue   # no Flash to use
+            fd[name or f"track {tr.id}"] = now + 300.0
+            self.log_lines.append(f"enemy Flash: {name or 'a champion'} jumped {tr.blinks[-1][1]:.0f}u, Flash down ~5 min")
+
+    def enemy_flash_down(self, name: str, now: float) -> bool:
+        return now < getattr(self, "flash_down", {}).get(name, 0.0)
+
     def _name_tracks(self, champs: list, now: float) -> None:
         gt = float(((self.data or {}).get("gameData") or {}).get("gameTime", 0.0))
         for tr in champs:
@@ -1515,8 +1548,11 @@ class Player:
                 if prof is not None:
                     info["threat_reach"] = rnd(prof.reach(self.enemy_kn.up(name, now)))
                 info["her_spells_on_cooldown"] = down
+                if self.enemy_flash_down(name, now):
+                    info["flash"] = "used: down for minutes, she cannot escape with it"
             info["describe"] = (f"{name or 'enemy champion'} at {info['hp_percent']}% HP, {info['distance']} units {info['direction']}, "
-                                f"{info['moving']}" + (f", {'/'.join(info['her_spells_on_cooldown'])} on cooldown" if info.get("her_spells_on_cooldown") else ""))
+                                f"{info['moving']}" + (f", {'/'.join(info['her_spells_on_cooldown'])} on cooldown" if info.get("her_spells_on_cooldown") else "")
+                                + (", Flash down" if info.get("flash") else ""))
             enemies[f"enemy_champion_{tr.id}"] = info
         my_around = sum(1 for t in sc.minions if sc.dist(t) <= 500)
         summ = {n: ("ready" if sc.ready.get(k) else "not ready") for n, k in zip(mi.summoners, "DF") if n}
@@ -2349,7 +2385,7 @@ class Player:
         self.view = None
         self.scene = None
         self.min_tracker = UnitTracker()
-        self.champ_tracker = UnitTracker(max_jump_px=90)
+        self.champ_tracker = UnitTracker(max_jump_px=90, blink_px=480 * config.VISION.px_per_unit)
         self._gold_hist.clear()
         self._stop = threading.Event()
         self.recorder = FixtureRecorder()

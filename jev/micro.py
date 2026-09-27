@@ -34,6 +34,7 @@ class Track:
     path: collections.deque = field(default_factory=lambda: collections.deque(maxlen=12))  # (t, x, y) screen px
     trail: collections.deque = field(default_factory=lambda: collections.deque(maxlen=50))  # (t, hp) every 0.1 s, 5 s
     drops: collections.deque = field(default_factory=lambda: collections.deque(maxlen=16))  # (t, hp fraction lost) per hit
+    blinks: list = field(default_factory=list)          # (t, units jumped): a Flash or a blink ability
     hits_expected: list = field(default_factory=list)   # (t, damage) of our own hits on the way
     hp_max_measured: float | None = None                 # max HP from the drop our own known-damage hit made
 
@@ -151,11 +152,34 @@ HP_MODEL = HpModel()
 class UnitTracker:
     """Keeps identities across frames by nearest-neighbour matching of screen positions."""
 
-    def __init__(self, max_jump_px: float = 55.0, ttl: float = 0.5) -> None:
+    def __init__(self, max_jump_px: float = 55.0, ttl: float = 0.5, blink_px: float | None = None) -> None:
         self.tracks: dict[int, Track] = {}
         self.max_jump = max_jump_px
         self.ttl = ttl
+        self.blink_px = blink_px   # champions: a jump up to this far, same HP, is the same unit (a Flash or a blink)
         self.dropped: list[Track] = []
+
+    def _blinked(self, free: dict, u: Unit, now: float):
+        """A champion that vanished from one spot and appeared 300-480 units away within 0.15 s, at the same
+        HP, is the same champion after a Flash or a blink: keep its track (its name, its Q mark as the
+        focus) and record the jump. Otherwise a new track. (Dashes are tracked frame to frame.)"""
+        if self.blink_px is None:
+            return None
+        lo = self.max_jump
+        best = None
+        for tid, tr in free.items():
+            if tr.unit.kind != u.kind or now - tr.seen > 0.15 or abs(tr.unit.hp - u.hp) > 0.06:
+                continue
+            d = math.hypot(tr.unit.x - u.x, tr.unit.y - u.y)
+            if lo <= d <= self.blink_px and (best is None or d < best[0]):
+                best = (d, tid)
+        if best is None:
+            return None
+        tr = free.pop(best[1])
+        tr.blinks.append((now, best[0] / VC.px_per_unit))
+        tr.path.clear()   # (the jump is not a velocity)
+        tr.unit, tr.seen = u, now
+        return tr
 
     def update(self, units: list[Unit], now: float) -> list[Track]:
         free = dict(self.tracks)
@@ -183,8 +207,10 @@ class UnitTracker:
                 tr.hits_expected = [(t, d) for t, d in tr.hits_expected if now - t < 0.4]
                 tr.unit, tr.seen = u, now
             else:
-                tr = Track(next(_ids), u, now)
-                self.tracks[tr.id] = tr
+                tr = self._blinked(free, u, now)
+                if tr is None:
+                    tr = Track(next(_ids), u, now)
+                    self.tracks[tr.id] = tr
             tr.hist.append((now, u.hp))
             tr.path.append((now, u.x, u.y))
             if not tr.trail or now - tr.trail[-1][0] >= 0.1:

@@ -1350,7 +1350,7 @@ class LeeSin(Kit):
         ratio = dmg * (1.0 + 0.6 * allies_on_her) / max(1.0, hp)
         lvl, her_lvl = int(sc.ctx.get("level", 1)), int(sc.ctx.get("target_level", 1))
         signs = [her_half is True, allies_on_her > 0, lvl >= her_lvl, ch.unit.hp <= 0.6, bool(sc.lane.get("her_spells_down"))]
-        n = sum(signs)
+        n = sum(signs) + (2 if sc.ctx.get("target_flash_down") else 0)   # (Flash down: "overrides everything")
         why = f"kill {ratio:.1f}x ({dmg:.0f} on {hp:.0f} HP{', ally on her' if allies_on_her else ''}), {n} signs"
         if ratio >= 1.0:
             return why
@@ -1398,6 +1398,8 @@ class LeeSin(Kit):
         max_hp = float(sc.ctx.get("target_max_hp", 700.0))
         hp = ch.unit.hp * max_hp
         towered = self.under_their_tower(sc, ch.unit.x, ch.unit.y)
+        if mode == "all_in" and self.insec(mi, sc, now):
+            return True
         # R: the execute (Q1 -> R -> Q2: the kick raises her missing health, Q2 then hits harder), or the kick
         # into our tower's range; to peel when I am losing.
         if rdy.get("R") and d <= self.R_RANGE + 40:
@@ -1425,6 +1427,14 @@ class LeeSin(Kit):
                 return True
         if mode == "all_in" and d > 450 and rdy.get("W") and self._w_gapclose(mi, sc, ch, now):
             return True
+        if (mode == "all_in" and 500 < d <= 850 and rdy.get("W") and not self.q2_up(sc, now) and ch.unit.hp <= 0.5
+                and self._receding(sc, ch, now)):
+            # She runs, hurt, and no Q mark to follow: a ward next to her and W to it (the ward is spent;
+            # the guides keep one for escapes, so only for a hurt target).
+            dx, dy = ch.unit.x - sc.me_xy[0], ch.unit.y - sc.me_xy[1]
+            k = max(0.0, (d - 150) / d)
+            if self.ward_hop(mi, sc, now, sc.me_xy[0] + dx * k, sc.me_xy[1] + dy * k, "after her"):
+                return True
         # Flurry: two quick autos after each spell before the next one (energy back, damage up).
         if (d <= 250 and now - getattr(self, "spell_at", 0.0) < 3.0 and getattr(self, "autos_since", 2) < 2
                 and mi.attack_ready(now, aspd)):
@@ -1457,6 +1467,95 @@ class LeeSin(Kit):
         if self.ignite_if_kill(mi, sc, now, mode):
             return True
         return self.hit_or_chase(mi, sc, now, aspd, mode, reach=190.0)
+
+    # -- ward hop (Safeguard to a ward: W snaps to a ward within 100 units of the click) -----------
+    WARD_RANGE = 600.0      # Stealth Ward placement 625 (wiki), a margin
+
+    def ward_hop(self, mi: Micro, sc: Scene, now: float, x: float, y: float, why: str) -> bool:
+        """A ward at (x, y) (screen px, pulled in to ward range), then W to it 0.15 s later."""
+        if not (sc.ready.get("W") and sc.ctx.get("ward_ready")) or now - getattr(self, "_hop_at", 0.0) < 3.0:
+            return False
+        e = sc.ctx.get("energy")
+        if e is not None and e < 50:
+            return False
+        mx, my = sc.me_xy
+        d = math.hypot(x - mx, y - my) / VC.px_per_unit
+        if d < 150:
+            return False
+        if d > self.WARD_RANGE:
+            k = self.WARD_RANGE / d
+            x, y = mx + (x - mx) * k, my + (y - my) * k
+        mi.ctl.cast(mi.kb.vision_item, *mi._pt(x, y), mi.kb.quick("evtUseVisionItem"))
+        mi.later(0.15, lambda: mi.cast(2, x, y))
+        self._hop_at = self.spell_at = now
+        self.autos_since = 0
+        sc.ctx["ward_ready"] = False
+        mi._ordered(now, f"ward hop ({why})")
+        return True
+
+    def escape(self, mi: Micro, sc: Scene, now: float, home: tuple[float, float]) -> bool:
+        """W to one of our units toward home (700 range), else a ward hop 600 units toward home:
+        Lee's escape before Flash ("keep W, or a ward hop, to escape")."""
+        if not sc.ready.get("W") or mi.hp_pct > 60 or sc.champ is None or (sc.champ_dist or 9e9) > 1000:
+            return False
+        mx, my = sc.me_xy
+        best, gain = None, 250.0
+        for u in list(sc.ally_units) + list(sc.ally_champs):
+            dx, dy = (u.x - mx) / VC.px_per_unit, (u.y - my) / VC.px_per_unit
+            if math.hypot(dx, dy) > self.W_RANGE - 30:
+                continue
+            along = dx * home[0] + dy * home[1]
+            if along > gain:
+                best, gain = u, along
+        if best is not None:
+            mi.cast(2, best.x, best.y)
+            mi._ordered(now, "escape: W to our unit toward home")
+            return True
+        return self.ward_hop(mi, sc, now, mx + home[0] * self.WARD_RANGE * VC.px_per_unit,
+                             my + home[1] * self.WARD_RANGE * VC.px_per_unit, "escape toward home")
+
+    def _home_anchor(self, sc: Scene):
+        """Where a kick should send her: our tower in view, else our champions on screen."""
+        t = sc.ctx.get("own_tower_px")
+        if t:
+            return t
+        if sc.ally_champs:
+            return (sum(a.x for a in sc.ally_champs) / len(sc.ally_champs), sum(a.y for a in sc.ally_champs) / len(sc.ally_champs))
+        return None
+
+    def insec(self, mi: Micro, sc: Scene, now: float) -> bool:
+        """Ward behind her (the far side from our tower or our team), W to it, R: the kick sends her ~700
+        units into us. Needs R, W, the ward and 50 energy, her within 420 units, and the ward spot
+        (180 units past her, led 0.4 s; R reaches 375) within ward range (600). Only when she lands in our tower's range or
+        on our team and is hurt (70% or less), or the kick lands her in our tower's range."""
+        ch = sc.champ
+        if ch is None or not (sc.ready.get("R") and sc.ready.get("W") and sc.ctx.get("ward_ready")):
+            return False
+        d = sc.champ_dist or 9e9
+        home = self._home_anchor(sc)
+        if home is None or d > 420 or d < 120:
+            return False
+        vx, vy = ch.velocity(now)
+        mv = mi.self_velocity(now, sc.me_xy, sc.move_speed)
+        tx, ty = ch.unit.x + (vx + mv[0]) * 0.4, ch.unit.y + (vy + mv[1]) * 0.4
+        ux, uy = tx - home[0], ty - home[1]
+        n = math.hypot(ux, uy) or 1.0
+        bx, by = tx + ux / n * 180 * VC.px_per_unit, ty + uy / n * 180 * VC.px_per_unit
+        if math.hypot(bx - sc.me_xy[0], by - sc.me_xy[1]) / VC.px_per_unit > self.WARD_RANGE:
+            return False
+        # where the kick lands: 700 units from her, straight away from the ward spot, toward home
+        lx, ly = tx - ux / n * 700 * VC.px_per_unit, ty - uy / n * 700 * VC.px_per_unit
+        to_home = math.hypot(lx - home[0], ly - home[1]) / VC.px_per_unit
+        tower = sc.ctx.get("own_tower_px")
+        into_tower = tower is not None and math.hypot(lx - tower[0], ly - tower[1]) / VC.px_per_unit <= 650
+        if not (into_tower or (ch.unit.hp <= 0.7 and to_home <= 450)):
+            return False
+        if not self.ward_hop(mi, sc, now, bx, by, "insec: ward behind her"):
+            return False
+        mi.later(0.55, lambda: mi.cast(4, ch.unit.x, ch.unit.y))
+        self.burst_at = now
+        mi._ordered(now, "all_in: insec (ward, W, R toward " + ("our tower)" if into_tower else "our team)"))
+        return True
 
     def _receding(self, sc: Scene, tr, now: float) -> bool:
         """Walking away from me (her own motion: the camera follows me)."""
