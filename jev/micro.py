@@ -578,7 +578,10 @@ class Micro:
             hit = champ = 0
             for tr, hp0 in units:
                 seen = [h for th, h in tr.hist if t0 < th <= t0 + win] + [h for th, h in tr.trail if t0 < th <= t0 + win]
-                if seen and min(seen) <= hp0 - 0.015:
+                # Hit: its HP dropped; or it was low and vanished in the window (the Q killed it before a
+                # lower bar was read: g39's last-hit Qs all counted as misses, 0.8 units per Q)
+                died = tr.unit.kind == "minion" and hp0 <= 0.5 and t0 - 0.05 <= tr.seen <= t0 + win and now - tr.seen > 0.2
+                if (seen and min(seen) <= hp0 - 0.015) or died:
                     hit += 1
                     champ += int(tr.unit.kind == "champion")
             st = self.q_stats.setdefault(kind, {"casts": 0, "units": 0, "multi": 0, "champ": 0})

@@ -539,3 +539,18 @@ print(f"tornado while chasing: {(x0 - her.unit.x) / VC.px_per_unit:+.0f}u withou
       f"(she walks {345 * tornado_lead(800, 0.8):.0f}u in the flight)")
 assert abs(lead_u - 345 * tornado_lead(800, 0.8)) < 30
 print("FIGHT OK (tornado lead while chasing)")
+# A Q that kills a low minion: its bar vanishes before a lower one is read; it still counts as hit.
+mi, log = micro()
+mi.q_notes_on = True
+low = track(unit("minion", 200, 0, 0.12), now)
+low.id = 777
+sc = scene(None, [low], "Q")
+sc.champs = []
+mi.scene = sc
+mi.cast(1, low.unit.x, low.unit.y)
+t_cast = mi.q_notes[-1][0]
+low.seen = t_cast + 0.2          # last seen just after the cast, then gone
+mi.score_q(t_cast + 3.0)
+print("Q kills a 12% minion:", mi.q_stats)
+assert mi.q_stats["Q"]["units"] == 1
+print("FIGHT OK (a Q that kills counts)")
