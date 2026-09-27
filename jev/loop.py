@@ -970,9 +970,14 @@ class Player:
         # out even, both near 40%, and their jungler finished Yasuo, g41 5:43)
         if d > 450 or lost < 8 or mi.hp_pct < 50 or mi.hp_pct < ch.unit.hp * 100:
             return False
-        name = (getattr(ch, "name", "") or self._her_name(sc) or "").lower().replace(" ", "").replace(".", "")
-        if name in getattr(self.kit, "HEALERS", ()) and mi.hp_pct < ch.unit.hp * 100 + 15:
-            return False   # (Dr. Mundo heals through an even exchange: g45 fought back at 84/62, 70/60, 51/45 and bled)
+        raw = getattr(ch, "name", "") or self._her_name(sc) or ""
+        name = raw.lower().replace(" ", "").replace(".", "")
+        margin = 15 if name in getattr(self.kit, "HEALERS", ()) else 0
+        # (Dr. Mundo heals through an even exchange: g45 fought back at 84/62, 70/60, 51/45 and bled.) One
+        # who has killed me this game gets 10 points more per kill (g45: fed Mundo, four deaths to him).
+        margin += min(30, 10 * macro.killed_by(self.data or {}, raw))
+        if mi.hp_pct < ch.unit.hp * 100 + margin:
+            return False
         if not (sc.ready.get("Q") or sc.ready.get("E") or sc.ready.get("R")):
             return False
         fr = self.fights.read if self.fights is not None else None
@@ -1196,6 +1201,7 @@ class Player:
         if ch is not None:
             name = getattr(ch, "name", "") or self._her_name(sc)
             ctx["target_flash_down"] = self.enemy_flash_down(name, time.time()) if name else False
+            ctx["target_killed_me"] = macro.killed_by(data, name) if name else 0
             her = next((p for p in data.get("allPlayers", []) if str(p.get("championName")) == name), None)
             prof = self.enemy_kn.profile(name) if name else None
             if her is not None and prof is not None and prof.stats:

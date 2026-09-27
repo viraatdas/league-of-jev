@@ -117,6 +117,27 @@ def form(data: dict, window_s: float = 300.0) -> float:
     return max(0.5, min(1.3, f))
 
 
+def killed_by(data: dict, champion: str) -> int:
+    """How many times `champion` has killed me this game (the kill events name summoners: allPlayers maps
+    them to champions)."""
+    ap = data.get("activePlayer") or {}
+    me = (ap.get("riotId") or ap.get("summonerName") or "").split("#")[0]
+    if not me or not champion:
+        return 0
+    who = {}
+    for pl in data.get("allPlayers") or []:
+        for k in ("riotId", "summonerName", "riotIdGameName"):
+            if pl.get(k):
+                who[str(pl[k]).split("#")[0]] = str(pl.get("championName") or "")
+    n = 0
+    for e in (data.get("events") or {}).get("Events", []):
+        if e.get("EventName") == "ChampionKill" and str(e.get("VictimName", "")).split("#")[0] == me:
+            k = str(e.get("KillerName", "")).split("#")[0]
+            if who.get(k, k) == champion:
+                n += 1
+    return n
+
+
 def power_play_target(s: Situation, me_pos, mm, side: str, allies: list) -> tuple[str, tuple[float, float], str] | None:
     """Where a power play goes: the dragon when it is up and near enough, else their frontmost standing
     tower that our minions or champions are at (a tower alone shoots me), nearest to me."""

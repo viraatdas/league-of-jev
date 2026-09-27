@@ -943,6 +943,9 @@ class Yasuo(Kit):
         eff -= 0.25 * max(0.0, d - reach) / 400.0 + 0.25 * max(0.0, d - 400.0) / 400.0 * (not tornado)
         if str(sc.ctx.get("target") or "").lower().replace(" ", "").replace(".", "") in self.HEALERS:
             eff /= 1.15
+        # One who has killed me this game is ahead of the estimate (items, levels): g45's Dr. Mundo, four kills
+        # on Yasuo, was initiated on at 78% on a "1.1x".
+        eff /= 1.0 + 0.2 * min(3, int(sc.ctx.get("target_killed_me") or 0))
         why = f"kill {eff:.1f}x ({dmg:.0f} on {hp:.0f} HP{', ally on her' if allies_on_her else ''}, her wave {wave})"
         if mi.hp_pct < 55:
             # Hurt myself, only a clear kill: g41 went back in at 43% on a 44% Garen, both ended near nothing

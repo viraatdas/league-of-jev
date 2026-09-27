@@ -337,3 +337,14 @@ for tgt in (config.BLUE_FOUNTAIN, config.RED_FOUNTAIN, (7400.0, 7400.0)):
     print(f"minimap click for {tgt}: ({px:.0f},{py:.0f}), {inset:.0f} px inside")
     assert inset >= 20
 print("MACRO OK (minimap clicks inside the rim)")
+
+# Who has been killing me: kill events name summoners; allPlayers maps them to champions.
+_d = {"activePlayer": {"riotId": "Me#NA1"}, "allPlayers": [{"riotId": "Me#NA1", "championName": "Yasuo"},
+      {"summonerName": "Dr. Mundo Bot", "championName": "Dr. Mundo"}, {"summonerName": "Sivir Bot", "championName": "Sivir"}],
+      "events": {"Events": [{"EventName": "ChampionKill", "KillerName": "Dr. Mundo Bot", "VictimName": "Me"},
+                            {"EventName": "ChampionKill", "KillerName": "Sivir Bot", "VictimName": "Me"},
+                            {"EventName": "ChampionKill", "KillerName": "Dr. Mundo Bot", "VictimName": "Me#NA1"},
+                            {"EventName": "ChampionKill", "KillerName": "Me", "VictimName": "Dr. Mundo Bot"}]}}
+print("killed by Mundo:", macro.killed_by(_d, "Dr. Mundo"), "| by Sivir:", macro.killed_by(_d, "Sivir"), "| by Ziggs:", macro.killed_by(_d, "Ziggs"))
+assert macro.killed_by(_d, "Dr. Mundo") == 2 and macro.killed_by(_d, "Sivir") == 1 and macro.killed_by(_d, "Ziggs") == 0
+print("MACRO OK (killed by)")
