@@ -79,7 +79,8 @@ assert len(st.ally_champions) >= 2 and len(st.enemy_champions) == 2, (st.ally_ch
 # top edge is cut short by champion icons (g29 lost the box on 19% of top-lane frames).
 st = _mm.read(cv2.cvtColor(cv2.imread("tests/fixtures/frames/minimap_top_cut_box.png"), cv2.COLOR_BGR2BGRA))
 print("top-lane box:", st.self_pos and tuple(int(v) for v in st.self_pos))
-assert st.self_pos is not None and st.self_pos[0] < 3000 and st.self_pos[1] > 11500, st.self_pos
+# (the fitted box: centred on the icon at about (2000, 12500); the old centroid read was ~900 units off)
+assert st.self_pos is not None and 1700 < st.self_pos[0] < 2300 and 12200 < st.self_pos[1] < 12800, st.self_pos
 print("VISION OK (minimap)")
 
 # Position filter: a one-frame jump of 2800 units is dropped; a new spot that repeats (a recall) is taken.

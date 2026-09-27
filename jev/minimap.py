@@ -34,6 +34,9 @@ class MinimapState:
 
 
 class MinimapReader:
+    BOX_W, BOX_H = 94 / 372, 53 / 372   # camera box, fraction of the minimap side
+    BOX_MIN_SCORE = 0.25                # of the outline's pixels white (typical 0.7; icons cut it)
+
     def __init__(self, screen: Screen, geo: Geometry = config.GEOMETRY) -> None:
         self.screen = screen
         self.geo = geo
@@ -48,6 +51,12 @@ class MinimapReader:
         base = int(self.side * 0.17)
         self.static[self.side - base:, :base] = 0          # blue base corner
         self.static[:base, self.side - base:] = 0          # red base corner
+        # Camera box outline at the default zoom: 94 x 53 px on a 372 px minimap (the view is 1728 x 1117).
+        self._box_w, self._box_h = int(round(self.BOX_W * self.side)), int(round(self.BOX_H * self.side))
+        k = np.zeros((self._box_h + 1, self._box_w + 1), np.float32)
+        k[:2, :], k[-2:, :], k[:, :2], k[:, -2:] = 1, 1, 1, 1
+        self._box_kernel, self._box_len = (k, float(k.sum())) if self._box_w >= 20 else (None, 1.0)
+        self._k3 = np.ones((3, 3), np.uint8)
         # Persistence: pixels that stay red/blue for ~20 s are icons, not units.
         self._red_p = np.zeros((self.side, self.side), dtype=np.float32)
         self._blue_p = np.zeros((self.side, self.side), dtype=np.float32)
@@ -134,46 +143,18 @@ class MinimapReader:
         units(red, st.enemy_minions, st.enemy_champions)
         units(blue, st.ally_minions, st.ally_champions)
 
-        # Camera box: the largest white component shaped like a wide rectangle outline.
+        # Camera box: a fixed-size rectangle outline, fitted to the white pixels (a filter with the outline
+        # as kernel; the best score is the box). Clipped at a minimap edge or cut by icons, its visible sides
+        # still place it. The old read took the centroid of the largest white blob: an L of the left and
+        # bottom sides in top lane put the self position 700-900 units south of the icon (g41: median
+        # 925 units off over 263 frames), so tower reach, lane progress and every minimap distance were off.
         best = None
-        for cx, cy, area, w, h_ in self._components(white, 60, 4000):
-            if 50 <= w <= 200 and 25 <= h_ <= 120 and w > h_:
-                if best is None or area > best[2]:
-                    best = (cx, cy, area, w, h_)
-        if best is None:
-            # The outline can be broken: clipped at the minimap edge, or cut by a champion icon on
-            # one edge (which then merges with the icon into a taller blob). Pair any two box-wide
-            # horizontal pieces that line up at about the box's height apart, using their outer
-            # edges; if one end touches the minimap edge, use the box's usual width.
-            n, _, stats, _ = cv2.connectedComponentsWithStats(white, connectivity=8)
-            # A champion icon on the box's edge cuts that edge short: in the top-left corner (top lane)
-            # the top edge started at x=31 while the bottom one started at 3, and the box was lost on
-            # 19% of frames (g29). Edges pair when their left ends or their right ends line up; one of
-            # them must be nearly the box's full width.
-            pieces = [tuple(int(v) for v in stats[i][:4]) for i in range(1, n)
-                      if 40 <= stats[i][2] <= 140 and stats[i][3] <= 26]
-            pair = None
-            for a in pieces:
-                for b in pieces:
-                    gap = (b[1] + b[3]) - a[1]
-                    if b[1] <= a[1] or not 30 <= gap <= 90:
-                        continue
-                    twins = min(a[2], b[2]) >= 55 and abs(a[0] - b[0]) < 10 and abs(a[2] - b[2]) < 14
-                    cut = max(a[2], b[2]) >= 70 and (abs(a[0] - b[0]) < 10
-                                                     or abs((a[0] + a[2]) - (b[0] + b[2])) < 10)
-                    if twins or cut:
-                        if pair is None or a[2] + b[2] > pair[0][2] + pair[1][2]:
-                            pair = (a, b)
-            if pair is not None:
-                a, b = pair
-                left, right = min(a[0], b[0]), max(a[0] + a[2], b[0] + b[2])
-                top, bottom = a[1], b[1] + b[3]
-                cx = (left + right) / 2
-                if right >= self.side - 3:
-                    cx = left + 47
-                elif left <= 3:
-                    cx = right - 47
-                best = (cx, (top + bottom) / 2, 0, right - left, bottom - top)
+        if self._box_kernel is not None:
+            wd = cv2.dilate(white, self._k3).astype(np.float32) * (1.0 / 255)
+            score = cv2.filter2D(wd, -1, self._box_kernel, borderType=cv2.BORDER_CONSTANT)
+            by, bx = np.unravel_index(int(np.argmax(score)), score.shape)
+            if score[by, bx] >= self.BOX_MIN_SCORE * self._box_len:
+                best = (float(bx), float(by), 0, self._box_w, self._box_h)
         if best is not None:
             st.self_pos = self.px_to_map(best[0], best[1])
             # The own icon sits inside the camera box; drop it from the ally champion list. Its red
