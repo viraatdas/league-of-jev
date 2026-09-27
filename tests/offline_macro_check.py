@@ -226,6 +226,10 @@ assert p._objective_plan(base, time.time()) is None
 p.mm_state.enemy_champions = [(pit[0] + 600.0, pit[1] + dy) for dy in (-400.0, 0.0, 400.0, 800.0)]
 print("... four of theirs at the pit:", p._objective_plan(base, time.time()))
 assert p._objective_plan(base, time.time()) is None
+# From top lane, a laner stays (27 cross-map walks over g38-g42: 1 kill, 2 deaths, the wave left each time).
+p.mm_state.enemy_champions, p.mm_state.self_pos = [], (2000.0, 12000.0)
+print("... two of ours there, me in top lane:", p._objective_plan(base, time.time()))
+assert (p._objective_plan(base, time.time()) or (0, 0, ""))[2] != "dragon with allies"
 print("MACRO OK (dragon odds)")
 
 # Shopping with the API out of credits and a stale plan whose target is owned already: the next core

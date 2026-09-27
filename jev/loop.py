@@ -2080,8 +2080,11 @@ class Player:
             # In the pit, not merely on the bot side of the map: at 2500 units the bot lane standing
             # in lane counted, and Yasuo walked to an untouched dragon six times before 13:00 (g17).
             near = sum(1 for a in allies if dist(a, pit) < 1300)
+            # A laner goes only from close by (mid, bot): top-lane Yasuo's 27 cross-map walks to it over
+            # g38-g42 made 1 kill, 1 assist and 2 deaths, and left the wave each time.
+            far = self.jungle_state is None and dist(mm.pos, pit) > 4500
             if (near >= 2 or (self.jungle_state is not None and near >= 1 and int(me.get("level") or 1) >= 6)) \
-                    and not outnumbered_at(pit, near):
+                    and not far and not outnumbered_at(pit, near):
                 return ("objective", pit, "dragon with allies")
         if gt >= 1200 and (obj.get("next_baron_in_s") or 0) <= 0:
             pit = places["baron_pit"][0]
