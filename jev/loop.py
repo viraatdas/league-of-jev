@@ -118,6 +118,11 @@ def choose_intent(d: Decision | None, state: dict, p: Perception, now: float, gu
     recall_bar = 0.65 if gold >= 1200 else 0.8  # a pile of unspent gold is worth a trip home sooner
     if d.intent == "recall" or (d.should_recall >= recall_bar and since_dmg > 6):
         return "recall"
+    enemy_near = p.nearest_enemy_champion_units is not None and p.nearest_enemy_champion_units < 1500
+    if d.intent in ("group", "objective") and me["hp_percent"] < 55 and since_dmg > 4 and not enemy_near:
+        # A walk to the team or to an objective at half HP is a walk to a fight lost on arrival: home first.
+        # g46 (18:00) set out for dragon at 47%, turned back, and Urgot caught him on the way home.
+        return "recall"
     if d.intent in ("trade", "all_in"):
         return "trade"
     return d.intent

@@ -60,3 +60,18 @@ perc = p._tick(data, now + 302 * 0.2)
 print("respawn:", p.intent, p.phase, "last", p.mech.last_action)
 print("actions tail:", list(p.log_lines))
 print("LOOP OK")
+
+# Jev's group or objective at half HP, nobody of theirs near: home first (g46 18:00, dragon at 47%, caught
+# on the way back); at 80% the group stands.
+from jev.loop import Guards as _G
+_st = {"me": {"alive": True, "hp_percent": 47, "gold": 300}}
+_p = Perception()
+_p.seconds_since_damage = 20.0
+for want_hp, want in ((47, "recall"), (80, "group")):
+    _st["me"]["hp_percent"] = want_hp
+    _d = fake("group", danger=0.5)
+    _d.ts = time.time()
+    got = choose_intent(_d, _st, _p, time.time(), _G())
+    print(f"Jev group at {want_hp}%:", got)
+    assert got == want
+print("LOOP OK (no group at half HP)")
