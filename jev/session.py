@@ -340,6 +340,11 @@ def night(rotation: str = "yasuo,leesin", minutes: float = 16.0, games: int = 30
         tags = sorted((f.stem for f in logs.glob("g*_*.log")), key=lambda t: int(re.match(r"g(\d+)_", t).group(1)))
         if game_alive() and tags:
             tag = tags[-1]
+            if time.time() - (logs / f"{tag}.log").stat().st_mtime > 600:
+                # The last log is an old game's: a game that started while no harness wrote (a champ select
+                # that finished during a client restart, g39) gets its own tag, not the old one's log.
+                n = int(re.match(r"g(\d+)_", tag).group(1)) + 1
+                tag = f"g{n:02d}_" + "_".join(tag.split("_")[1:])
             champ = tag.split("_")[1]
             diff, lane_pos = "RSINTERMEDIATE", ""
             _say(f"=== supervising the running game {tag} ===")
