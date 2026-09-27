@@ -34,6 +34,8 @@ from jev.state import Perception, build_state, find_me
 from jev import actions
 from jev.tactics import TacticalBrain, TacticInput, menu
 from jev.fight import FightBrain, FightRead
+from jev.fog import Whereabouts, jungler_of
+from jev.iconid import IconMatcher
 from jev.lanelearn import LaneLearner
 from jev.enemies import EnemyKnowledge
 from jev import macro
@@ -209,6 +211,8 @@ class Player:
         self.tower_watch = TowerWatch()
         self._towers_seen_dead: collections.deque = collections.deque()   # (team, index) from the minimap icons
         self._tower_checked = 0.0
+        self.whereabouts = Whereabouts()   # each enemy's last sighting on the minimap (fog.py)
+        self.icon_matcher: IconMatcher | None = None
         self.mm_state: MinimapState | None = None
         self.side = "ORDER"
         self.dead_enemy_mid_towers: set[int] = set()
@@ -308,18 +312,21 @@ class Player:
         }
 
     def _perceive_loop(self) -> None:
-        """Reads every captured frame: health bars and HUD icons each frame, the minimap at most
-        every 33 ms (it only feeds macro positioning). ScreenCaptureKit pushes frames as the
-        display refreshes; mss is the fallback. One frame feeds all readers, so they agree."""
+        """Reads every captured frame's health bars and HUD icons, and wakes the actor at once.
+        ScreenCaptureKit pushes frames as the display refreshes; mss is the fallback. Everything no
+        order waits for (the minimap, names, dialogs, saved frames) runs beside it on the newest frame
+        (_slow_perceive_loop): the name OCR (~25 ms) used to hold the very frame a fight started on."""
         from jev.capture import open_capture
 
         cap = open_capture(self.screen.px_w, self.screen.px_h, prefer=self.capture_backend, fps=self.capture_fps)
         self.capture_name = cap.name
         excl = getattr(cap, "excluding", None)
         self.log_lines.append(f"capture: {cap.name}" + ("" if excl is None else f" (overlay left out: {excl})"))
-        x0, y0, side = config.GEOMETRY.minimap
-        seq, n, t_rate, last_mm = 0, 0, time.time(), 0.0
+        seq, n, t_rate = 0, 0, time.time()
         read_ms: collections.deque[float] = collections.deque(maxlen=120)
+        self._frame_cv = threading.Condition()
+        self._latest_frame = None
+        threading.Thread(target=self._slow_perceive_loop, daemon=True).start()
         try:
             while not self._stop.is_set():
                 f = cap.wait(seq, 0.2)
@@ -333,62 +340,17 @@ class Player:
                     continue
                 try:
                     t0 = time.perf_counter()
-                    frame = f.img
-                    if self.mm is not None and f.ts - last_mm >= 0.033:
-                        last_mm = f.ts
-                        st = self.mm.read(frame[y0:y0 + side, x0:x0 + side])
-                        st.ts = f.ts
-                        self.mm_state = self.mm_filter.apply(st)
-                        if st.self_pos is not None and f.ts - self._tower_checked >= 2.0:
-                            self._tower_checked = f.ts   # (the box found: the minimap is on screen)
-                            ours = list(st.ally_champions) + [st.self_pos]
-                            blue, red = (ours, list(st.enemy_champions)) if self.side == "ORDER" else (list(st.enemy_champions), ours)
-                            for key in self.tower_watch.update(frame[y0:y0 + side, x0:x0 + side], self.mm, blue, red):
-                                self._towers_seen_dead.append(key)
                     if self.vision is not None:
-                        v = self.vision.read(frame)
+                        v = self.vision.read(f.img)
                         v.ts = f.ts  # latency is measured from when the frame was captured
                         self.view = v
-                        self._read_names(frame, v, f.ts)
-                    if f.ts - getattr(self, "_dialog_checked", 0.0) >= 1.5:
-                        self._dialog_checked = f.ts
-                        self._dialog_ok = self._find_dialog_ok(frame)
-                        self._shop_seen = self._shop_panel_open(frame)
                     read_ms.append((time.perf_counter() - t0) * 1000)
                     self.perceive_ms = sorted(read_ms)[len(read_ms) // 2]
                     self.frame_age_ms = (time.time() - f.ts) * 1000
                     self._wake_actor.set()
-                    if self.save_frames_s:
-                        # Every N seconds, and 4 per second while an enemy champion is on screen
-                        # (fights are what reviews look at). JPEG keeps a night of games small.
-                        v = self.view
-                        fighting = v is not None and (bool(v.enemies("champion")) or bool(v.enemies("monster")))
-                        gap = min(self.save_frames_s, 0.25) if fighting else self.save_frames_s
-                        if self.micro is not None and f.ts < getattr(self.micro, "capture_until", 0.0):
-                            gap = 0.1  # a last-hit auto being watched: its swing and whether the minion dies
-                        if f.ts - getattr(self, "_last_saved", 0.0) >= gap:
-                            import cv2
-                            from pathlib import Path
-
-                            self._last_saved = f.ts
-                            d = Path(self.frames_dir)
-                            d.mkdir(parents=True, exist_ok=True)
-                            gt = float(((self.data or {}).get("gameData") or {}).get("gameTime", 0.0))
-                            name = f"{time.strftime('%H%M%S')}{int(f.ts * 1000) % 1000:03d}_t{int(gt // 60):02d}{int(gt % 60):02d}"
-                            if f.ts - getattr(self, "_last_png", 0.0) >= 10.0:
-                                # Lossless now and then: vision thresholds do not survive JPEG.
-                                self._last_png = f.ts
-                                cv2.imwrite(str(d / f"{name}.png"), frame, [cv2.IMWRITE_PNG_COMPRESSION, 1])
-                            else:
-                                cv2.imwrite(str(d / f"{name}.jpg"), frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                            if v is not None:
-                                # What vision saw on this frame, for review next to the image.
-                                u2 = lambda u: [u.kind, u.team, int(u.x), int(u.y), round(u.hp, 2), list(u.bar)]
-                                rec = {"f": name, "t": round(gt, 1), "me": u2(v.me) if v.me else None,
-                                       "units": [u2(u) for u in v.units], "mode": self.micro.mode if self.micro else None,
-                                       "act": self.micro.last_action if self.micro else None}
-                                with open(d / "vision.jsonl", "a") as fh:
-                                    fh.write(json.dumps(rec) + "\n")
+                    with self._frame_cv:
+                        self._latest_frame = (f, self.view)
+                        self._frame_cv.notify()
                 except Exception as e:  # noqa: BLE001
                     self.log_lines.append(f"perception error: {e}")
                     time.sleep(0.05)
@@ -398,6 +360,96 @@ class Player:
                     n, t_rate = 0, time.time()
         finally:
             cap.stop()
+
+    def _slow_perceive_loop(self) -> None:
+        """The minimap at most every 33 ms (macro positions, towers, which enemy icon is which), the
+        name above a new champion's bar, game dialogs, and saved frames: on the newest frame, never
+        in the way of the bar reader and the actor."""
+        x0, y0, side = config.GEOMETRY.minimap
+        done, last_mm, last_id = 0, 0.0, 0.0
+        while not self._stop.is_set():
+            with self._frame_cv:
+                if self._latest_frame is None or self._latest_frame[0].seq == done:
+                    self._frame_cv.wait(0.2)
+                item = self._latest_frame
+            if item is None or item[0].seq == done:
+                continue
+            f, v = item
+            done = f.seq
+            frame = f.img
+            try:
+                if self.mm is not None and f.ts - last_mm >= 0.033:
+                    last_mm = f.ts
+                    crop = frame[y0:y0 + side, x0:x0 + side]
+                    st = self.mm.read(crop)
+                    st.ts = f.ts
+                    self.mm_state = self.mm_filter.apply(st)
+                    if st.self_pos is not None and f.ts - self._tower_checked >= 2.0:
+                        self._tower_checked = f.ts   # (the box found: the minimap is on screen)
+                        ours = list(st.ally_champions) + [st.self_pos]
+                        blue, red = (ours, list(st.enemy_champions)) if self.side == "ORDER" else (list(st.enemy_champions), ours)
+                        for key in self.tower_watch.update(crop, self.mm, blue, red):
+                            self._towers_seen_dead.append(key)
+                    if st.self_pos is not None and st.enemy_champions and f.ts - last_id >= 0.25:
+                        last_id = f.ts
+                        self._name_icons(crop, st, f.ts)
+                if v is not None:
+                    self._read_names(frame, v, f.ts)
+                if f.ts - getattr(self, "_dialog_checked", 0.0) >= 1.5:
+                    self._dialog_checked = f.ts
+                    self._dialog_ok = self._find_dialog_ok(frame)
+                    self._shop_seen = self._shop_panel_open(frame)
+                if self.save_frames_s:
+                    self._save_frame(f, frame, v)
+            except Exception as e:  # noqa: BLE001
+                self.log_lines.append(f"perception error (minimap/names): {e}")
+                time.sleep(0.05)
+
+    def _name_icons(self, crop, st, ts: float) -> None:
+        """Which enemy is which icon on the minimap, into the whereabouts (fog.py). The matcher
+        downloads the five champions' art once, on its own thread."""
+        m = getattr(self, "icon_matcher", None)
+        if m is None:
+            if self._enemy_names and not getattr(self, "_icon_matcher_started", False):
+                self._icon_matcher_started = True
+                names = list(self._enemy_names)
+                threading.Thread(target=lambda: setattr(self, "icon_matcher", IconMatcher(names)), daemon=True).start()
+            return
+        cents = [self.mm.map_to_px(*p) for p in st.enemy_champions]
+        ids = m.identify(crop, cents)
+        self.whereabouts.update(ts, [(n, p) for n, p in zip(ids, st.enemy_champions) if n])
+
+    def _save_frame(self, f, frame, v) -> None:
+        """Every N seconds, and 4 per second while an enemy champion is on screen (fights are what
+        reviews look at), 10 a second while a last-hit auto is watched. JPEG keeps a night small."""
+        fighting = v is not None and (bool(v.enemies("champion")) or bool(v.enemies("monster")))
+        gap = min(self.save_frames_s, 0.25) if fighting else self.save_frames_s
+        if self.micro is not None and f.ts < getattr(self.micro, "capture_until", 0.0):
+            gap = 0.1  # a last-hit auto being watched: its swing and whether the minion dies
+        if f.ts - getattr(self, "_last_saved", 0.0) < gap:
+            return
+        import cv2
+        from pathlib import Path
+
+        self._last_saved = f.ts
+        d = Path(self.frames_dir)
+        d.mkdir(parents=True, exist_ok=True)
+        gt = float(((self.data or {}).get("gameData") or {}).get("gameTime", 0.0))
+        name = f"{time.strftime('%H%M%S')}{int(f.ts * 1000) % 1000:03d}_t{int(gt // 60):02d}{int(gt % 60):02d}"
+        if f.ts - getattr(self, "_last_png", 0.0) >= 10.0:
+            # Lossless now and then: vision thresholds do not survive JPEG.
+            self._last_png = f.ts
+            cv2.imwrite(str(d / f"{name}.png"), frame, [cv2.IMWRITE_PNG_COMPRESSION, 1])
+        else:
+            cv2.imwrite(str(d / f"{name}.jpg"), frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        if v is not None:
+            # What vision saw on this frame, for review next to the image.
+            u2 = lambda u: [u.kind, u.team, int(u.x), int(u.y), round(u.hp, 2), list(u.bar)]
+            rec = {"f": name, "t": round(gt, 1), "me": u2(v.me) if v.me else None,
+                   "units": [u2(u) for u in v.units], "mode": self.micro.mode if self.micro else None,
+                   "act": self.micro.last_action if self.micro else None}
+            with open(d / "vision.jsonl", "a") as fh:
+                fh.write(json.dumps(rec) + "\n")
 
     def _find_dialog_ok(self, frame) -> tuple[float, float] | None:
         """The Ok button of a modal game dialog (AFK Warning, Network Warning), in frame px, or
@@ -500,6 +552,9 @@ class Player:
         sit = getattr(self, "situation", None)
         if sit is not None:
             st["situation"] = sit.summary()  # alive/dead with timers, towers, unseen enemies, the window
+        if self.whereabouts.seen:
+            alive = {str(p.get("championName")) for p in data.get("allPlayers", []) if not p.get("isDead")}
+            st["enemy_whereabouts"] = self.whereabouts.describe(me_pos, time.time(), map_places.places(self.side), alive)
         st["map"] = {
             "i_am_near": map_places.nearest(me_pos, self.side) if me_pos else "unknown",
             "my_lane": self.lane.name,
@@ -954,7 +1009,8 @@ class Player:
                 # when the API fills it (resourceMax > 0); unknown otherwise.
                 "shield_ready": (float(stats.get("resourceMax") or 0) > 0
                                  and float(stats.get("resourceValue") or 0) >= float(stats.get("resourceMax") or 0) - 1),
-                "aggression": (d.aggression if d is not None else 1.0) * macro.form(data),
+                "aggression": (d.aggression if d is not None else 1.0) * macro.form(data)
+                              * {"far": 1.15, "near": 0.85}.get(self._jungler_threat(now or time.time()), 1.0),
                 "tower_farm_ok": bool(getattr(self, "_tower_farm_ok", False))}
         t, mm = getattr(self, "_enemy_tower_map", None), self.mm_state
         if t is not None and mm is not None and mm.pos is not None and view.me is not None:
@@ -2007,11 +2063,48 @@ class Player:
             self.log_lines.append("macro: " + s.summary()["window"])
         # Pushed past the middle with three of them unseen is how the pushed-up deaths went (g19, g26):
         # the farm walk stops at the middle then, unless we are the ones with the numbers.
+        if self.whereabouts.jungler is None:
+            self.whereabouts.jungler = jungler_of(data.get("allPlayers", []), me.get("team") or self.side)
+        if not self._enemy_names:
+            self._enemy_names = [str(p.get("championName")) for p in data.get("allPlayers", [])
+                                 if p.get("team") and p.get("team") != me.get("team") and p.get("championName")]
+        now = time.time()
+        threat = self._jungler_threat(now)
+        if threat != getattr(self, "_jungler_threat_logged", None) and now - getattr(self, "_wa_logged", 0.0) > 5.0:
+            self._jungler_threat_logged, self._wa_logged = threat, now
+            w = self.whereabouts
+            if w.jungler and w.jungler in w.seen:
+                desc = w.describe(self.mm_state.pos if self.mm_state else None, now, map_places.places(self.side))
+                self.log_lines.append(f"whereabouts ({threat or 'unknown'}): {w.jungler} (jungler) "
+                                      f"{desc.get(w.jungler + ' (jungler)', '')}")
         if self.mech is not None:
             # (Four or more: the minimap shows two or fewer enemy icons most of the game, so "three unseen"
             # was 62-81% of the g22-g29 frames and would have kept Yasuo on our half all game.)
-            self.mech.mia_cap = (self.lane.center + self.lane.frac(350)) if (s.unseen >= 4 and not s.power_play) else None
+            cap = (self.lane.center + self.lane.frac(350)) if (s.unseen >= 4 and not s.power_play) else None
+            gank = self._jungler_threat(time.time())
+            if gank == "far":
+                cap = None   # their jungler was seen far away moments ago: the unseen count is not a gank
+            elif gank == "near" and not s.power_play:
+                cap = self.lane.center   # unseen, and could be on me already: not past the middle
+            self.mech.mia_cap = cap
         return s
+
+    def _jungler_threat(self, now: float) -> str | None:
+        """Their jungler by his last minimap sighting: "far" (seen in the last 25 s and at least 12 s
+        from me), "near" (not in sight for 2 s+, and could be on me already), or None (on the map
+        now, or not seen for a while: the unseen count stands)."""
+        w, mm = self.whereabouts, self.mm_state
+        if not w.jungler or mm is None or mm.pos is None:
+            return None
+        age = w.age(w.jungler, now)
+        eta = w.jungler_eta(mm.pos, now)
+        if eta is None or age is None:
+            return None
+        if eta >= 12.0:
+            return "far"
+        if age >= 2.0 and eta <= 0.0:
+            return "near"
+        return None
 
     def _towers_from_minimap(self) -> None:
         """Towers the minimap shows gone (TowerWatch): ours move our tower line back (retreats and holds
@@ -2179,9 +2272,15 @@ class Player:
         if not self.dry_run:
             threading.Thread(target=self._perceive_loop, daemon=True).start()
             if self.tactic_hz > 0:
-                self.tactics = TacticalBrain(max_hz=self.tactic_hz, explore=self.explore)
-                self.tactics.on_answer = self._wake_actor.set
-                threading.Thread(target=self.tactics.run, daemon=True).start()
+                # The tactical head only for kits without the lane planner: Yasuo's planner and combos
+                # decide every order, and g35's 1,984 tactical calls were acted on 19 times (1%) while
+                # being the largest share of the API bill. Lee's jungle uses it (24% acted on, g32).
+                if not (config.FAST.lane_planner and hasattr(self.kit, "plan_step")):
+                    self.tactics = TacticalBrain(max_hz=self.tactic_hz, explore=self.explore)
+                    self.tactics.on_answer = self._wake_actor.set
+                    threading.Thread(target=self.tactics.run, daemon=True).start()
+                else:
+                    self.log_lines.append("tactics head off: the lane planner decides this kit's orders")
                 self.fights = FightBrain(self.kit.role_text(self.lane.name),
                                          log_path=f"{self.logfile}.fights.jsonl" if self.logfile else None)
                 threading.Thread(target=self.fights.run, daemon=True).start()

@@ -247,3 +247,30 @@ if p.shop_brain is not None:
     print("MACRO OK (shop without Jev)")
 else:
     print("(no item catalog: shop check skipped)")
+
+# Their jungler's whereabouts (fog.py): seen far away moments ago, the lane is safe past the middle
+# even with four of them unseen; unseen for a few seconds and able to be on me already, not past the
+# middle.
+from jev.fog import Whereabouts, jungler_of
+w = Whereabouts()
+w.update(100.0, [("Xin Zhao", (11000.0, 3000.0))])
+assert abs(w.eta("Xin Zhao", (11000.0 - 3800.0, 3000.0), 100.0) - 10.0) < 0.01     # 3800 units at 380/s
+assert abs(w.eta("Xin Zhao", (7200.0, 3000.0), 106.0) - 4.0) < 0.01           # 6 s later: 4 s left
+assert w.eta("Xin Zhao", (0.0, 0.0), 200.0) is None                                 # 100 s old: says nothing
+players = [{"championName": "Xin Zhao", "team": "CHAOS",
+            "summonerSpells": {"summonerSpellOne": {"displayName": "Smite", "rawDisplayName": "GeneratedTip_SummonerSpell_SummonerSmite_DisplayName"},
+                               "summonerSpellTwo": {"displayName": "Flash"}}},
+           {"championName": "Nasus", "team": "CHAOS", "summonerSpells": {"summonerSpellOne": {"displayName": "Teleport"}}}]
+assert jungler_of(players, "ORDER") == "Xin Zhao"
+p = Player(dry_run=True)
+p.mech = Mechanics(p.ctl, p.screen, p.kb, "ORDER", lane=p.lane)
+p.whereabouts.jungler = "Xin Zhao"
+tn = time.time()
+p.mm_state = MinimapState(self_pos=(4000.0, 12000.0), ts=tn)
+p.whereabouts.update(tn - 1.0, [("Xin Zhao", (12000.0, 3000.0))])        # bot side jungle a second ago
+assert p._jungler_threat(tn) == "far"
+p.whereabouts.update(tn - 5.0, [("Xin Zhao", (4800.0, 11000.0))])        # 1,300 units away 5 s ago, gone
+assert p._jungler_threat(tn) == "near"
+p.whereabouts.update(tn, [("Xin Zhao", (4800.0, 11000.0))])              # on the map right now
+assert p._jungler_threat(tn) is None
+print("MACRO OK (jungler whereabouts)")

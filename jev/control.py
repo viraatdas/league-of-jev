@@ -254,12 +254,13 @@ class Controller:
         ev = CGEventCreateMouseEvent(None, kCGEventMouseMoved, (x, y), kCGMouseButtonLeft)
         self._post(ev)
 
-    def click(self, x: float, y: float, button: str = "right", hold_ms: int = 40) -> None:
+    def click(self, x: float, y: float, button: str = "right", hold_ms: int = 40, hover: bool = True) -> None:
         self.move(x, y)
         self.log(f"click_{button}({x:.0f},{y:.0f})")
         if not self._allowed():
             return
-        time.sleep(self._hover_s())  # let the game register the cursor before the press
+        if hover or self._ui:
+            time.sleep(self._hover_s())  # let the game register the cursor before the press
         if button == "left":
             down, up, btn = kCGEventLeftMouseDown, kCGEventLeftMouseUp, kCGMouseButtonLeft
         else:
@@ -387,11 +388,17 @@ class Controller:
         self._post(up)
 
     def attack_move(self, bind, x: float, y: float) -> None:
-        """Attack-move key then left click: attacks the nearest unit on the way."""
+        """Attack-move key then left click: attacks the nearest unit on the way. In game the cursor is
+        moved before the key and has sat there for the key's hold when the click lands, so the click
+        follows at once: two more hover waits put the button down 36 ms after the decision (g35's
+        frame-to-input was 70 ms, 48 of them these sleeps), now 12."""
         self.move(x, y)
         self.press(bind)
-        time.sleep(0.02 if self._ui else self.fast.hover_s)
-        self.click(x, y, "left")
+        if self._ui:
+            time.sleep(0.02)
+            self.click(x, y, "left")
+        else:
+            self.click(x, y, "left", hover=False)
 
     def _aim(self, x: float, y: float) -> None:
         """Cursor to (x, y) for a key that fires at the cursor. The game reads the cursor once per

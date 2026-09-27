@@ -1,0 +1,76 @@
+{
+ "enemies": [
+  "Nasus",
+  "Xin Zhao",
+  "Anivia",
+  "Ezreal",
+  "Taric"
+ ],
+ "frames": [
+  {
+   "file": "minimap_icons_t0402.png",
+   "icons": [
+    [
+     77.5,
+     41.3,
+     "Nasus"
+    ],
+    [
+     316.2,
+     266.3,
+     "Taric"
+    ],
+    [
+     176.1,
+     173.2,
+     null
+    ],
+    [
+     199.6,
+     160.2,
+     "Anivia"
+    ]
+   ]
+  },
+  {
+   "file": "minimap_icons_t0609.png",
+   "icons": [
+    [
+     188.2,
+     171.8,
+     "Anivia"
+    ],
+    [
+     303.8,
+     294.4,
+     "Nasus"
+    ],
+    [
+     323.3,
+     277.3,
+     null
+    ],
+    [
+     324.1,
+     253.5,
+     null
+    ]
+   ]
+  },
+  {
+   "file": "minimap_icons_t0711.png",
+   "icons": [
+    [
+     324.0,
+     285.7,
+     "Ezreal"
+    ],
+    [
+     197.4,
+     166.2,
+     "Nasus"
+    ]
+   ]
+  }
+ ]
+}

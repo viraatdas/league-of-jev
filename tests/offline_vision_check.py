@@ -121,3 +121,20 @@ for b in _bars:
     print(f"{b['file']}: {'read' if hit else 'not read'} (a {'real bar' if b['real'] else 'speck'}, {b['team']} {b['hp']:.0%})")
     assert bool(hit) == b["real"], b
 print("VISION OK (minion bar specks)")
+
+# Which enemy is which minimap icon (iconid.py): three g35 minimaps, names checked by eye (Nasus,
+# Taric, Anivia, Ezreal); overlapped icons may stay unnamed but none may get a wrong name.
+from jev.iconid import IconMatcher, champion_art
+_meta = _json.load(open("tests/fixtures/frames/minimap_icons.json"))
+if all(champion_art(n) is not None for n in _meta["enemies"]):
+    _m = IconMatcher(_meta["enemies"])
+    for fr in _meta["frames"]:
+        crop = cv2.imread(f"tests/fixtures/frames/{fr['file']}")
+        got = _m.identify(crop, [(x, y) for x, y, _ in fr["icons"]])
+        want = [n for _, _, n in fr["icons"]]
+        print(f"{fr['file']}: {got}")
+        assert all(g == w for g, w in zip(got, want) if w is not None), (got, want)
+        assert all(g is None or g == w for g, w in zip(got, want)), (got, want)
+    print("VISION OK (minimap icons)")
+else:
+    print("(no champion art cached: minimap icon check skipped)")
