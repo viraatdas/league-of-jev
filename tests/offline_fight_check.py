@@ -565,3 +565,29 @@ assert y.escape(mi, sc, now, (-1.0, 0.0))
 print("chased, no minions:", mi.last_action)
 assert "wind wall" in mi.last_action
 print("FIGHT OK (wind wall escape)")
+
+# Yasuo's go needs something to open with: Q and E both down, no initiation on a healthy target; Q down
+# counts half a Q (g40 went in right after spending it on the wave).
+y = Yasuo()
+y.q.hud = False
+y.r_rank = 1
+mi, log = micro()
+mi.hp_pct = 90.0
+her = track(unit("champion", 400, 0, 0.5), now)
+ctx = {"ranks": {"Q": 4, "E": 3, "R": 1}, "level": 9, "ad": 150.0, "bonus_ad": 60.0, "crit": 0.25,
+       "target_max_hp": 1300.0, "target_armor": 55.0, "target_mr": 40.0}
+for ready, want in (("QE", True), ("E", None), ("", False)):
+    sc = scene(her, [], ready)
+    sc.ctx = dict(ctx)
+    g = y.go(sc, mi, now, 0, True)
+    print(f"go with {ready or 'nothing'} up:", g)
+    if want is False:
+        assert g is None
+sc_q, sc_noq = scene(her, [], "QE"), scene(her, [], "E")
+sc_q.ctx, sc_noq.ctx = dict(ctx), dict(ctx)
+d_q, _ = y.burst(sc_q, mi, now)
+d_noq, _ = y.burst(sc_noq, mi, now)
+one_q = (95 + 1.05 * 150.0) * 100.0 / 155.0
+print(f"burst with Q up {d_q:.0f}, Q down {d_noq:.0f} (one Q {one_q:.0f})")
+assert abs((d_q - d_noq) - 1.5 * one_q) < 2.0   # two Qs up against half of one down
+print("FIGHT OK (Yasuo opens with a spell)")

@@ -888,7 +888,9 @@ class Yasuo(Kit):
         crit = min(1.0, float(c.get("crit", 0.0)))
         d = phys(ad * (1.0 + 0.75 * crit)) * 3
         if r.get("Q"):
-            d += phys(self.Q_BASE[min(r["Q"], 5) - 1] + 1.05 * ad) * (2 if sc.ready.get("Q") else 1)
+            # (two Qs when it is up; half of one when it is not: g40 went in right after spending it on the
+            # wave, counted it anyway, and chased with autos while Tryndamere healed back from 40% to 51%)
+            d += phys(self.Q_BASE[min(r["Q"], 5) - 1] + 1.05 * ad) * (2 if sc.ready.get("Q") else 0.5)
         if r.get("E") and sc.ready.get("E"):
             d += (self.E_BASE[min(r["E"], 5) - 1] + 0.2 * bad) * 100.0 / (100.0 + max(0.0, mr))
         if r.get("R") and self.r_up(now) and sc.ready.get("Q") and self.q.q3(now):
@@ -911,6 +913,8 @@ class Yasuo(Kit):
             return None
         if self.under_their_tower(sc, ch.unit.x, ch.unit.y) and not self.dive_ok(mi, sc):
             return None
+        if not (sc.ready.get("Q") or sc.ready.get("E")) and ch.unit.hp >= 0.2:
+            return None   # nothing to open with: autos alone chase
         dmg, hp = self.burst(sc, mi, now)
         # (An ally on her adds 35%: bots next to a fight do not always fight; g39 went in at "1.1x with an
         # ally on her" in the river, was left alone at 25%, and died.)
