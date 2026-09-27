@@ -514,7 +514,7 @@ class Yasuo(Kit):
                 return False  # hitting her turns her wave on me: only when I win the exchange
             if not champ_in and not any(inside(t.unit) for t in sc.minions if t is not skip):
                 return False
-        mi.later(FAST.eq_delay_s, lambda: mi.ctl.press(mi.kb.ability(1)))
+        self._eq_press(mi, sc, now, land)
         self.q.cast(True, now)
         if q3:
             self.tornado_at = now + 0.15
@@ -586,7 +586,7 @@ class Yasuo(Kit):
             tr.e_marked_until = now + 10.0
             mi.attacked_ids[tr.id] = now
             if k == "eq":
-                mi.later(FAST.eq_delay_s, lambda: mi.ctl.press(mi.kb.ability(1)))
+                self._eq_press(mi, sc, now, self._landing(sc, tr))
                 self.q.cast(True, now)
             if best.p >= 0.5:
                 mi.lh_pending.append((now, f"E-{role}", tr.unit.hp, best.z))
@@ -618,7 +618,7 @@ class Yasuo(Kit):
             mi.aimed("E+Q onto her", tr, now, 1.1)
             mi.cast(3, tr.unit.x, tr.unit.y)
             tr.e_marked_until = now + 10.0
-            mi.later(FAST.eq_delay_s, lambda: mi.ctl.press(mi.kb.ability(1)))
+            self._eq_press(mi, sc, now, self._landing(sc, tr))
             self.q.cast(True, now)
             self.burst_at = now
             mi._ordered(now, "plan: E+Q onto the champion")
@@ -739,7 +739,7 @@ class Yasuo(Kit):
             ch.e_marked_until = now + 10.0
             if rdy.get("Q"):
                 was_q3 = q3
-                mi.later(FAST.eq_delay_s, lambda: mi.ctl.press(mi.kb.ability(1)))
+                self._eq_press(mi, sc, now, self._landing(sc, ch))
                 self.q.cast(True, now)
                 if was_q3:
                     self.tornado_at = now + 0.15
@@ -807,6 +807,12 @@ class Yasuo(Kit):
         cd = {1: 80.0, 2: 55.0, 3: 30.0}.get(self.r_rank, 80.0)
         return self.r_rank >= 1 and now - getattr(self, "r_at", -1e9) > cd
 
+    @staticmethod
+    def _eq_press(mi: Micro, sc: Scene, now: float, land) -> None:
+        """Q during the dash (the E+Q circle where it lands), noted for the units-hit count."""
+        mi.later(FAST.eq_delay_s, lambda: mi.ctl.press(mi.kb.ability(1)))
+        mi.note_eq(land[0], land[1], now)
+
     def _beyblade_in(self, mi: Micro, sc: Scene, now: float, q3: bool) -> bool:
         """E through a minion toward her, Q3 buffered in the dash, Flash onto her: the circle knock-up
         lands where the Flash does (wiki), R follows on the reflex. Only when the kill is on (Jev's
@@ -834,7 +840,7 @@ class Yasuo(Kit):
         tx, ty = ch.lead(now, 0.3)
         mi.cast(3, m.unit.x, m.unit.y)
         m.e_marked_until = now + 10.0
-        mi.later(FAST.eq_delay_s, lambda: mi.ctl.press(mi.kb.ability(1)))
+        self._eq_press(mi, sc, now, (tx, ty))
         mi.later(FAST.eq_delay_s + 0.06, lambda: mi.cast_summoner(slot, tx, ty))
         self.q.cast(True, now)
         self.tornado_at = now + 0.2

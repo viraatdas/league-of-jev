@@ -100,6 +100,9 @@ print(f"   champions read on screen: {dict(names)}; her spells seen used: {len(s
 skills = [e for e in events if "skillshots on champions" in e]
 if skills:
     print("   " + skills[-1].split(" ", 1)[1])
+qh = [e for e in events if " Q hits: " in e]
+if qh:
+    print("   " + qh[-1].split(" ", 1)[1])
 for e in spells[:5]:
     print("     " + e)
 if lh:

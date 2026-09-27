@@ -774,6 +774,9 @@ class Player:
         mi.summoners, mi.hp_pct = inp.summoners, inp.hp_pct
         if hasattr(kit, "q") and hasattr(kit.q, "hud"):
             kit.q.hud = view.hud.q3
+            mi.q3_hint = bool(kit.q.q3(now))
+        mi.scene = sc
+        mi.q_notes_on = hasattr(kit, "q") and hasattr(kit, "tornado_at")   # Yasuo: count units hit per Q
         if hasattr(kit, "r_rank"):
             kit.r_rank = int(ap.get("abilities", {}).get("R", {}).get("abilityLevel", 0))
         mi.hp_lost = getattr(self, "_hp_lost", 0.0)  # HP% lost in the damage window
@@ -1418,6 +1421,11 @@ class Player:
             if mi.skill_stats:
                 self.log_lines.append("skillshots on champions (landed/thrown): "
                                       + ", ".join(f"{k} {v[0]}/{v[1]}" for k, v in sorted(mi.skill_stats.items())))
+            if mi.q_stats:
+                # Units hit per Q (the line, the tornado, the E+Q circle): the more per cast, the better.
+                self.log_lines.append("Q hits: " + " | ".join(
+                    f"{k} {v['casts']} casts, {v['units'] / max(1, v['casts']):.1f} units each, 2+ {v['multi']}, on a champion {v['champ']}"
+                    for k, v in sorted(mi.q_stats.items())))
             audit = getattr(self, "_lh_audit", None)
             if audit:
                 self.log_lines.append("lasthit audit (low minions that died near me): "

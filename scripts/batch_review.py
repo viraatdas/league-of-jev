@@ -34,18 +34,29 @@ for log in sorted(glob.glob("logs/night/g*_*.log"), key=lambda p: int(re.match(r
         last = cur
     if last is None:
         continue
-    result = "?"
-    out = "logs/night/night.out"
     tag = os.path.basename(log)[:-4]
-    rows.append((tag, last, at10, deaths15, result))
+    # Units hit per Q, from the last "Q hits" line: casts and units summed over Q, tornado and E+Q
+    qcasts = qunits = qmulti = qchamp = 0
+    ev = f"{log}.events"
+    if os.path.exists(ev):
+        last_q = [l for l in open(ev, errors="ignore") if " Q hits: " in l]
+        if last_q:
+            for part in last_q[-1].split("Q hits: ", 1)[1].split(" | "):
+                m = re.search(r"(\d+) casts, ([\d.]+) units each, 2\+ (\d+), on a champion (\d+)", part)
+                if m:
+                    c = int(m.group(1))
+                    qcasts, qunits = qcasts + c, qunits + round(float(m.group(2)) * c)
+                    qmulti, qchamp = qmulti + int(m.group(3)), qchamp + int(m.group(4))
+    rows.append((tag, last, at10, deaths15, (qcasts, qunits, qmulti, qchamp)))
 
 K = D = A = 0
-print(f"{'game':28s} {'time':>6s} {'K/D/A':>9s} {'lvl':>4s} {'CS':>4s}  {'@10 lvl/CS':>10s}  {'deaths<15':>9s}")
-for tag, last, at10, d15, result in rows:
+print(f"{'game':28s} {'time':>6s} {'K/D/A':>9s} {'lvl':>4s} {'CS':>4s}  {'@10 lvl/CS':>10s}  {'deaths<15':>9s}  {'Q casts / units per Q / 2+ / on champ':>38s}")
+for tag, last, at10, d15, q in rows:
     gt, lvl, k, d, a, cs = last
     K, D, A = K + k, D + d, A + a
     a10 = f"{at10[1]}/{at10[5]}" if at10 else "-"
-    print(f"{tag:28s} {gt // 60:3d}:{gt % 60:02d} {k:3d}/{d}/{a:<3d} {lvl:4d} {cs:4d}  {a10:>10s}  {d15:9d}")
+    qs = f"{q[0]:4d} / {q[1] / max(1, q[0]):.2f} / {q[2] / max(1, q[0]):.0%} / {q[3]}" if q[0] else "-"
+    print(f"{tag:28s} {gt // 60:3d}:{gt % 60:02d} {k:3d}/{d}/{a:<3d} {lvl:4d} {cs:4d}  {a10:>10s}  {d15:9d}  {qs:>38s}")
 if rows:
     print(f"\n{len(rows)} games: {K}/{D}/{A}, K/D {K / max(1, D):.2f}, KDA {(K + A) / max(1, D):.2f}, "
           f"kills/game {K / len(rows):.1f}, deaths/game {D / len(rows):.1f}")

@@ -404,6 +404,13 @@ class Micro:
         self.last_action_t = 0.0
         self.skill_pending: list = []                          # (t, kind, champion track, her HP then): did it land?
         self.skill_stats: dict = {}                            # kind -> [landed, thrown]
+        # Units hit per Q (a line, the tornado, the E+Q circle): the units inside its area when cast, and
+        # whose HP then dropped (Yasuo: the loop turns this on and hands the scene over each tick)
+        self.q_notes_on = False
+        self.scene = None
+        self.q3_hint = False
+        self.q_notes: list = []                                # (t, kind, [(track, hp then)], window)
+        self.q_stats: dict = {}                                # kind -> {casts, units, multi, champ}
         self.plan_log: collections.deque = collections.deque(maxlen=400)  # lane planner picks, for the game log
         self.ad, self.aspd = 0.0, 0.7                          # set each tick (our hits' damage for measuring minions)
         self.trade_cooldown_until = 0.0                        # no new trade before then (one just ended)
@@ -469,6 +476,7 @@ class Micro:
             self.skill_pending.append((now, kind, tr, tr.unit.hp, window))
 
     def score_skills(self, now: float) -> None:
+        self.score_q(now)
         keep = []
         for t, kind, tr, hp0, win in self.skill_pending:
             if now - t < win:
@@ -525,6 +533,60 @@ class Micro:
         """Ability `idx` (1-4) at a screen point, honouring the player's quick-cast setting."""
         self.ctl.cast(self.kb.ability(idx), *self._pt(x, y), self.kb.quick_cast(idx))
         self._cast_t = time.time()
+        if idx == 1 and self.q_notes_on and self.scene is not None:
+            q3 = bool(self.q3_hint)
+            length, width = (1150.0, 180.0) if q3 else (450.0, 80.0)
+            self.note_q(self._cast_t, "tornado" if q3 else "Q", self._in_line(x, y, length, width),
+                        0.35 + length / 1200.0 + 0.3 if q3 else 0.6)
+
+    def _q_units(self) -> list:
+        sc = self.scene
+        return list(sc.minions) + list(getattr(sc, "champs", None) or ([sc.champ] if sc.champ is not None else []))
+
+    def _in_line(self, x: float, y: float, length_u: float, width_u: float) -> list:
+        sc = self.scene
+        mx, my = sc.me_xy
+        dx, dy = x - mx, y - my
+        n = math.hypot(dx, dy) or 1.0
+        out = []
+        for t in self._q_units():
+            px, py = t.unit.x - mx, t.unit.y - my
+            along = (px * dx + py * dy) / n / VC.px_per_unit
+            perp = abs(px * dy - py * dx) / n / VC.px_per_unit
+            if 0 < along <= length_u + 50 and perp <= width_u / 2 + 55:
+                out.append(t)
+        return out
+
+    def note_eq(self, x: float, y: float, now: float) -> None:
+        """An E+Q: its circle (215 units) where the dash lands (screen px now)."""
+        if not (self.q_notes_on and self.scene is not None):
+            return
+        inside = [t for t in self._q_units() if math.hypot(t.unit.x - x, t.unit.y - y) / VC.px_per_unit <= 215 + 55]
+        self.note_q(now, "E+Q", inside, 0.9)
+
+    def note_q(self, now: float, kind: str, tracks: list, window: float) -> None:
+        self.q_notes.append((now, kind, [(t, t.unit.hp) for t in tracks], window))
+
+    def score_q(self, now: float) -> None:
+        """A Q noted `window` ago: how many of the units in its area lost HP since (hit), and whether a
+        champion was among them."""
+        keep = []
+        for t0, kind, units, win in self.q_notes:
+            if now - t0 < win:
+                keep.append((t0, kind, units, win))
+                continue
+            hit = champ = 0
+            for tr, hp0 in units:
+                seen = [h for th, h in tr.hist if t0 < th <= t0 + win] + [h for th, h in tr.trail if t0 < th <= t0 + win]
+                if seen and min(seen) <= hp0 - 0.015:
+                    hit += 1
+                    champ += int(tr.unit.kind == "champion")
+            st = self.q_stats.setdefault(kind, {"casts": 0, "units": 0, "multi": 0, "champ": 0})
+            st["casts"] += 1
+            st["units"] += hit
+            st["multi"] += int(hit >= 2)
+            st["champ"] += int(champ > 0)
+        self.q_notes = keep
 
     def self_velocity(self, now: float, me_xy: tuple[float, float], move_speed: float) -> tuple[float, float]:
         """My screen velocity (px/s) while walking to my last move or attack point: toward it at my move

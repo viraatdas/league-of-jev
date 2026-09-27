@@ -481,3 +481,33 @@ far = moving_track(1150, 300.0, now)
 sc.champ, sc.champ_dist = far, sc.dist(far)
 assert lee.q_aim(mi, sc, far, now) is None
 print("FIGHT OK (Sonic Wave lead)")
+
+# Units hit per Q: a Q through two minions and her, the three lose HP: 3 units, a multi-hit, a champion
+# hit. A tornado at her alone that misses: 0. An E+Q circle on two minions: 2.
+mi, log = micro()
+mi.q_notes_on = True
+a, b = track(unit("minion", 150, 0, 0.9), now), track(unit("minion", 260, 10, 0.9), now)
+a.id, b.id = 501, 502
+her = track(unit("champion", 380, -10, 0.8), now)
+sc = scene(her, [a, b], "Q")
+sc.champs = [her]
+mi.scene = sc
+mi.cast(1, her.unit.x, her.unit.y)
+t_cast = mi.q_notes[-1][0]
+for tr_, hp in ((a, 0.6), (b, 0.6), (her, 0.7)):
+    tr_.hist.append((t_cast + 0.3, hp))
+mi.q3_hint = True
+far = track(unit("champion", 900, 0, 0.8), now)
+sc.champs = [far]
+sc.minions = []
+mi.cast(1, far.unit.x, far.unit.y)
+mi.q3_hint = False
+sc.minions, sc.champs, sc.champ = [a, b], [], None
+mi.note_eq(a.unit.x, a.unit.y, t_cast)
+for tr_ in (a, b):
+    tr_.hist.append((t_cast + 0.5, 0.4))
+mi.score_q(t_cast + 5.0)
+print("Q hits:", mi.q_stats)
+assert mi.q_stats["Q"] == {"casts": 1, "units": 3, "multi": 1, "champ": 1}
+assert mi.q_stats["tornado"]["units"] == 0 and mi.q_stats["E+Q"]["units"] == 2
+print("FIGHT OK (units hit per Q)")
