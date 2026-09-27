@@ -1282,10 +1282,112 @@ class LeeSin(Kit):
             return True
         return super().execute(mi, sc, tr, now)
 
+    # -- damage (patch 26.19 game data; wiki) --------------------------------------------------
+    Q_BASE = (60, 90, 120, 150, 180)          # Q1, and Q2 before its missing-health bonus (+90% bonus AD)
+    E_BASE = (35, 60, 85, 110, 135)           # + 100% AD, magic
+    R_BASE = (175, 400, 625)                  # + 200% bonus AD
+    ENERGY_TO_OPEN = 150.0                    # Q1 + Q2 + E1 + a little: under it the combo stops halfway
+
+    @staticmethod
+    def _mitigate(dmg: float, resist: float) -> float:
+        return dmg * 100.0 / (100.0 + max(0.0, resist))
+
+    def dmg(self, sc: Scene, what: str, missing: float = 0.0) -> float:
+        """One hit on the target after armor / magic resist: q1, q2 (at `missing` health gone), e, r, auto."""
+        c = sc.ctx
+        r = c.get("ranks", {})
+        bad, ad = float(c.get("bonus_ad", 0.0)), float(c.get("ad", 66.0))
+        arm, mr = float(c.get("target_armor", 40.0)), float(c.get("target_mr", 35.0))
+        if what in ("q1", "q2"):
+            k = r.get("Q", 0)
+            if not k:
+                return 0.0
+            raw = self.Q_BASE[min(k, 5) - 1] + 0.9 * bad
+            if what == "q2":
+                raw *= 1.0 + max(0.0, min(1.0, missing))
+            return self._mitigate(raw, arm)
+        if what == "e":
+            k = r.get("E", 0)
+            return self._mitigate(self.E_BASE[min(k, 5) - 1] + ad, mr) if k else 0.0
+        if what == "r":
+            k = r.get("R", 0)
+            return self._mitigate(self.R_BASE[min(k, 3) - 1] + 2.0 * bad, arm) if k else 0.0
+        return self._mitigate(ad, arm)
+
+    def burst(self, sc: Scene, mi: Micro, now: float) -> tuple[float, float]:
+        """(my combo's damage on the target now, the target's HP) in HP points: what is up of Q1+Q2
+        (Q2 at the health the rest leaves), E, R, three autos, ignite."""
+        ch, rdy, c = sc.champ, sc.ready, sc.ctx
+        max_hp = float(c.get("target_max_hp", 700.0))
+        hp = ch.unit.hp * max_hp
+        d = self.dmg(sc, "auto") * 3
+        if rdy.get("E"):
+            d += self.dmg(sc, "e")
+        if rdy.get("R"):
+            d += self.dmg(sc, "r")
+        if rdy.get("Q") and not self.q2_up(sc, now):
+            d += self.dmg(sc, "q1")
+        if rdy.get("Q"):
+            d += self.dmg(sc, "q2", missing=1.0 - max(0.0, hp - d) / max_hp)
+        if mi.summoner_slot("ignite", rdy):
+            d += 50 + 20 * int(c.get("level", 1))
+        return d, hp
+
+    def go(self, sc: Scene, mi: Micro, now: float, allies_on_her: int, her_half: bool | None) -> str | None:
+        """Initiate? A reason, or None. Guides: go when the kill is there, or when two or three signs
+        line up (she is overextended, our laner is on her, I am not behind in levels, she is already
+        hurt); not under 150 energy, not under 40% myself, not into more of them than of us.
+        Beginner bots rarely escape well, so a sure kill alone is enough."""
+        ch = sc.champ
+        if ch is None or (sc.champ_dist or 9e9) > self.Q_RANGE + 100 or mi.hp_pct < 40:
+            return None
+        if sc.enemy_champs > len(sc.ally_champs) + 1:
+            return None
+        e = sc.ctx.get("energy")
+        if e is not None and e < self.ENERGY_TO_OPEN:
+            return None
+        dmg, hp = self.burst(sc, mi, now)
+        ratio = dmg * (1.0 + 0.6 * allies_on_her) / max(1.0, hp)
+        lvl, her_lvl = int(sc.ctx.get("level", 1)), int(sc.ctx.get("target_level", 1))
+        signs = [her_half is True, allies_on_her > 0, lvl >= her_lvl, ch.unit.hp <= 0.6, bool(sc.lane.get("her_spells_down"))]
+        n = sum(signs)
+        why = f"kill {ratio:.1f}x ({dmg:.0f} on {hp:.0f} HP{', ally on her' if allies_on_her else ''}), {n} signs"
+        if ratio >= 1.0:
+            return why
+        if ratio >= 0.6 and n >= 2:
+            return why
+        if sc.ctx.get("ganking") and ratio >= 0.45 and n >= 1:
+            return why + ", ganking"
+        return None
+
+    def q1_likely(self, sc: Scene, mi: Micro, tr, now: float) -> bool:
+        """Throw Sonic Wave only when it should land (guides: a long Q at a champion who sees it coming is
+        "the first and biggest mistake"): close (the wave arrives in under 0.5 s), slowed by E2, standing,
+        or walking at me; or she is leaving Q range and this is the last chance."""
+        d = sc.dist(tr)
+        vx, vy = tr.velocity(now)
+        mv = mi.self_velocity(now, sc.me_xy, sc.move_speed)
+        wx, wy = vx + mv[0], vy + mv[1]                      # her own motion (the camera follows me)
+        speed = math.hypot(wx, wy) / VC.px_per_unit
+        rx, ry = tr.unit.x - sc.me_xy[0], tr.unit.y - sc.me_xy[1]
+        rn = math.hypot(rx, ry) or 1.0
+        radial = (wx * rx + wy * ry) / rn / VC.px_per_unit     # > 0: walking away from me
+        if d <= 450:
+            return True
+        if now < getattr(self, "slowed_until", 0.0) and d <= 850:
+            return True
+        if speed < 80:
+            return True
+        if radial < -120:
+            return True                                       # coming at me
+        return radial > 150 and d >= self.Q_RANGE - 250       # leaving: now or never
+
     def fight(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str) -> bool:
-        """Lee Sin's gank / skirmish combo, one order per tick: R to finish (or to peel when I am
-        losing); Q2 dash after a Sonic Wave hit; Q1 from range (led); E then E2 slow in melee;
-        W shield when hurt; autos between spells (the passive gives two fast ones); chase."""
+        """Lee Sin's gank / skirmish combo, one order per tick (guides and the wiki):
+        R when R (and Q2 after it) kills, or when the kick lands her in our tower's range;
+        Q2 held for its missing-health damage, cast when it kills, when she runs, or as its 3 s end;
+        W to a unit next to her to close the gap; E1 in reach, E2 to slow her; two flurry autos after
+        each spell; Q1 only when it should land; W shield when hurt; autos and the chase."""
         if mode == "poke":
             return self.poke(mi, sc, now, aspd)
         if mode == "trade" and self.trade_over(mi, sc, now):
@@ -1293,41 +1395,60 @@ class LeeSin(Kit):
         if not mi._can_order(now):
             return True
         ch, d, rdy = sc.champ, sc.champ_dist or 9e9, sc.ready
-        if rdy.get("R") and d <= self.R_RANGE + 60 and (ch.unit.hp < 0.3 or (mode == "all_in" and mi.hp_pct < 35)):
-            mi.cast(4, ch.unit.x, ch.unit.y)
-            mi._ordered(now, f"{mode}: R kick")
-            self.burst_at = now
+        max_hp = float(sc.ctx.get("target_max_hp", 700.0))
+        hp = ch.unit.hp * max_hp
+        towered = self.under_their_tower(sc, ch.unit.x, ch.unit.y)
+        # R: the execute (Q1 -> R -> Q2: the kick raises her missing health, Q2 then hits harder), or the kick
+        # into our tower's range; to peel when I am losing.
+        if rdy.get("R") and d <= self.R_RANGE + 40:
+            r = self.dmg(sc, "r")
+            q2 = self.dmg(sc, "q2", missing=1.0 - max(0.0, hp - r) / max_hp) if (rdy.get("Q")) else 0.0
+            kick_home = self._kick_lands_home(sc, ch)
+            execute = (r + q2 + self.dmg(sc, "auto") >= hp) if sc.ctx.get("ranks") else ch.unit.hp < 0.3  # (no API numbers)
+            if execute or kick_home or (mode == "all_in" and mi.hp_pct < 35):
+                mi.cast(4, ch.unit.x, ch.unit.y)
+                mi._ordered(now, f"{mode}: R kick" + (" (execute)" if execute else " into our tower" if kick_home else " (peel)"))
+                self.burst_at = self.spell_at = now
+                self.autos_since = 0
+                return True
+        if self.q2_up(sc, now) and d <= 1250 and now - self.q_at > 0.35:
+            q2 = self.dmg(sc, "q2", missing=1.0 - ch.unit.hp)
+            leaving = d > 550 and self._receding(sc, ch, now)
+            ending = now - self.q_at >= 2.5
+            # (Q2 is also the gap closer: from over 600 units it goes now; close, it waits for its damage.)
+            if (q2 >= hp or leaving or ending or d > 600) and (not towered or q2 >= hp or self.dive_ok(mi, sc)):
+                mi.ctl.press(mi.kb.ability(1))
+                self.q_at = 0.0
+                mi._ordered(now, f"{mode}: Q2 dash" + (" (kills)" if q2 >= hp else " (she runs)" if leaving else ""))
+                self.burst_at = self.spell_at = now
+                self.autos_since = 0
+                return True
+        if mode == "all_in" and d > 450 and rdy.get("W") and self._w_gapclose(mi, sc, ch, now):
             return True
-        if self.q2_up(sc, now) and d <= 1300 and now - self.q_at > 0.35:
-            mi.ctl.press(mi.kb.ability(1))
-            self.q_at = 0.0
-            mi._ordered(now, f"{mode}: Q2 dash to the champion")
-            self.burst_at = self.spell_at = now
-            self.autos_since = 0
-            return True
-        # Flurry: two quick autos after each spell before the next one (energy lasts, damage goes up).
+        # Flurry: two quick autos after each spell before the next one (energy back, damage up).
         if (d <= 250 and now - getattr(self, "spell_at", 0.0) < 3.0 and getattr(self, "autos_since", 2) < 2
                 and mi.attack_ready(now, aspd)):
             mi.attack(ch, now, f"{mode}: flurry auto")
             self.autos_since = getattr(self, "autos_since", 0) + 1
             return True
-        if (rdy.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE and now - self.q_at > 3.0
-                and self.throw_q(mi, sc, ch, now, f"{mode}: Q Sonic Wave at the champion")):
-            self.spell_at = now
-            self.autos_since = 0
-            return True
-        if self.e2_up(sc, now) and d <= 500 and mode == "all_in":
-            mi.ctl.press(mi.kb.ability(3))
-            self.e_at = 0.0
-            self.spell_at, self.autos_since = now, 0
-            mi._ordered(now, f"{mode}: E2 cripple")
-            return True
-        if rdy.get("E") and not self.e2_up(sc, now) and d <= self.E_RADIUS - 40 and now - self.e_at > 3.0:
+        if rdy.get("E") and not self.e2_up(sc, now) and d <= self.E_RADIUS - 30 and now - self.e_at > 3.0:
             mi.ctl.press(mi.kb.ability(3))
             self.e_at = now
             self.burst_at = self.spell_at = now
             self.autos_since = 0
             mi._ordered(now, f"{mode}: E Tempest")
+            return True
+        if self.e2_up(sc, now) and d <= 550 and (mode == "all_in" or self._receding(sc, ch, now)):
+            mi.ctl.press(mi.kb.ability(3))
+            self.e_at = 0.0
+            self.slowed_until = now + 3.0
+            self.spell_at, self.autos_since = now, 0
+            mi._ordered(now, f"{mode}: E2 cripple")
+            return True
+        if (rdy.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE and now - self.q_at > 3.0
+                and self.q1_likely(sc, mi, ch, now) and self.throw_q(mi, sc, ch, now, f"{mode}: Q Sonic Wave at the champion")):
+            self.spell_at = now
+            self.autos_since = 0
             return True
         if rdy.get("W") and mi.hp_pct < 45 and d <= 600:
             mi.ctl.press(mi.kb.self_cast(2))
@@ -1336,6 +1457,47 @@ class LeeSin(Kit):
         if self.ignite_if_kill(mi, sc, now, mode):
             return True
         return self.hit_or_chase(mi, sc, now, aspd, mode, reach=190.0)
+
+    def _receding(self, sc: Scene, tr, now: float) -> bool:
+        """Walking away from me (her own motion: the camera follows me)."""
+        vx, vy = tr.velocity(now)
+        return self._radial(sc, tr, vx, vy) > 100
+
+    @staticmethod
+    def _radial(sc: Scene, tr, vx: float, vy: float) -> float:
+        rx, ry = tr.unit.x - sc.me_xy[0], tr.unit.y - sc.me_xy[1]
+        rn = math.hypot(rx, ry) or 1.0
+        return (vx * rx + vy * ry) / rn / VC.px_per_unit
+
+    def _w_gapclose(self, mi: Micro, sc: Scene, ch, now: float) -> bool:
+        """W to one of our units (minion or champion) next to her: 700 range, lands me beside her
+        ("if the enemy has Flash, W on a minion to close the gap"). The unit must be within 300 units
+        of her and bring me at least 250 closer."""
+        d = sc.dist(ch)
+        best = None
+        for u in list(sc.ally_units) + list(sc.ally_champs):
+            du = math.hypot(u.x - sc.me_xy[0], u.y - sc.me_xy[1]) / VC.px_per_unit
+            dh = math.hypot(u.x - ch.unit.x, u.y - ch.unit.y) / VC.px_per_unit
+            if du <= self.W_RANGE - 30 and dh <= 300 and dh < d - 250 and (best is None or dh < best[0]):
+                best = (dh, u)
+        if best is None:
+            return False
+        u = best[1]
+        mi.cast(2, u.x, u.y)
+        self.spell_at, self.autos_since = now, 0
+        mi._ordered(now, "all_in: W to our unit beside her")
+        return True
+
+    def _kick_lands_home(self, sc: Scene, ch) -> bool:
+        """The kick sends her ~700 units straight away from me; into our tower's range (750) is a kill
+        setup (the tower's shots), the only insec this does (no ward hop)."""
+        t = sc.ctx.get("own_tower_px")
+        if not t:
+            return False
+        dx, dy = ch.unit.x - sc.me_xy[0], ch.unit.y - sc.me_xy[1]
+        n = math.hypot(dx, dy) or 1.0
+        lx, ly = ch.unit.x + dx / n * 700 * VC.px_per_unit, ch.unit.y + dy / n * 700 * VC.px_per_unit
+        return math.hypot(lx - t[0], ly - t[1]) / VC.px_per_unit <= 650
 
     def me_state(self, sc: Scene, mi: Micro, now: float) -> dict:
         return {"Q": "Q2 dash available" if self.q2_up(sc, now) else self.ready_words(sc, "Q"),

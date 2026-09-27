@@ -236,6 +236,7 @@ class Scene:
     aspd: float = 0.7
     move_speed: float = 345.0
     lane: dict = field(default_factory=dict)                  # set by the loop: opp_range, tower_px, aggression, ...
+    ctx: dict = field(default_factory=dict)                   # set by the loop: levels, ranks, energy, bonus AD, the target's HP pool
 
     def dist(self, tr: Track) -> float:
         return math.hypot(tr.unit.x - self.me_xy[0], tr.unit.y - self.me_xy[1]) / VC.px_per_unit

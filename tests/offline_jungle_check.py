@@ -166,3 +166,94 @@ assert ln.project(ap)[0] > ln.project(g["pt"])[0] + ln.frac(400)
 mm.self_pos = (g["pt"][0] + 800.0, g["pt"][1])
 assert p._gank_approach(g, mm) == g["pt"]
 print("JUNGLE OK (gank commit and approach)")
+
+# Lee's initiation (kits.LeeSin.go, from the guides): the kill alone is enough; otherwise two or three signs
+# (overextended, our laner on her, not behind in levels, already hurt); never under 150 energy, under
+# 40% myself, or into more of them than of us.
+CTX = {"ranks": {"Q": 3, "W": 2, "E": 2, "R": 1}, "level": 7, "ad": 95.0, "bonus_ad": 25.0, "energy": 200.0,
+       "target_level": 7, "target_max_hp": 1100.0, "target_armor": 45.0, "target_mr": 35.0}
+def lee_scene(dx, her_hp, ready="QWER", allies=0, energy=200.0, enemies=1):
+    her = trk(dx, her_hp, "champion", 9)
+    sc = Scene(me_xy=ME)
+    sc.champ, sc.champ_dist, sc.enemy_champs = her, sc.dist(her), enemies
+    sc.ready = {k: True for k in ready}
+    sc.ctx = dict(CTX, energy=energy)
+    sc.ally_champs = [Unit("champion", "ally", her.unit.x - 150 * PPU, ME[1], 0.9, (0, 0, 1, 1)) for _ in range(allies)]
+    return sc
+lee = LeeSin("JUNGLE")
+mi = Micro(Controller(dry_run=True, log=lambda m: None), Screen(), keybinds.load(), "ORDER")
+mi.hp_pct = 90.0
+cases = [("kill: her at 45%, full combo up", lee_scene(600, 0.45), 0, None, True),
+         ("healthy her, alone, nothing else", lee_scene(600, 0.95), 0, False, False),
+         ("our laner on her, overextended, 70%", lee_scene(600, 0.70, allies=1), 1, True, True),
+         ("kill, but 90 energy", lee_scene(600, 0.45, energy=90.0), 0, None, False),
+         ("kill, but two of them and none of us", lee_scene(600, 0.45, enemies=2), 0, None, False)]
+for name, sc, on_her, half, want in cases:
+    why = lee.go(sc, mi, time.time(), on_her, half)
+    print(f"go? {name}: {why}")
+    assert (why is not None) == want, name
+
+# Sonic Wave only when it should land: she stands at 900 (yes), walks off at 700 (no: walk up, E, then Q),
+# slowed at 800 (yes), leaving at 1000 (last chance, yes).
+def walker(dx, vx_units):
+    t0 = time.time()
+    tr = trk(dx, 0.8, "champion", 11)
+    tr.path.clear()
+    for k in range(8):
+        dt = 0.05 * (7 - k)
+        tr.path.append((t0 - dt, tr.unit.x - vx_units * dt * PPU, tr.unit.y))
+    return tr, t0
+sc = lee_scene(900, 0.8)
+for label, dx, vx, slowed, want in (("standing at 900", 900, 0, False, True), ("walking off at 700", 700, 300, False, False),
+                                    ("slowed at 800", 800, 300, True, True), ("leaving at 1000", 1000, 300, False, True)):
+    tr, t0 = walker(dx, vx)
+    lee.slowed_until = t0 + 2.0 if slowed else 0.0
+    mi._goal = None
+    got = lee.q1_likely(sc, mi, tr, t0)
+    print(f"Q1 likely? {label}: {got}")
+    assert got == want, label
+lee.slowed_until = 0.0
+
+# Q2 waits for its damage when I am already on her; goes when she runs or it kills.
+t0 = time.time()
+lee.q_at = t0 - 0.6
+mi.last_order = 0
+sc = lee_scene(400, 0.9, ready="Q")
+lee.fight(mi, sc, t0, 0.7, "all_in")
+print("Q2 up, her at 400u and 90%:", mi.last_action)
+assert "Q2" not in mi.last_action
+tr, t0 = walker(560, 330)
+sc = lee_scene(560, 0.9, ready="Q")
+sc.champ, sc.champ_dist = tr, sc.dist(tr)
+lee.q_at, mi.last_order = t0 - 0.6, 0
+lee.fight(mi, sc, t0, 0.7, "all_in")
+print("Q2 up, her running at 560u:", mi.last_action)
+assert "Q2" in mi.last_action
+
+# W to our minion beside her closes the gap when she is out of reach.
+mi.last_order, lee.q_at = 0, 0.0
+sc = lee_scene(700, 0.6, ready="W")
+sc.ally_units = [Unit("minion", "ally", ME[0] + 560 * PPU, ME[1] + 60 * PPU, 0.8, (0, 0, 60, 4))]
+lee.fight(mi, sc, time.time(), 0.7, "all_in")
+print("her at 700u, our minion beside her:", mi.last_action)
+assert "W to our unit" in mi.last_action
+
+# The loop: a go commits all in, and the next back_off read from the fight head does not end the combo.
+p = Player(dry_run=True, champion="leesin", role="JUNGLE")
+p.kit = LeeSin("JUNGLE")
+p.jungle_state = JungleState("ORDER")
+p.micro = Micro(Controller(dry_run=True, log=lambda m: None), Screen(), keybinds.load(), "ORDER")
+p.micro.hp_pct = 90.0
+sc = lee_scene(600, 0.45)
+p.champ_tracker.tracks = {9: sc.champ}
+fr = FightRead(seq=1, ts=time.time(), latency_ms=150.0, plan="back_off", plan_probs={"back_off": 0.7}, win_all_in=0.2,
+               trade_worth=0.4, in_danger=0.3, gank_coming=0.3)
+p.fights = NS(read=fr, log=NS(record=lambda *a, **k: None))
+p._fight_triggers(sc, p.micro, time.time())
+print("initiate:", p.micro.mode, "|", list(p.log_lines)[-1])
+assert p.micro.mode == "all_in" and "initiate" in list(p.log_lines)[-1]
+fr.ts = time.time()
+p._fight_triggers(sc, p.micro, time.time() + 0.5)
+print("next read back_off:", p.micro.mode)
+assert p.micro.mode == "all_in"
+print("JUNGLE OK (Lee initiation)")

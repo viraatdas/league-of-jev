@@ -41,6 +41,13 @@ class Profile:
     name: str
     attack_range: float
     spells: list[Spell] = field(default_factory=list)
+    stats: dict = field(default_factory=dict)   # Data Dragon base stats: hp, hpperlevel, armor, attackdamage, ...
+
+    def stat(self, key: str, level: int) -> float:
+        """A base stat at `level` (League's growth curve: per-level growth times (L-1)(0.7025+0.0175(L-1)))."""
+        base, per = float(self.stats.get(key, 0.0)), float(self.stats.get(key + "perlevel", 0.0))
+        n = max(0, int(level) - 1)
+        return base + per * n * (0.7025 + 0.0175 * n)
 
     def basics(self) -> list[Spell]:
         return [s for s in self.spells if s.key in ("Q", "W", "E")]
@@ -91,7 +98,7 @@ class EnemyKnowledge:
                 text = (s.get("tooltip", "") + " " + s.get("description", "")).lower()
                 spells.append(Spell(k, s.get("name", k), [float(x) for x in s.get("range", [])],
                                     [float(x) for x in s.get("cooldown", [])], "damage" in text))
-            prof = Profile(d["name"], float(d["stats"]["attackrange"]), spells)
+            prof = Profile(d["name"], float(d["stats"]["attackrange"]), spells, dict(d["stats"]))
         except Exception:  # noqa: BLE001  offline and not cached, or an unknown name
             prof = None
         self.profiles[key] = prof

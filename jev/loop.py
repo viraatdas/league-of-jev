@@ -734,6 +734,7 @@ class Player:
                          fwd=fwd, e_dmg=kit.e_minion_damage(e_rank, ad, int(ap.get("level", 1))))
         mi.dash_ok = not getattr(self, "_near_enemy_tower", False)
         sc.lane = self._lane_info(view, stats, sc, now)
+        sc.ctx = self._fight_ctx(data, ap, stats, sc)
         lr = getattr(mi, "learner", None)
         if lr is not None:
             lr.opponent = str(sc.lane.get("opp") or "").lower()
@@ -841,6 +842,45 @@ class Player:
             mi.reacted("lasthit", view.ts)
         return ok
 
+    def _initiate(self, sc, mi, now: float, fr) -> bool:
+        """A kit with its own go/no-go (Lee Sin: kits.LeeSin.go, from the guides) starts the fight itself:
+        the fight head read Lee's fights as back_off 90% of the time (989 of 1,097 reads in g30) and he
+        never initiated. Not when Jev reads me about to die; a fight already on is left alone."""
+        go = getattr(self.kit, "go", None)
+        if go is None:
+            return False
+        fresh_danger = fr is not None and fr.age(now) < 0.9 and fr.in_danger
+        if mi.mode == "all_in" and now < getattr(self, "_committed_until", 0.0):
+            # The combo plays out (the next back_off read would end it a tick after it started), unless
+            # Jev reads me about to die, I am low, a second one of theirs came, or she is gone.
+            if (sc.champ is None or mi.hp_pct < 25 or (fresh_danger or 0.0) >= 0.85
+                    or sc.enemy_champs > len(sc.ally_champs) + 1):
+                self._committed_until = 0.0
+                return False
+            return True
+        if sc.champ is None or mi.mode == "all_in":
+            return False
+        if (fresh_danger or 0.0) >= 0.75:
+            return False
+        ch = sc.champ
+        ppu = config.VISION.px_per_unit
+        on_her = sum(1 for a in sc.ally_champs if math.hypot(a.x - ch.unit.x, a.y - ch.unit.y) <= 700 * ppu)
+        her_half = None
+        mm = self.mm_state
+        if mm is not None and mm.pos is not None:
+            hx, hy = mm.pos[0] + (ch.unit.x - sc.me_xy[0]) / ppu, mm.pos[1] - (ch.unit.y - sc.me_xy[1]) / ppu
+            ln = min((Lane(n, self.side) for n in ("top", "mid", "bot")), key=lambda l: l.project((hx, hy))[1])
+            prog, off = ln.project((hx, hy))
+            her_half = off < 1200 and prog <= ln.center
+        why = go(sc, mi, now, on_her, her_half)
+        if why is None:
+            return False
+        if self.kit.under_their_tower(sc, ch.unit.x, ch.unit.y) and not self.kit.dive_ok(mi, sc):
+            return False
+        self._commit(ch, mi, now, f"initiate on {ch.unit.hp * 100:.0f}% at {sc.champ_dist or 0:.0f}u: {why}")
+        self._committed_until = now + 5.0
+        return True
+
     def _gank_commit(self, sc, mi, now: float, fr) -> bool:
         """A jungler on a gank who sees his target within Sonic Wave reach goes in: all in on it, Q from
         range first. The fight head read ganks as back_off or poke (win 0.2 against a full-HP laner it
@@ -873,7 +913,7 @@ class Player:
             return
         self._focus_target(sc, mi, now)
         fr = self.fights.read if self.fights is not None else None
-        if self._gank_commit(sc, mi, now, fr):
+        if self._initiate(sc, mi, now, fr) or self._gank_commit(sc, mi, now, fr):
             return
         if fr is not None and fr.age(now) < 0.9 and (sc.champ is not None or fr.plan in ("back_off", "escape")):
             self._apply_fight_read(fr, sc, mi, now)
@@ -998,6 +1038,52 @@ class Player:
                 and now - dd.ts < 2.0 and mi.mode != "back_off"):
             mi.set_mode("all_in", now)
             self.log_lines.append(f"fight: strategy says all in (p={dd.intent_confidence:.2f})")
+
+    def _item_stat(self, items: list, key: str) -> float:
+        cat = self.shop_brain.catalog if self.shop_brain is not None else None
+        if cat is None:
+            return 0.0
+        tot = 0.0
+        for it in items or []:
+            i = cat.get(str(it.get("displayName", "")))
+            if i is not None:
+                tot += float(i.stats.get(key, 0.0)) * max(1, int(it.get("count", 1) or 1))
+        return tot
+
+    def _fight_ctx(self, data: dict, ap: dict, stats: dict, sc) -> dict:
+        """What a kit's damage math needs: my level, ability ranks, total and bonus AD (items: the
+        live API gives only the total, and Data Dragon lists Lee's AD growth as 0), energy, and the
+        target's level, HP pool, armor and magic resist (base stats at its level plus its items)."""
+        me = find_me(data) or {}
+        abil = ap.get("abilities", {}) or {}
+        ctx = {"level": int(ap.get("level", 1) or 1),
+               "ranks": {k: int((abil.get(k) or {}).get("abilityLevel", 0) or 0) for k in "QWER"},
+               "ad": float(stats.get("attackDamage", 60.0)),
+               "bonus_ad": self._item_stat(me.get("items") or [], "FlatPhysicalDamageMod"),
+               "energy": float(stats.get("resourceValue") or 0.0) if str(stats.get("resourceType", "")).upper() == "ENERGY" else None,
+               "ganking": getattr(self, "_gank", None) is not None and self.intent == "objective"}
+        mm = self.mm_state
+        if sc is not None and mm is not None and mm.pos is not None:
+            t = self._own_tower_standing_near(mm.pos, 1700.0)
+            if t is not None:
+                ppu = config.VISION.px_per_unit
+                ctx["own_tower_px"] = (sc.me_xy[0] + (t[0] - mm.pos[0]) * ppu, sc.me_xy[1] - (t[1] - mm.pos[1]) * ppu)
+        ch = sc.champ if sc is not None else None
+        if ch is not None:
+            name = getattr(ch, "name", "") or self._her_name(sc)
+            her = next((p for p in data.get("allPlayers", []) if str(p.get("championName")) == name), None)
+            prof = self.enemy_kn.profile(name) if name else None
+            if her is not None and prof is not None and prof.stats:
+                lvl = int(her.get("level") or ctx["level"])
+                items = her.get("items") or []
+                ctx.update(target=name, target_level=lvl,
+                           target_max_hp=prof.stat("hp", lvl) + self._item_stat(items, "FlatHPPoolMod"),
+                           target_armor=prof.stat("armor", lvl) + self._item_stat(items, "FlatArmorMod"),
+                           target_mr=prof.stat("spellblock", lvl) + self._item_stat(items, "FlatSpellBlockMod"))
+            else:
+                ctx.update(target=name, target_level=ctx["level"], target_max_hp=640.0 + 100.0 * (ctx["level"] - 1),
+                           target_armor=30.0 + 4.5 * ctx["level"], target_mr=32.0 + 1.5 * ctx["level"])
+        return ctx
 
     def _lane_info(self, view, stats: dict, sc=None, now: float = 0.0) -> dict:
         """What the lane planner needs beyond the screen: who she is, her reach with the spells she
@@ -1143,6 +1229,23 @@ class Player:
         mine = float((data.get("activePlayer") or {}).get("level") or me.get("level") or 0)
         theirs = [float(p.get("level") or 0) for p in data.get("allPlayers", []) if p.get("team") and p.get("team") != me.get("team")]
         return (sum(theirs) / len(theirs) - mine) if theirs and mine else 0.0
+
+    def _own_tower_standing_near(self, pos, radius: float):
+        """Our nearest standing lane tower within `radius` of a map point, or None."""
+        own = config.BLUE_TOWERS if self.side == "ORDER" else config.RED_TOWERS
+        tag = "T1" if self.side == "ORDER" else "T2"
+        dead = getattr(self, "_dead_turrets", set())
+        from jev.lanes import LANE_TOWER_BASE
+        best = None
+        for lane, base in LANE_TOWER_BASE.items():
+            for k, num in enumerate((5, 4, 3)):
+                i = base + k
+                if i >= len(own) or f"Turret_{tag}_{LANE_LETTER[lane]}_{num:02d}_A" in dead:
+                    continue
+                d = dist(pos, own[i])
+                if d < radius and (best is None or d < best[0]):
+                    best = (d, own[i])
+        return best[1] if best else None
 
     def _own_tower_near(self, ch, sc):
         """Our standing tower whose range covers the enemy champion, or None. Her map position is
