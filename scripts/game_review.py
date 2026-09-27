@@ -121,3 +121,23 @@ if ganks:
 orders = collections.Counter(re.sub(r"\(.*|\d+%", "", e.split("order: ", 1)[1]).strip() for e in events if "order: " in e)
 if orders:
     print("\n-- fight orders: " + "  ".join(f"{k} {v}" for k, v in orders.most_common(12)))
+
+# Initiations (Lee's own go, and gank commits): how many, and a kill or a death within 10 s of each
+inits = [e for e in events if "fight: initiate on" in e or re.search(r"fight: gank \w+: on", e)]
+if inits:
+    def wall_s(hms):
+        h, m, s_ = (int(x) for x in hms.split(":"))
+        return h * 3600 + m * 60 + s_
+    kd = [(wall_s(r["wall"]), int(r["kda"].split("/")[0]), int(r["kda"].split("/")[1])) for r in rows]
+    won = lost = 0
+    for e in inits:
+        t0 = wall_s(e.split(" ", 1)[0])
+        before = next((k for t, k, d in reversed(kd) if t <= t0), None)
+        after = [(k, d) for t, k, d in kd if t0 < t <= t0 + 10]
+        if before is not None and after:
+            won += max(k for k, _ in after) > before
+            b_d = next((d for t, k, d in reversed(kd) if t <= t0), 0)
+            lost += max(d for _, d in after) > b_d
+    print(f"\n-- initiations: {len(inits)}; a kill within 10 s: {won}; a death within 10 s: {lost}")
+    for e in inits[:6]:
+        print("   " + e[:150])
