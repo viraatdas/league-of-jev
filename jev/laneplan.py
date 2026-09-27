@@ -178,11 +178,22 @@ class LanePlanner:
             if getattr(tr, "ally_takes", False):
                 continue
             soon = self._at(tr, now, 1.5)
-            if soon > sc.ad * 1.3 and tr.unit.hp > 0.35:
-                continue
+            if soon <= sc.ad * 1.3:
+                w = 0.8
+            else:
+                # The wave ahead of time: a minion our wave will bring into auto range within 3 s (or 6 s)
+                # pulls me in now, not once it is low and 400 units off. g35 farmed at a median 400 units
+                # from the nearest enemy minion, and the audit's biggest loss was minions that died
+                # 600-800 units away (the planner walks at most 0.6 s for an auto).
+                hp_max = getattr(tr, "hp_max", 400.0)
+                w = (0.5 if tr.predict_hp(now, 3.0) * hp_max <= sc.ad * 1.3
+                     else 0.25 if tr.unit.hp <= 0.35
+                     else 0.12 if tr.predict_hp(now, 6.0) * hp_max <= sc.ad * 1.3 else 0.0)
+                if w == 0.0:
+                    continue
             d = _units(self._dist_px(s, (tr.unit.x, tr.unit.y)))
-            r = 1.0 if d <= reach else max(0.0, 1.0 - (d - reach) / 300.0)
-            farm += r * self._gold(tr) * (0.8 if soon <= sc.ad * 1.3 else 0.25)
+            r = 1.0 if d <= reach else max(0.0, 1.0 - (d - reach) / 400.0)
+            farm += r * self._gold(tr) * w
         risk = 0.0
         notes = []
         ch = sc.champ
