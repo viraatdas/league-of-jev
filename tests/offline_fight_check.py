@@ -142,16 +142,17 @@ sc = scene(track(unit("champion", 200, 0, 0.2), t), [], "R")
 lee.fight(mi, sc, t, 0.7, "all_in")
 print("lee r (no API numbers, her at 20%):", mi.last_action)
 assert "R kick" in mi.last_action
-# With the numbers: R (175 + 2x20 bonus AD, into 40 armor: ~154) and an auto kill her at 200 of 1000 HP;
-# at 300 they do not, and R waits (Q1 -> R -> Q2 is the execute).
-for her_hp, want in ((0.2, True), (0.3, False)):
-    mi.last_order, lee.spell_at = 0, 0.0
-    sc = scene(track(unit("champion", 200, 0, her_hp), t), [], "R")
+# With the numbers: R (175 + 2x20 bonus AD, into 40 armor: ~154) kills her at 150 of 1000 HP, not at 200
+# (no auto after the kick: it sends her 700 units off, sim_lee.py); with Q up, R and the Sonic Wave on
+# her in the air and Q2 after it kill her at 300 (Q1 -> R -> Q2).
+for her_hp, ready, want in ((0.15, "R", True), (0.2, "R", False), (0.3, "QR", True), (0.5, "QR", False)):
+    mi.last_order, lee.spell_at, lee.q_at = 0, 0.0, 0.0
+    sc = scene(track(unit("champion", 200, 0, her_hp), t), [], ready)
     sc.ctx = {"ranks": {"Q": 3, "W": 1, "E": 2, "R": 1}, "level": 7, "ad": 90.0, "bonus_ad": 20.0,
               "target_max_hp": 1000.0, "target_armor": 40.0, "target_mr": 35.0}
     lee.fight(mi, sc, t, 0.7, "all_in")
-    print(f"lee r, her at {her_hp:.0%} of 1000 HP:", mi.last_action)
-    assert ("R kick" in mi.last_action) == want
+    print(f"lee r, her at {her_hp:.0%} of 1000 HP, {ready} up:", mi.last_action)
+    assert ("R kick" in mi.last_action) == want, mi.last_action
 mi.hp_pct = 80
 assert LeeSin("JUNGLE").trade_window(mi, scene(track(unit("champion", 800, 0, 0.9), now), [], "Q"), now, 0) == "all_in"
 
