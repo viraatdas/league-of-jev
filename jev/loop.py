@@ -1065,6 +1065,7 @@ class Player:
         ctx = {"level": int(ap.get("level", 1) or 1),
                "ranks": {k: int((abil.get(k) or {}).get("abilityLevel", 0) or 0) for k in "QWER"},
                "ad": float(stats.get("attackDamage", 60.0)),
+               "crit": float(stats.get("critChance", 0.0) or 0.0),
                "bonus_ad": self._item_stat(me.get("items") or [], "FlatPhysicalDamageMod"),
                "energy": float(stats.get("resourceValue") or 0.0) if str(stats.get("resourceType", "")).upper() == "ENERGY" else None,
                # the trinket (slot 7) is a ward and off cooldown: a ward hop is possible
@@ -1095,6 +1096,24 @@ class Player:
                 ctx.update(target=name, target_level=ctx["level"], target_max_hp=640.0 + 100.0 * (ctx["level"] - 1),
                            target_armor=30.0 + 4.5 * ctx["level"], target_mr=32.0 + 1.5 * ctx["level"])
         return ctx
+
+    def _lane_aggression(self, d, data: dict, sc, now: float) -> float:
+        """How much the lane planner values hitting her: Jev's aggression, our form, the jungler threat.
+        With a floor of 0.8 while I am healthy (60%+), not behind her in HP or in levels, and their
+        jungler not able to be on me: g38's strategy head gave 0.1-0.2 most of the lane (g35, the win,
+        1.2-1.5), a Q on Sett was worth a tenth of a step to a better spot, and Yasuo never traded."""
+        jev = (d.aggression if d is not None else 1.0) * macro.form(data)
+        threat = self._jungler_threat(now or time.time())
+        a = jev * {"far": 1.15, "near": 0.85}.get(threat, 1.0)
+        mi = self.micro
+        ch = sc.champ if sc is not None else None
+        st = self.state or {}
+        me_lvl = int((st.get("me") or {}).get("level") or 1)
+        her_lvl = int((st.get("lane_opponent") or {}).get("level") or me_lvl)
+        if (mi is not None and mi.hp_pct >= 60 and threat != "near" and me_lvl >= her_lvl - 1
+                and (ch is None or ch.unit.hp * 100 <= mi.hp_pct + 10)):
+            a = max(a, 0.8)
+        return a
 
     def _lane_info(self, view, stats: dict, sc=None, now: float = 0.0) -> dict:
         """What the lane planner needs beyond the screen: who she is, her reach with the spells she
@@ -1132,8 +1151,7 @@ class Player:
                 # when the API fills it (resourceMax > 0); unknown otherwise.
                 "shield_ready": (float(stats.get("resourceMax") or 0) > 0
                                  and float(stats.get("resourceValue") or 0) >= float(stats.get("resourceMax") or 0) - 1),
-                "aggression": (d.aggression if d is not None else 1.0) * macro.form(data)
-                              * {"far": 1.15, "near": 0.85}.get(self._jungler_threat(now or time.time()), 1.0),
+                "aggression": self._lane_aggression(d, data, sc, now),
                 "tower_farm_ok": bool(getattr(self, "_tower_farm_ok", False))}
         t, mm = getattr(self, "_enemy_tower_map", None), self.mm_state
         if t is not None and mm is not None and mm.pos is not None and view.me is not None:

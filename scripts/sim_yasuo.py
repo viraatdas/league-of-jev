@@ -101,6 +101,7 @@ class Sim:
         self.mi.ad, self.mi.aspd = self.ad, self.aspd
         self.mi.set_mode("all_in", self.now)
         self.kit = Yasuo()
+        self.kit.r_rank = self.ranks.get("R", 0)
 
     # -- camera --------------------------------------------------------------------------------------
     def to_screen(self, p):
@@ -371,9 +372,11 @@ class Sim:
                              aspd=self.aspd, move_speed=345.0, fwd=(1.0, 0.0), e_dmg=0.0)
             sc.lane = {"opp_range": 175.0, "opp_hp": self.her_max, "aggression": 1.0}
             sc.ctx = {"ranks": dict(self.ranks), "level": self.level, "ad": self.ad, "bonus_ad": self.bonus_ad,
-                      "target_max_hp": self.her_max, "target_armor": self.armor, "target_mr": self.mr}
+                      "crit": 0.25, "target_max_hp": self.her_max, "target_armor": self.armor, "target_mr": self.mr}
             self.kit.q.hud = self.stacks >= 2
             self.mi.hp_pct = 100.0 * self.hp / self.hp_max
+            if not hasattr(self, "go"):
+                self.go = self.kit.go(sc, self.mi, self.now, 0, True)
             self.mi.run_due(self.now)
             self.kit.step(self.mi, sc, self.now, self.aspd, "all_in", False)
             self.mi.set_mode("all_in", self.now)
@@ -381,7 +384,7 @@ class Sim:
         return self.result(False, "time")
 
     def result(self, killed, why=""):
-        return {"killed": killed, "died": why == "Yasuo died", "t": self.now - self.t0, "why": why,
+        return {"killed": killed, "died": why == "Yasuo died", "t": self.now - self.t0, "why": why, "go": getattr(self, "go", None),
                 "q_thrown": self.q_thrown, "q_hit": self.q_hit_her, "tornado": (self.tornado_hit, self.tornado_thrown),
                 "r": self.r_used, "hp_left": self.hp / self.hp_max, "log": self.log}
 
@@ -437,6 +440,8 @@ CASES = [
     ("walking off 70%, Q3 ready", "walk_away", 0.7, 500.0, {"q3": True}),
     ("zig-zag 70%, Q3 ready", "zigzag", 0.7, 650.0, {"q3": True}),
     ("far 70%, Q3 ready", "stand", 0.7, 1000.0, {"q3": True}),
+    ("full HP bruiser, hits hard", "trade", 1.0, 500.0, {"her_dps": 160.0, "her_max": 1300.0}),
+    ("tank 90% (1600 HP, 90 armor)", "stand", 0.9, 600.0, {"her_max": 1600.0, "armor": 90.0}),
 ]
 
 
@@ -447,12 +452,15 @@ def run_all(seeds: int = 20, verbose: bool = False) -> dict:
         tk = sorted(r["t"] for r in rs if r["killed"])
         qt, qh = sum(r["q_thrown"] for r in rs), sum(r["q_hit"] for r in rs)
         th, tt = sum(r["tornado"][0] for r in rs), sum(r["tornado"][1] for r in rs)
+        gos = [r for r in rs if r["go"]]
         o = out[label] = {"kill": sum(r["killed"] for r in rs) / len(rs), "died": sum(r["died"] for r in rs) / len(rs),
+                          "go": len(gos) / len(rs), "kill_when_go": (sum(r["killed"] for r in gos) / len(gos)) if gos else None,
+                          "died_when_go": (sum(r["died"] for r in gos) / len(gos)) if gos else None,
                           "t_med": tk[len(tk) // 2] if tk else None, "q_hit": qh / qt if qt else None,
                           "tornado_hit": th / tt if tt else None, "r": sum(r["r"] for r in rs) / len(rs),
                           "hp_left": sum(r["hp_left"] for r in rs) / len(rs)}
         pct = lambda v: "-" if v is None else f"{v:.0%}"
-        print(f"{label:30s} kill {pct(o['kill']):>4s}  died {pct(o['died']):>4s}  t {'-' if o['t_med'] is None else round(o['t_med'], 1)} s  "
+        print(f"{label:30s} go {pct(o['go']):>4s} (kill|go {pct(o['kill_when_go']):>4s})  kill if forced {pct(o['kill']):>4s}  died {pct(o['died']):>4s}  t {'-' if o['t_med'] is None else round(o['t_med'], 1)} s  "
               f"Q on her {qh}/{qt}  tornado {th}/{tt}  R/fight {o['r']:.1f}  HP left {o['hp_left']:.0%}")
         if verbose:
             for line in rs[0]["log"][:18]:

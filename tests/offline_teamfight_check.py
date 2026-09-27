@@ -353,3 +353,20 @@ p._apply_fight_read(read, sc, p.micro, now)
 print("trade at 46% vs 92%:", p.micro.mode)
 assert p.micro.mode == "back_off"
 print("TEAMFIGHT OK (hp gap floor)")
+
+# The lane planner's aggression has a floor of 0.8 while I am healthy and not behind (g38's strategy head
+# gave 0.1-0.2 and Yasuo never traded); not when I am hurt.
+from types import SimpleNamespace as _NS2
+p = setup(now)
+p.state = {"me": {"level": 3}, "lane_opponent": {"level": 3}}
+dec = _NS2(aggression=0.15)
+her = track(500, 0.8, 1, now)
+sc2 = Scene(me_xy=ME)
+sc2.champ = her
+p.micro.hp_pct = 85.0
+a_hi = p._lane_aggression(dec, {"allPlayers": []}, sc2, now)
+p.micro.hp_pct = 45.0
+a_lo = p._lane_aggression(dec, {"allPlayers": []}, sc2, now)
+print(f"lane aggression, Jev 0.15: healthy {a_hi:.2f}, hurt {a_lo:.2f}")
+assert a_hi >= 0.8 and a_lo < 0.3
+print("AGGRESSION FLOOR OK")

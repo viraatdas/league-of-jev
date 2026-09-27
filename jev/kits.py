@@ -861,6 +861,64 @@ class Yasuo(Kit):
         mi._ordered(now, "all_in: beyblade (E+Q3+Flash onto her)")
         return True
 
+    # -- my damage and go/no-go (wiki numbers; the loop's fight context) ------------------------------
+    Q_BASE = (20, 45, 70, 95, 120)       # + 105% AD
+    E_BASE = (70, 85, 100, 115, 130)     # + 20% bonus AD, magic
+    R_BASE = (200, 350, 500)             # + 150% bonus AD
+
+    def burst(self, sc: Scene, mi: Micro, now: float) -> tuple[float, float]:
+        """(my damage on her in a ~5 s fight from now, her HP): three autos (crit averaged), two Qs if Q
+        is up (it comes back in ~3.5 s), E, R when the tornado is there to set it up, ignite."""
+        c = sc.ctx
+        r = c.get("ranks", {})
+        ad, bad = float(c.get("ad", 70.0)), float(c.get("bonus_ad", 0.0))
+        arm, mr = float(c.get("target_armor", 40.0)), float(c.get("target_mr", 35.0))
+        phys = lambda v: v * 100.0 / (100.0 + max(0.0, arm))
+        crit = min(1.0, float(c.get("crit", 0.0)))
+        d = phys(ad * (1.0 + 0.75 * crit)) * 3
+        if r.get("Q"):
+            d += phys(self.Q_BASE[min(r["Q"], 5) - 1] + 1.05 * ad) * (2 if sc.ready.get("Q") else 1)
+        if r.get("E") and sc.ready.get("E"):
+            d += (self.E_BASE[min(r["E"], 5) - 1] + 0.2 * bad) * 100.0 / (100.0 + max(0.0, mr))
+        if r.get("R") and self.r_up(now) and sc.ready.get("Q") and self.q.q3(now):
+            d += phys(self.R_BASE[min(r["R"], 3) - 1] + 1.5 * bad)
+        if mi.summoner_slot("ignite", sc.ready):
+            d += 50 + 20 * int(c.get("level", 1))
+        return d, sc.champ.unit.hp * float(c.get("target_max_hp", 700.0))
+
+    def go(self, sc: Scene, mi: Micro, now: float, allies_on_her: int, her_half: bool | None) -> str | None:
+        """Initiate? A reason, or None. The kill (my damage, our laner's 60% on top, against her HP pool
+        and armor), or the tornado up with R ready at 0.75x (the knock-up into R), or 0.8x with her Flash
+        down or our laner on her. Not under 40% myself, into more of them than of us, into her full wave
+        unless the kill is clear, or at her tower (unless she is nearly dead). The strategy head's
+        aggression sat at 0.1-0.2 through g38's lane and the fight head read it as back_off: without
+        this Yasuo never started a fight."""
+        ch, d = sc.champ, sc.champ_dist or 9e9
+        if ch is None or d > VC.q3_range or mi.hp_pct < 40 or not sc.ctx.get("ranks"):
+            return None
+        if sc.enemy_champs > len(sc.ally_champs) + 1:
+            return None
+        if self.under_their_tower(sc, ch.unit.x, ch.unit.y) and not self.dive_ok(mi, sc):
+            return None
+        dmg, hp = self.burst(sc, mi, now)
+        ratio = dmg * (1.0 + 0.6 * allies_on_her) / max(1.0, hp)
+        tornado = bool(sc.ready.get("Q")) and self.q.q3(now)
+        # Her wave takes a share (its aggro), not a veto: in lane it is always around her, and the forced
+        # fights through it were won (sim_yasuo.py). Out of reach with no dash and no tornado, she walks
+        # off ("no wave": 25% kills when forced).
+        wave = self.minions_near_champ(sc)
+        eff = ratio - 0.04 * wave
+        if not (d <= VC.q_range or sc.dash_options or tornado):
+            eff *= 0.7
+        why = f"kill {eff:.1f}x ({dmg:.0f} on {hp:.0f} HP{', ally on her' if allies_on_her else ''}, her wave {wave})"
+        if eff >= 1.0:
+            return why
+        if tornado and self.r_up(now) and eff >= 0.75:
+            return why + ", tornado then R"
+        if (sc.ctx.get("target_flash_down") or allies_on_her) and eff >= 0.85:
+            return why + (", her Flash down" if sc.ctx.get("target_flash_down") else "")
+        return None
+
     def trade_window(self, mi: Micro, sc: Scene, now: float, level_diff: int) -> str | None:
         """EQ (or the Q3 tornado) is up, the champion is in dash or tornado reach, I am at least
         as healthy and as high level: trade. With R up and a knock-up in hand, a champion under
