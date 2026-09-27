@@ -1274,7 +1274,8 @@ class Player:
 
     # Melee champions with a line skillshot or hook worth sidestepping.
     LINE_MELEE = {"blitzcrank", "leesin", "lee sin", "pyke", "leona", "olaf", "yasuo", "yone", "nautilus",
-                  "mordekaiser", "aatrox", "rakan", "jarvaniv", "jarvan iv", "sion", "gragas", "sett"}
+                  "mordekaiser", "aatrox", "rakan", "jarvaniv", "jarvan iv", "sion", "gragas", "sett",
+                  "dr. mundo", "drmundo", "urgot", "illaoi", "renekton", "camille", "kled", "pantheon", "yone"}   # (Mundo's cleaver: 6-17% a throw, g45)
 
     def _opponent_throws_lines(self) -> bool:
         """Sidestepping only pays against line skillshots: against Nasus (melee, point-and-click) the
