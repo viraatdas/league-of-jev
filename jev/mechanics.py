@@ -91,9 +91,16 @@ class Mechanics:
         y = min(max(y, 8), self.screen.px_h * 0.80)  # stay above the HUD
         return self.screen.to_points(x, y)
 
+    MM_EDGE = 0.065   # of the map, kept clear of the minimap's rim
+
     def _minimap_point(self, mx: float, my: float) -> tuple[float, float] | None:
+        """The minimap pixel for a map point, kept 6.5% inside its edges: a right-click on the rim (the
+        fountain corner, 10 px in) went through to the world as a move toward that screen corner, so
+        "retreat: home" walked Yasuo diagonally toward the middle of the map (g38 9:24, g42 4:20)."""
         if not self.geo.minimap:
             return None
+        mx = min(max(mx, self.MM_EDGE * config.MAP_W), (1 - self.MM_EDGE) * config.MAP_W)
+        my = min(max(my, self.MM_EDGE * config.MAP_H), (1 - self.MM_EDGE) * config.MAP_H)
         x0, y0, side = self.geo.minimap
         px = x0 + mx / config.MAP_W * side
         py = y0 + side - my / config.MAP_H * side

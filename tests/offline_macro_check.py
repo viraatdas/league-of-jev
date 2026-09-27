@@ -323,3 +323,13 @@ import re as _re
 _tx, _ty = (int(v) for v in _re.search(r"at (\d+),(\d+)", p.mech.last_action).groups())
 assert abs(_tx - ours[0]) < 300 and abs(_ty - ours[1]) < 300
 print("MACRO OK (fog keeps the wave farming at home)")
+
+# Minimap clicks stay off the rim: the fountain corner (10 px in) went through to the world as a move toward
+# the bottom-right of the screen (g38 9:24, g42 4:20: "retreat: home" walked toward the middle of the map).
+x0, y0, side = p.mech.geo.minimap
+for tgt in (config.BLUE_FOUNTAIN, config.RED_FOUNTAIN, (7400.0, 7400.0)):
+    px, py = p.mech.screen.to_pixels(*p.mech._minimap_point(*tgt))
+    inset = min(px - x0, x0 + side - px, py - y0, y0 + side - py)
+    print(f"minimap click for {tgt}: ({px:.0f},{py:.0f}), {inset:.0f} px inside")
+    assert inset >= 20
+print("MACRO OK (minimap clicks inside the rim)")
