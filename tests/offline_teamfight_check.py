@@ -370,3 +370,21 @@ a_lo = p._lane_aggression(dec, {"allPlayers": []}, sc2, now)
 print(f"lane aggression, Jev 0.15: healthy {a_hi:.2f}, hurt {a_lo:.2f}")
 assert a_hi >= 0.8 and a_lo < 0.3
 print("AGGRESSION FLOOR OK")
+
+# The minimap gank retreat: two of theirs near and none of ours, converging. Their laner in lane 900
+# units off and their jungler 2,000 off and staying: no. The jungler 1,400 off: yes. The jungler closing
+# from 2,100 to 1,800 in a second: yes.
+from jev.minimap import MinimapState as _MS
+p = setup(now)
+me_pt = (5000.0, 5000.0)
+t0 = time.time()
+st = _MS(self_pos=me_pt, ts=t0, enemy_champions=[(5900.0, 5000.0), (5000.0, 7000.0)])
+assert not p._gank_converging(st, t0) and not p._gank_converging(st, t0 + 1.0)
+st.enemy_champions = [(5900.0, 5000.0), (5000.0, 6400.0)]
+assert p._gank_converging(st, t0 + 2.0)
+p = setup(now)
+st = _MS(self_pos=me_pt, ts=t0, enemy_champions=[(5900.0, 5000.0), (5000.0, 7100.0)])
+assert not p._gank_converging(st, t0)
+st.enemy_champions = [(5900.0, 5000.0), (5000.0, 6800.0)]
+assert p._gank_converging(st, t0 + 1.0)
+print("GANK RETREAT OK (converging, not just near)")

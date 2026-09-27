@@ -2590,6 +2590,20 @@ class Player:
                 self.fights.stop()
         console.print("game over")
 
+    def _gank_converging(self, mmg, now: float) -> list:
+        """Two or more of them near me on the minimap with none of ours, converging: the second of them
+        within 1600 units, or 200+ units nearer than a second ago. "Two within 2200" alone fired 43 times
+        in g39 (their laner in lane, their jungler at his camps): 170 s of retreating at 80-100% HP.
+        Returns those within 2200, or [] when it is not a gank."""
+        foes = [e for e in mmg.enemy_champions if dist(mmg.pos, e) < 2200]
+        friends = [a for a in mmg.ally_champions if dist(mmg.pos, a) < 2200]
+        ds = sorted(dist(mmg.pos, e) for e in foes)
+        hist = self._foe_hist = getattr(self, "_foe_hist", collections.deque(maxlen=40))
+        hist.append((now, ds))
+        before = next((d for t, d in hist if 0.8 <= now - t <= 1.5 and len(d) >= 2), None)
+        closing = len(ds) >= 2 and before is not None and before[1] - ds[1] >= 200
+        return foes if len(foes) >= 2 and not friends and (ds[1] <= 1600 or closing) else []
+
     def _tick(self, data: dict, now: float) -> Perception:
         m = self.mech
         assert m is not None
@@ -2605,9 +2619,8 @@ class Player:
         mmg = self.mm_state
         if (mmg is not None and mmg.pos is not None and now - mmg.ts < 1.0 and now >= self.guards.retreat_until
                 and self.jungle_state is None and self.micro is not None and self.micro.mode not in FIGHT_MODES):
-            foes = [e for e in mmg.enemy_champions if dist(mmg.pos, e) < 2200]
-            friends = [a for a in mmg.ally_champions if dist(mmg.pos, a) < 2200]
-            if len(foes) >= 2 and not friends:
+            foes = self._gank_converging(mmg, now)
+            if foes:
                 # Two of them converging on the minimap and none of us: the gank that killed Yasuo in
                 # g08 and g11 showed there seconds before it arrived.
                 self.guards.retreat_until = now + 3.0
