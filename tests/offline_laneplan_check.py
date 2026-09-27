@@ -317,7 +317,8 @@ assert v2 is not None and (v1 is None or v2 - v1 >= _lp.MULTI_Q - 0.01)   # (one
 print("LANEPLAN OK (multi-hit Q)")
 
 # The Q line turned to cover the wave: a low caster straight ahead at 300u and two others off to its side,
-# 330u out at 18 and 26 degrees: the straight line hits one; turned toward them it takes all three.
+# 330u out at 18 and 26 degrees: the straight line hits one; turned toward the nearer one it takes two
+# (Q reaches ~68 units off its line: the third stays out).
 import math as _m
 y2 = Yasuo(); y2.q.hud = False
 pl2 = LanePlanner(y2)

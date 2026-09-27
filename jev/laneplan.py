@@ -116,7 +116,7 @@ class LanePlanner:
     def _along(self, p, me, fwd) -> float:
         return (p[0] - me[0]) * fwd[0] + (p[1] - me[1]) * fwd[1]
 
-    def _line_units(self, sc, x: float, y: float, rng: float, width_px: float = 45.0) -> list:
+    def _line_units(self, sc, x: float, y: float, rng: float, width_px: float = 34.0) -> list:
         mx, my = sc.me_xy
         dx, dy = x - mx, y - my
         n = math.hypot(dx, dy) or 1.0
@@ -129,7 +129,7 @@ class LanePlanner:
                 out.append(tr)
         return out
 
-    def _best_line(self, sc, tr, rng: float, width_px: float = 45.0) -> tuple[tuple[float, float], list]:
+    def _best_line(self, sc, tr, rng: float, width_px: float = 34.0) -> tuple[tuple[float, float], list]:
         """The Q aim through minion `tr` that covers the most minions: straight at it, or turned toward
         another minion in reach so that both sit inside the line (the bisector of the two directions).
         Straight at the minion, a Q hit 1.0 units on average (g40, 283 casts, 22% two or more)."""
@@ -149,8 +149,10 @@ class LanePlanner:
             if nb < 1e-3:
                 continue
             bx, by = bx / nb, by / nb
-            if abs(tx * by - ty * bx) > width_px * 0.8 or abs(ux * by - uy * bx) > width_px * 0.8:
-                continue   # (0.8: both well inside the line, not on its edge)
+            # Q reaches ~68 units off its line (half its width, 20, and a minion's radius, 48: 31 px): the
+            # minion it is for stays well inside (25 px), the other within reach.
+            if abs(tx * by - ty * bx) > 25.0 or abs(ux * by - uy * bx) > 31.0:
+                continue
             aim = (mx + bx * dt, my + by * dt)
             line = self._line_units(sc, aim[0], aim[1], rng, width_px)
             if tr in line and len(line) > len(best[1]):
