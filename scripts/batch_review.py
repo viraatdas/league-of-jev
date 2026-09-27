@@ -36,17 +36,27 @@ for log in sorted(glob.glob("logs/night/g*_*.log"), key=lambda p: int(re.match(r
         continue
     tag = os.path.basename(log)[:-4]
     # Units hit per Q, from the last "Q hits" line: casts and units summed over Q, tornado and E+Q
+    # The counts restart with the harness (a mid-game restart loads new code): the last line of each run.
     qcasts = qunits = qmulti = qchamp = 0
     ev = f"{log}.events"
     if os.path.exists(ev):
-        last_q = [l for l in open(ev, errors="ignore") if " Q hits: " in l]
-        if last_q:
-            for part in last_q[-1].split("Q hits: ", 1)[1].split(" | "):
+        runs, prev = [], None
+        for l in open(ev, errors="ignore"):
+            if " Q hits: " not in l:
+                continue
+            tot = [0, 0, 0, 0]
+            for part in l.split("Q hits: ", 1)[1].split(" | "):
                 m = re.search(r"(\d+) casts, ([\d.]+) units each, 2\+ (\d+), on a champion (\d+)", part)
                 if m:
                     c = int(m.group(1))
-                    qcasts, qunits = qcasts + c, qunits + round(float(m.group(2)) * c)
-                    qmulti, qchamp = qmulti + int(m.group(3)), qchamp + int(m.group(4))
+                    tot = [tot[0] + c, tot[1] + round(float(m.group(2)) * c), tot[2] + int(m.group(3)), tot[3] + int(m.group(4))]
+            if prev is not None and tot[0] < prev[0]:
+                runs.append(prev)
+            prev = tot
+        if prev is not None:
+            runs.append(prev)
+        for r in runs:
+            qcasts, qunits, qmulti, qchamp = qcasts + r[0], qunits + r[1], qmulti + r[2], qchamp + r[3]
     rows.append((tag, last, at10, deaths15, (qcasts, qunits, qmulti, qchamp)))
 
 K = D = A = 0
