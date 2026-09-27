@@ -510,3 +510,18 @@ print(f"go at 350u: {near} | at 900u: {far} | Mundo at 350u: {heal}")
 assert near is not None and far is None
 assert heal is None or float(heal.split('kill ')[1].split('x')[0]) < float(near.split('kill ')[1].split('x')[0])
 print("INITIATE OK (margin with distance, healers)")
+
+# Out of the nemesis's reach: three kills on me, in view at 600u and healthy -> retreat; with two of ours -> no.
+p = setup(now)
+p.data = {"activePlayer": {"riotId": "Me#NA1"}, "allPlayers": [{"summonerName": "Urgot Bot", "championName": "Urgot"}],
+          "events": {"Events": [{"EventName": "ChampionKill", "KillerName": "Urgot Bot", "VictimName": "Me"}] * 3}}
+u = track(600, 0.9, 1, now); u.name = "Urgot"
+sc = Scene(me_xy=ME); sc.champ, sc.champ_dist, sc.enemy_champs = u, sc.dist(u), 1
+assert p._avoid_nemesis(sc, p.micro, now) and p.guards.retreat_until >= now + 2.0
+print("nemesis in view:", list(p.log_lines)[-1])
+p = setup(now)
+p.data = {"activePlayer": {"riotId": "Me#NA1"}, "allPlayers": [{"summonerName": "Urgot Bot", "championName": "Urgot"}],
+          "events": {"Events": [{"EventName": "ChampionKill", "KillerName": "Urgot Bot", "VictimName": "Me"}] * 3}}
+sc.ally_champs = [Unit("champion", "ally", ME[0] - 50, ME[1], 0.9, (0, 0, 1, 1))] * 2
+assert not p._avoid_nemesis(sc, p.micro, now)
+print("NEMESIS OK")

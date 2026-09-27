@@ -788,6 +788,7 @@ class Player:
             kit.r_rank = int(ap.get("abilities", {}).get("R", {}).get("abilityLevel", 0))
         mi.hp_lost = getattr(self, "_hp_lost", 0.0)  # HP% lost in the damage window
         self._note_last_champ(sc, mi, now)
+        self._avoid_nemesis(sc, mi, now)
         if self.kit.execute_ok and mi._can_order(now) and self._execute(kit, mi, sc, now):
             mi.reacted("reflex", view.ts)
             return self._took(sc, "execute", True)
@@ -915,6 +916,23 @@ class Player:
                             "pos": (mm.pos[0] + (ch.unit.x - sc.me_xy[0]) / ppu, mm.pos[1] - (ch.unit.y - sc.me_xy[1]) / ppu),
                             "v": ((vx + mvx) / ppu, -(vy + mvy) / ppu),
                             "towered": self.kit.under_their_tower(sc, ch.unit.x, ch.unit.y)}
+
+    def _avoid_nemesis(self, sc, mi, now: float) -> bool:
+        """The champion who has killed me three times or more this game, in view within 1,100 units and not
+        low: out of his reach, unless two of ours are with me or I am far ahead in HP. g46's Urgot (at
+        least six kills on Yasuo) took him from 100% to 0 in 2-4 s with E and W at 30:27, 36:24, 42:30 and
+        45:00, three times near our own base."""
+        ch = sc.champ
+        if ch is None or (sc.champ_dist or 9e9) > 1100 or ch.unit.hp < 0.25 or len(sc.ally_champs) >= 2:
+            return False
+        name = getattr(ch, "name", "") or self._her_name(sc)
+        if not name or macro.killed_by(self.data or {}, name) < 3 or mi.hp_pct >= ch.unit.hp * 100 + 50:
+            return False
+        self.guards.retreat_until = max(self.guards.retreat_until, now + 2.5)
+        if now - getattr(self, "_nemesis_note", 0.0) > 10.0:
+            self._nemesis_note = now
+            self.log_lines.append(f"fight: {name} has killed me {macro.killed_by(self.data or {}, name)} times: out of his reach")
+        return True
 
     def _hunt(self, sc, mi, now: float) -> bool:
         """A champion at 20% or less just dropped out of view (a brush, the fog at the screen's edge): for 3 s
