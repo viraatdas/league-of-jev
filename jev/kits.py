@@ -1352,11 +1352,15 @@ class LeeSin(Kit):
         signs = [her_half is True, allies_on_her > 0, lvl >= her_lvl, ch.unit.hp <= 0.6, bool(sc.lane.get("her_spells_down"))]
         n = sum(signs) + (2 if sc.ctx.get("target_flash_down") else 0)   # (Flash down: "overrides everything")
         why = f"kill {ratio:.1f}x ({dmg:.0f} on {hp:.0f} HP{', ally on her' if allies_on_her else ''}), {n} signs"
+        # The guides' "two or three signs" assume the gank's help: alone, only a kill (sim_lee.py: with 0.6x
+        # and two signs Lee went in on full-HP bruisers that hit back and killed none of 20).
         if ratio >= 1.0:
             return why
-        if ratio >= 0.6 and n >= 2:
+        if allies_on_her and ratio >= 0.8:
             return why
-        if sc.ctx.get("ganking") and ratio >= 0.45 and n >= 1:
+        if sc.ctx.get("target_flash_down") and ratio >= 0.75:
+            return why + ", her Flash down"
+        if sc.ctx.get("ganking") and ratio >= 0.7 and n >= 2:
             return why + ", ganking"
         return None
 
@@ -1404,15 +1408,25 @@ class LeeSin(Kit):
         # into our tower's range; to peel when I am losing.
         if rdy.get("R") and d <= self.R_RANGE + 40:
             r = self.dmg(sc, "r")
-            q2 = self.dmg(sc, "q2", missing=1.0 - max(0.0, hp - r) / max_hp) if (rdy.get("Q")) else 0.0
+            # Q2 after the kick: the mark I have now, or a Sonic Wave on her in the air (she cannot dodge it).
+            # No autos: the kick sends her 700 units off (the simulator's "executes" left her at 15-120 HP
+            # and running when an auto was counted).
+            q2 = self.dmg(sc, "q2", missing=1.0 - max(0.0, hp - r) / max_hp) if rdy.get("Q") else 0.0
+            if rdy.get("Q") and not self.q2_up(sc, now):
+                q2 += self.dmg(sc, "q1")
             kick_home = self._kick_lands_home(sc, ch)
-            execute = (r + q2 + self.dmg(sc, "auto") >= hp) if sc.ctx.get("ranks") else ch.unit.hp < 0.3  # (no API numbers)
+            execute = (r + q2 >= hp) if sc.ctx.get("ranks") else ch.unit.hp < 0.3  # (no API numbers)
             if execute or kick_home or (mode == "all_in" and mi.hp_pct < 35):
                 mi.cast(4, ch.unit.x, ch.unit.y)
                 mi._ordered(now, f"{mode}: R kick" + (" (execute)" if execute else " into our tower" if kick_home else " (peel)"))
-                self.burst_at = self.spell_at = now
+                self.burst_at = self.spell_at = self.r_at = now
+                dx, dy = ch.unit.x - sc.me_xy[0], ch.unit.y - sc.me_xy[1]
+                n = math.hypot(dx, dy) or 1.0
+                self.kick_dir = (dx / n, dy / n)
                 self.autos_since = 0
                 return True
+        if self._q_after_kick(mi, sc, ch, now, mode):
+            return True
         if self.q2_up(sc, now) and d <= 1250 and now - self.q_at > 0.35:
             q2 = self.dmg(sc, "q2", missing=1.0 - ch.unit.hp)
             leaving = d > 550 and self._receding(sc, ch, now)
@@ -1555,6 +1569,25 @@ class LeeSin(Kit):
         mi.later(0.55, lambda: mi.cast(4, ch.unit.x, ch.unit.y))
         self.burst_at = now
         mi._ordered(now, "all_in: insec (ward, W, R toward " + ("our tower)" if into_tower else "our team)"))
+        return True
+
+    def _q_after_kick(self, mi: Micro, sc: Scene, ch, now: float, mode: str) -> bool:
+        """Sonic Wave at a champion I just kicked: she flies 700 units along a known line for 0.8 s and
+        cannot dodge, so the wave goes to where she lands (then Q2 follows her)."""
+        since = now - getattr(self, "r_at", -9.0)
+        if not (0.15 <= since <= 0.9 and sc.ready.get("Q") and not self.q2_up(sc, now) and now - self.q_at > 1.0):
+            return False
+        kx, ky = getattr(self, "kick_dir", (0.0, 0.0))
+        left = max(0.0, 700.0 * (1.0 - since / 0.8))
+        x, y = ch.unit.x + kx * left * VC.px_per_unit, ch.unit.y + ky * left * VC.px_per_unit
+        d = math.hypot(x - sc.me_xy[0], y - sc.me_xy[1]) / VC.px_per_unit
+        if d > self.Q_RANGE - 50 or not self.q_clear(sc, x, y, d):
+            return False
+        mi.aimed("Sonic Wave", ch, now, self.Q_CAST + d / self.Q_SPEED + 0.5)
+        mi.cast(1, x, y)
+        self.q_at = self.spell_at = now
+        self.autos_since = 0
+        mi._ordered(now, f"{mode}: Q Sonic Wave where the kick lands her")
         return True
 
     def _receding(self, sc: Scene, tr, now: float) -> bool:
