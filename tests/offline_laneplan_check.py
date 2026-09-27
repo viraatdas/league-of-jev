@@ -315,3 +315,22 @@ v2 = max((o.value for o in pl9.options(scene(two, ready="Q"), mi, now, True) if 
 print("Q on a line of one vs two minions:", v1, v2)
 assert v2 is not None and (v1 is None or v2 - v1 >= _lp.MULTI_Q - 0.01)   # (one alone may not be worth a Q at all)
 print("LANEPLAN OK (multi-hit Q)")
+
+# The Q line turned to cover the wave: a low caster straight ahead at 300u and two others off to its side,
+# 330u out at 18 and 26 degrees: the straight line hits one; turned toward them it takes all three.
+import math as _m
+y2 = Yasuo(); y2.q.hud = False
+pl2 = LanePlanner(y2)
+mi = micro()
+low = tr("minion", 300, 0, 0.12, 1)
+side = [tr("minion", 330 * _m.cos(_m.radians(a)), 330 * _m.sin(_m.radians(a)), 0.9, 2 + i) for i, a in enumerate((18, 26))]
+sc = scene([low] + side, ready="Q")
+aim, line = pl2._best_line(sc, low, VC.q_range)
+straight = pl2._line_units(sc, low.unit.x, low.unit.y, VC.q_range)
+print(f"Q aim: straight covers {len(straight)}, turned covers {len(line)} (aim {aim[0] - ME[0]:+.0f},{aim[1] - ME[1]:+.0f} px)")
+assert len(straight) == 1 and len(line) >= 2 and low in line
+best, top = pl2.choose(sc, mi, now, False)
+print("Q pick:", best.kind, best.why, best.point is not None)
+if best.kind == "q":
+    assert best.point is not None and "turned" in best.why
+print("LANEPLAN OK (Q line turned onto the wave)")

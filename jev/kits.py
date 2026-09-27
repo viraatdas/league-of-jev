@@ -575,9 +575,10 @@ class Yasuo(Kit):
         if k == "q":
             was_q3 = self.q.q3(now)
             rng = VC.q3_range * 0.8 if was_q3 else VC.q_range
-            for u in self._planner._line_units(sc, tr.unit.x, tr.unit.y, rng):
+            ax, ay = best.point or (tr.unit.x, tr.unit.y)   # (turned to cover more of the wave)
+            for u in self._planner._line_units(sc, ax, ay, rng):
                 u.hits_expected.append((now + FAST.lasthit_lead_s + FAST.q_cast_s, sc.q_dmg / 0.88))
-            mi.cast(1, tr.unit.x, tr.unit.y)
+            mi.cast(1, ax, ay)
             self.q.cast(True, now)
             mi.attacked_ids[tr.id] = now
             if best.p >= 0.5:

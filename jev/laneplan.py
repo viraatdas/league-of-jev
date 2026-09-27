@@ -28,7 +28,7 @@ GOLD = {"melee": 21.0, "caster": 14.0, "": 17.0}
 HP_GOLD = 1.2            # gold-equivalent of 1% of my HP in lane (more when low, below)
 CHAMP_HP_GOLD = 1.6      # gold-equivalent of 1% of her HP at aggression 1
 Q_STACK = 4.0            # a Q stack toward the tornado
-MULTI_Q = 2.5           # each unit past the first in a Q line or an E+Q circle: the wave falls faster, and
+MULTI_Q = 4.0           # each unit past the first in a Q line or an E+Q circle: the wave falls faster, and
                         # the goal set for Yasuo is Qs that hit several (g39: 110 of 129 Q picks aimed at one)
 Q_STACK_TO_TORNADO = 10.0  # ... the one that makes it, with her in view: the tornado then R is Yasuo's kill
                            # (sim_yasuo.py: runners died 100% of fights begun with it ready, 5% without)
@@ -128,6 +128,34 @@ class LanePlanner:
             if 0 <= along <= _px(rng) and perp <= width_px:
                 out.append(tr)
         return out
+
+    def _best_line(self, sc, tr, rng: float, width_px: float = 45.0) -> tuple[tuple[float, float], list]:
+        """The Q aim through minion `tr` that covers the most minions: straight at it, or turned toward
+        another minion in reach so that both sit inside the line (the bisector of the two directions).
+        Straight at the minion, a Q hit 1.0 units on average (g40, 283 casts, 22% two or more)."""
+        mx, my = sc.me_xy
+        tx, ty = tr.unit.x - mx, tr.unit.y - my
+        dt = math.hypot(tx, ty) or 1.0
+        best = ((tr.unit.x, tr.unit.y), self._line_units(sc, tr.unit.x, tr.unit.y, rng, width_px))
+        for u in sc.minions:
+            if u is tr:
+                continue
+            ux, uy = u.unit.x - mx, u.unit.y - my
+            du = math.hypot(ux, uy)
+            if du < 1.0 or du > _px(rng):
+                continue
+            bx, by = tx / dt + ux / du, ty / dt + uy / du
+            nb = math.hypot(bx, by)
+            if nb < 1e-3:
+                continue
+            bx, by = bx / nb, by / nb
+            if abs(tx * by - ty * bx) > width_px * 0.8 or abs(ux * by - uy * bx) > width_px * 0.8:
+                continue   # (0.8: both well inside the line, not on its edge)
+            aim = (mx + bx * dt, my + by * dt)
+            line = self._line_units(sc, aim[0], aim[1], rng, width_px)
+            if tr in line and len(line) > len(best[1]):
+                best = (aim, line)
+        return best
 
     def _line_passes(self, sc, x: float, y: float, rng: float, u, width_px: float = 55.0) -> bool:
         """Does the line from me toward (x, y) pass over unit `u`?"""
@@ -324,7 +352,7 @@ class LanePlanner:
             for tr in sc.minions:
                 if sc.dist(tr) > rng:
                     continue
-                line = self._line_units(sc, tr.unit.x, tr.unit.y, rng)
+                aim, line = self._best_line(sc, tr, rng)
                 qp = {u.id: self._pk(mi, "Q", sc.q_dmg, self._at(u, now, FAST.lasthit_lead_s + FAST.q_cast_s), getattr(u, "hp_max", 400.0))
                       for u in line if not getattr(u, "ally_takes", False)}
                 gold = sum(qp[u.id][0] * self._gold(u) * (0.3 if auto_p.get(u.id, 0.0) >= 0.7 else 1.0)
@@ -336,11 +364,13 @@ class LanePlanner:
                     v -= 30.0  # the tornado is for her
                 if ch is not None and cd < 800 and stack_v == Q_STACK:
                     v -= Q_COST_NEAR_HER * agg   # (not for the Q that makes the tornado: that is what Q is kept for)
-                if ch is not None and self._line_passes(sc, tr.unit.x, tr.unit.y, rng, ch.unit) and her_wave >= 3 and ch.unit.hp > 0.3:
+                if ch is not None and self._line_passes(sc, aim[0], aim[1], rng, ch.unit) and her_wave >= 3 and ch.unit.hp > 0.3:
                     v -= aggro_cost  # the Q also hits her: her whole wave turns on me (g16)
                 if v > 1.0:
                     p, z = qp.get(tr.id, (0.0, None))
-                    out.append(Option("q", v, tr, why=f"line {len(line)} gold {gold:.0f}", p=p, z=z))
+                    turned = aim != (tr.unit.x, tr.unit.y)
+                    out.append(Option("q", v, tr, point=aim if turned else None,
+                                      why=f"line {len(line)}{' turned' if turned else ''} gold {gold:.0f}", p=p, z=z))
 
         # E through a minion (a last hit, a better spot, and with Q up the circle Q in the dash),
         # looked at one step further: the hit on her from the landing spot, and a dash back out.
