@@ -894,8 +894,8 @@ class Player:
 
     def _fight_back(self, sc, mi, now: float) -> bool:
         """One of them is on me, hitting (8%+ lost in the damage window), within 450 units, alone (no other
-        champion of theirs on screen or by her on the minimap), and I am not behind (40%+, at most 10
-        under her) with a spell up: fight back, all in, and hold the heavy-damage retreat 3 s. g40's
+        champion of theirs on screen or by her on the minimap), and I am not behind (50%+, not under her)
+        with a spell up: fight back, all in, and hold the heavy-damage retreat 3 s. g40's
         Yasuo turned and walked away from a single champion at 96% and at 100% and died from behind both
         times; walking away from a melee diver loses the race. Not when Jev reads me about to die."""
         ch = sc.champ
@@ -903,7 +903,9 @@ class Player:
             return False
         d = sc.champ_dist or 9e9
         lost = getattr(self, "_hp_lost", 0.0)
-        if d > 450 or lost < 8 or mi.hp_pct < 40 or mi.hp_pct < ch.unit.hp * 100 - 10:
+        # (50%+ and not behind her at all: at 92 vs 82, 53 vs 48 and 43 vs 44 against Garen the exchanges came
+        # out even, both near 40%, and their jungler finished Yasuo, g41 5:43)
+        if d > 450 or lost < 8 or mi.hp_pct < 50 or mi.hp_pct < ch.unit.hp * 100:
             return False
         if not (sc.ready.get("Q") or sc.ready.get("E") or sc.ready.get("R")):
             return False

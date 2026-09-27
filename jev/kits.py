@@ -928,6 +928,10 @@ class Yasuo(Kit):
         if not (d <= VC.q_range or sc.dash_options or tornado):
             eff *= 0.7
         why = f"kill {eff:.1f}x ({dmg:.0f} on {hp:.0f} HP{', ally on her' if allies_on_her else ''}, her wave {wave})"
+        if mi.hp_pct < 55:
+            # Hurt myself, only a clear kill: g41 went back in at 43% on a 44% Garen, both ended near nothing
+            # and their jungler took Yasuo.
+            return why + ", clear kill while hurt" if eff >= 1.2 else None
         if eff >= 1.0:
             return why
         if tornado and self.r_up(now) and eff >= 0.75:

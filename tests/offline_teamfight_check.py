@@ -241,7 +241,13 @@ assert p.micro.mode == "trade"
 p = setup(now)
 p.micro.hp_pct = 88.0
 p._hp_lost = 10.0
-e = track(200, 0.97, 1, now)
+e_hi = track(200, 0.97, 1, now)
+p.champ_tracker.tracks = {1: e_hi}
+sc = Scene(me_xy=ME)
+sc.champ, sc.champ_dist, sc.enemy_champs = e_hi, sc.dist(e_hi), 1
+sc.ready = {"Q": True, "W": True}
+assert not p._fight_back(sc, p.micro, now)   # she is healthier (97% vs 88%): not a fight to take back
+e = track(200, 0.80, 1, now)
 p.champ_tracker.tracks = {1: e}
 sc = Scene(me_xy=ME)
 sc.champ, sc.champ_dist, sc.enemy_champs = e, sc.dist(e), 1
