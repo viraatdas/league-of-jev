@@ -28,6 +28,8 @@ GOLD = {"melee": 21.0, "caster": 14.0, "": 17.0}
 HP_GOLD = 1.2            # gold-equivalent of 1% of my HP in lane (more when low, below)
 CHAMP_HP_GOLD = 1.6      # gold-equivalent of 1% of her HP at aggression 1
 Q_STACK = 4.0            # a Q stack toward the tornado
+MULTI_Q = 2.5           # each unit past the first in a Q line or an E+Q circle: the wave falls faster, and
+                        # the goal set for Yasuo is Qs that hit several (g39: 110 of 129 Q picks aimed at one)
 Q_STACK_TO_TORNADO = 10.0  # ... the one that makes it, with her in view: the tornado then R is Yasuo's kill
                            # (sim_yasuo.py: runners died 100% of fights begun with it ready, 5% without)
 E_COST = 2.0             # an E is cheap (0.5 s cooldown), but the target locks for 10 s (moot when it dies)
@@ -327,7 +329,7 @@ class LanePlanner:
                       for u in line if not getattr(u, "ally_takes", False)}
                 gold = sum(qp[u.id][0] * self._gold(u) * (0.3 if auto_p.get(u.id, 0.0) >= 0.7 else 1.0)
                            for u in line if u.id in qp)
-                v = gold + (stack_v if (line and not q3) else 0.0) - q_later - Q_COST
+                v = gold + (stack_v if (line and not q3) else 0.0) - q_later - Q_COST + MULTI_Q * max(0, len(line) - 1)
                 if q3 and not pushing and gold < 10:
                     v -= 8.0  # the tornado on a wave that dies anyway: keep it for her
                 if q3 and ch is not None and cd <= VC.q3_range:
@@ -386,7 +388,8 @@ class LanePlanner:
                     if around:
                         qg = sum(self._pk(mi, "Q", sc.q_dmg, self._at(u, now, FAST.lasthit_lead_s + 0.25), getattr(u, "hp_max", 400.0))[0]
                                  * self._gold(u) for u in around if not getattr(u, "ally_takes", False))
-                        v2 = v + qg + stack_v - q_later - Q_COST - (Q_COST_NEAR_HER * agg if (ch is not None and cd < 800) else 0.0)
+                        v2 = (v + qg + stack_v - q_later - Q_COST - (Q_COST_NEAR_HER * agg if (ch is not None and cd < 800) else 0.0)
+                              + MULTI_Q * max(0, len(around) - 1))
                         if champ_w and ch is not None and self._dist_px((ch.unit.x, ch.unit.y), land) <= r:
                             v2 += sc.q_dmg / 0.88 / her_hp_units * 100 * champ_w - aggro_cost  # the circle catches her too
                         elif champ_w:

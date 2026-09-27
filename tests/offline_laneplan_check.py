@@ -301,3 +301,17 @@ opts = {o.kind: o.value for o in pl8.options(sc, mi, now, False)}
 print("tornado at her, behind and losing the matchup:", round(opts.get("q3_champ", -99), 1))
 assert opts.get("q3_champ", -99) >= 10.0
 print("LANEPLAN OK (tornado floor)")
+
+# Qs that hit several: the same Q with one more minion in its line is worth MULTI_Q more.
+from jev import laneplan as _lp
+y9 = Yasuo()
+y9.q.hud = False
+pl9 = LanePlanner(y9)
+mi = micro()
+one = [tr("minion", 300, 0, 0.9, 90)]
+two = [tr("minion", 300, 0, 0.9, 90), tr("minion", 380, 5, 0.9, 91)]
+v1 = max((o.value for o in pl9.options(scene(one, ready="Q"), mi, now, True) if o.kind == "q"), default=None)
+v2 = max((o.value for o in pl9.options(scene(two, ready="Q"), mi, now, True) if o.kind == "q"), default=None)
+print("Q on a line of one vs two minions:", v1, v2)
+assert v2 is not None and (v1 is None or v2 - v1 >= _lp.MULTI_Q - 0.01)   # (one alone may not be worth a Q at all)
+print("LANEPLAN OK (multi-hit Q)")
