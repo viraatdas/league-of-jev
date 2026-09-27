@@ -975,6 +975,9 @@ class Yasuo(Kit):
             return "all_in"
         # Her burst on cooldown (enemies.py): the window laners trade in, a few points behind or not.
         slack = (15 if sc.lane.get("her_spells_down") else 5) + (5 if sc.lane.get("shield_ready") else 0)
+        # One who has killed me is ahead of me: 15 points of HP lead per kill (g46 12:43: a trade on a
+        # 53% Urgot at 76%, two kills on Yasuo already, lost 76% -> 0 against his 53% -> 42%).
+        slack -= 15 * min(3, int(sc.ctx.get("target_killed_me") or 0)) if isinstance(sc.ctx, dict) else 0
         if mi.hp_pct < 50 or mi.hp_pct < ch.unit.hp * 100 - slack:
             return None
         if sc.enemy_champs >= 2 and not sc.ally_champs:

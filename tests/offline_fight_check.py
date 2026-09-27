@@ -100,6 +100,9 @@ assert Yasuo().trade_window(mi, sc, now, 0) is None
 sc_open = scene(track(unit("champion", 380, 0, 0.8), now), [], "QE")
 assert Yasuo().trade_window(mi, sc_open, now, 0) == "trade"
 assert Yasuo().trade_window(mi, sc_open, now, -1) is None  # behind in levels: no trade
+sc_open.ctx = {"target_killed_me": 2}   # she has killed me twice: 30 points of lead needed (g46 12:43)
+assert Yasuo().trade_window(mi, sc_open, now, 0) is None
+sc_open.ctx = {}
 
 # Wind wall: losing HP fast to a champion out of melee range.
 mi, log = micro()
