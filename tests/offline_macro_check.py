@@ -364,3 +364,23 @@ if _t is not None:
     print("full bag at 1800:", a, "| at 2466:", b, "| five items at 1800:", c5)
     assert a == [] and b == ["Blade of The Ruined King"] and len(c5) == 1
     print("MACRO OK (full bag)")
+
+# The one who keeps killing me: no dragon with two of ours when he could be there (g45: a fed Dr. Mundo, four
+# deaths, three of them at a group-up, a dragon and a power play). Seen far away lately: go.
+p = Player(dry_run=True)
+p.mech = Mechanics(p.ctl, p.screen, p.kb, "ORDER", lane=p.lane)
+p.state = {"me": {"hp_percent": 90, "alive": True, "level": 11}, "objectives": {"next_dragon_in_s": 0}}
+p.situation = macro.analyze(base, None, "ORDER", set(), set())
+p.situation.unseen = 1
+pit = _places.places("ORDER")["dragon_pit"][0]
+p.mm_state = MinimapState(self_pos=(pit[0] - 3500.0, pit[1] + 2500.0), ts=time.time(),
+                          ally_champions=[(pit[0] - 300.0, pit[1] + 200.0), (pit[0] + 200.0, pit[1] - 300.0)], enemy_champions=[])
+p._enemy_names = ["Dr. Mundo", "Sivir"]
+p.data = dict(_d)
+p.data["activePlayer"] = {"riotId": "Me#NA1"}
+print("dragon, Mundo (2 kills on me) unseen:", p._objective_plan(base, time.time()))
+assert (p._objective_plan(base, time.time()) or (0, 0, ""))[2] != "dragon with allies"
+p.whereabouts.update(time.time(), [("Dr. Mundo", (1500.0, 13500.0))])   # top lane, 12,000 units away
+print("... Mundo just seen in top lane:", p._objective_plan(base, time.time()))
+assert (p._objective_plan(base, time.time()) or (0, 0, ""))[2] == "dragon with allies"
+print("MACRO OK (nemesis)")

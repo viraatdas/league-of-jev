@@ -948,6 +948,21 @@ class Player:
         mi.move_screen(sx, sy, now, f"hunt: after her ({lc['hp'] * 100:.0f}%, {dt:.1f} s ago, {d:.0f}u)", every=0.15)
         return True
 
+    def _nemesis_near(self, pt, now: float) -> str | None:
+        """A champion who has killed me twice or more this game and could be at `pt` within 10 s (seen near
+        it lately, or not seen for a while): a fight there is his. g45's Dr. Mundo, fed, killed Yasuo at a
+        group-up, a dragon and a power play."""
+        data = self.data or {}
+        if not data.get("events"):
+            return None
+        wall = time.time()
+        for name in self._enemy_names:
+            if macro.killed_by(data, name) >= 2:
+                eta = self.whereabouts.eta(name, pt, wall)
+                if eta is None or eta < 10.0:
+                    return name
+        return None
+
     def _her_team_near_pt(self, her) -> bool:
         """Two or more of them within 1500 units of a map point, more than of us there (me counted)."""
         mm = self.mm_state
@@ -2114,6 +2129,8 @@ class Player:
                 pit = map_places.places(self.side)["dragon_pit"][0]
                 if dist(mm.pos, pit) < 6000 and sum(1 for a in allies if dist(a, pit) < 3500) >= 1:
                     pp = ("objective", pit, "power play: dragon")
+            if pp is not None and self._nemesis_near(pp[1], now) and sum(1 for a in allies if dist(a, pp[1]) < 2000) < 3:
+                pp = None   # (g45 51:50: "power play: dragon", their fed Dr. Mundo came, 100% -> 0)
             if pp is not None:
                 return pp
         j = self._join_fight_plan(mm, allies, gt, hp, now)
@@ -2157,7 +2174,7 @@ class Player:
             # g38-g42 made 1 kill, 1 assist and 2 deaths, and left the wave each time.
             far = self.jungle_state is None and dist(mm.pos, pit) > 4500
             if (near >= 2 or (self.jungle_state is not None and near >= 1 and int(me.get("level") or 1) >= 6)) \
-                    and not far and not outnumbered_at(pit, near):
+                    and not far and not outnumbered_at(pit, near) and not (near < 3 and self._nemesis_near(pit, now)):
                 return ("objective", pit, "dragon with allies")
         if gt >= 1200 and (obj.get("next_baron_in_s") or 0) <= 0:
             pit = places["baron_pit"][0]
@@ -2217,6 +2234,8 @@ class Player:
                 continue  # a fight at their tower is a dive: g33's Yasuo joined one on Shen there and died (6:41)
             if self.jungle_state is None and len(friends) < 2 and d > 2500:
                 continue  # a laner leaves the wave for a real fight, not every 1-on-1 across the map (CS 30 at 21:00, g26)
+            if len(friends) < 3 and self._nemesis_near(e, now):
+                continue   # the one who keeps killing me is there, or could be (g45: four deaths to a fed Dr. Mundo)
             if len(friends) < 2 and sit is not None and sit.unseen >= 3 and not sit.power_play:
                 # Three or more of them in the fog: a "1 of us on 1 of them" is where the rest of them are.
                 # g40 (37:09) and g41 (30:15) went from 100% to dead in seconds walking into such fights.
