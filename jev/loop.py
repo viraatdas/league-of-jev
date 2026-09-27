@@ -970,6 +970,9 @@ class Player:
         # out even, both near 40%, and their jungler finished Yasuo, g41 5:43)
         if d > 450 or lost < 8 or mi.hp_pct < 50 or mi.hp_pct < ch.unit.hp * 100:
             return False
+        name = (getattr(ch, "name", "") or self._her_name(sc) or "").lower().replace(" ", "").replace(".", "")
+        if name in getattr(self.kit, "HEALERS", ()) and mi.hp_pct < ch.unit.hp * 100 + 15:
+            return False   # (Dr. Mundo heals through an even exchange: g45 fought back at 84/62, 70/60, 51/45 and bled)
         if not (sc.ready.get("Q") or sc.ready.get("E") or sc.ready.get("R")):
             return False
         fr = self.fights.read if self.fights is not None else None

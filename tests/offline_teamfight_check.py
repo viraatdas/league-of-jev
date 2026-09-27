@@ -263,6 +263,15 @@ sc = Scene(me_xy=ME)
 sc.champ, sc.champ_dist, sc.enemy_champs = e_hi, sc.dist(e_hi), 1
 sc.ready = {"Q": True, "W": True}
 assert not p._fight_back(sc, p.micro, now)   # she is healthier (97% vs 88%): not a fight to take back
+e_md = track(200, 0.80, 1, now)
+e_md.name = "Dr. Mundo"
+sc = Scene(me_xy=ME)
+sc.champ, sc.champ_dist, sc.enemy_champs = e_md, sc.dist(e_md), 1
+sc.ready = {"Q": True, "W": True}
+from jev.kits import Yasuo as _YH
+_kit0, p.kit = p.kit, _YH()
+assert not p._fight_back(sc, p.micro, now)   # a healer at 80% vs my 88%: he heals through it (g45)
+p.kit = _kit0
 e = track(200, 0.80, 1, now)
 p.champ_tracker.tracks = {1: e}
 sc = Scene(me_xy=ME)
