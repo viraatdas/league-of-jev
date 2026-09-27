@@ -796,6 +796,14 @@ class Yasuo(Kit):
             self.tornado_at = now
             mi._ordered(now, "escape: Q3 tornado to stop her")
             return True
+        if (ch is not None and sc.ready.get("W") and 300 <= d <= 1000 and mi.hp_pct <= 60 and not sc.dash_options
+                and now - getattr(self, "_wall_at", 0.0) > 5.0 and mi._can_order(now)):
+            # Chased with no minion to dash through: the wind wall between us takes her projectiles (g39:
+            # Amumu's bandages and Lissandra's Q chased Yasuo from 40% to 0 over 20 s with W up).
+            mi.cast(2, ch.unit.x, ch.unit.y)
+            self._wall_at = now
+            mi._ordered(now, "escape: W wind wall toward her")
+            return True
         if not sc.ready.get("E") or ch is None or d > 900 or mi.hp_pct > 60:
             return False
         mx, my = sc.me_xy
@@ -904,7 +912,9 @@ class Yasuo(Kit):
         if self.under_their_tower(sc, ch.unit.x, ch.unit.y) and not self.dive_ok(mi, sc):
             return None
         dmg, hp = self.burst(sc, mi, now)
-        ratio = dmg * (1.0 + 0.6 * allies_on_her) / max(1.0, hp)
+        # (An ally on her adds 35%: bots next to a fight do not always fight; g39 went in at "1.1x with an
+        # ally on her" in the river, was left alone at 25%, and died.)
+        ratio = dmg * (1.0 + 0.35 * allies_on_her) / max(1.0, hp)
         tornado = bool(sc.ready.get("Q")) and self.q.q3(now)
         # Her wave takes a share (its aggro), not a veto: in lane it is always around her, and the forced
         # fights through it were won (sim_yasuo.py). Out of reach with no dash and no tornado, she walks

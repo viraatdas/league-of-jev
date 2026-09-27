@@ -868,7 +868,7 @@ class Player:
             return False
         ch = sc.champ
         ppu = config.VISION.px_per_unit
-        on_her = sum(1 for a in sc.ally_champs if math.hypot(a.x - ch.unit.x, a.y - ch.unit.y) <= 700 * ppu)
+        on_her = sum(1 for a in sc.ally_champs if math.hypot(a.x - ch.unit.x, a.y - ch.unit.y) <= 450 * ppu)
         her_half = None
         mm = self.mm_state
         if mm is not None and mm.pos is not None:
@@ -2078,6 +2078,11 @@ class Player:
                 continue  # a fight at their tower is a dive: g33's Yasuo joined one on Shen there and died (6:41)
             if self.jungle_state is None and len(friends) < 2 and d > 2500:
                 continue  # a laner leaves the wave for a real fight, not every 1-on-1 across the map (CS 30 at 21:00, g26)
+            if self.jungle_state is None and gt < 840 and len(friends) < 2 and self.lane.project(e)[1] > 1200:
+                # Laning: out of my lane only for a fight two of ours are already in. g39's top Yasuo walked to
+                # "1 of us on 1 of them" fights in the river and mid twice before 10:00 and died both times
+                # (their jungler found him there).
+                continue
             score = d - 800 * len(friends)
             if best is None or score < best[0]:
                 best = (score, e, len(friends), len(foes))

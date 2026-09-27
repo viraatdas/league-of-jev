@@ -274,3 +274,23 @@ assert p._jungler_threat(tn) == "near"
 p.whereabouts.update(tn, [("Xin Zhao", (4800.0, 11000.0))])              # on the map right now
 assert p._jungler_threat(tn) is None
 print("MACRO OK (jungler whereabouts)")
+
+# Laning (before 14:00): a laner does not walk to a 1v1 outside its lane (g39's top Yasuo died twice at
+# river and mid fights before 10:00); after 14:00 the same fight is joined.
+from jev.lanes import Lane as _Lane
+p = Player(dry_run=True)
+p.mech = Mechanics(p.ctl, p.screen, p.kb, "ORDER", lane=p.lane)
+p._switch_lane("top")
+p._lane_switched_at = 0.0
+mid_pt = _Lane("mid", "ORDER").point(0.42)
+mm_j = MinimapState(self_pos=(mid_pt[0] - 1500.0, mid_pt[1] + 1500.0), ts=time.time(), enemy_champions=[mid_pt],
+                    ally_champions=[(mid_pt[0] - 200.0, mid_pt[1])])
+d_j = ((mm_j.self_pos[0] - mid_pt[0]) ** 2 + (mm_j.self_pos[1] - mid_pt[1]) ** 2) ** 0.5
+early = p._join_fight_plan(mm_j, mm_j.ally_champions, 600.0, 90.0, time.time())
+p2 = Player(dry_run=True)
+p2.mech = Mechanics(p2.ctl, p2.screen, p2.kb, "ORDER", lane=p2.lane)
+p2._switch_lane("top")
+late = p2._join_fight_plan(mm_j, mm_j.ally_champions, 1200.0, 90.0, time.time())
+print(f"1v1 in mid, {d_j:.0f} away, laning top: at 10:00 -> {early}; at 20:00 -> {late}")
+assert early is None and late is not None
+print("MACRO OK (laners stay in lane)")

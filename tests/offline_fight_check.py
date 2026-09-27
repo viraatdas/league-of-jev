@@ -554,3 +554,14 @@ mi.score_q(t_cast + 3.0)
 print("Q kills a 12% minion:", mi.q_stats)
 assert mi.q_stats["Q"]["units"] == 1
 print("FIGHT OK (a Q that kills counts)")
+
+# Chased with no minion to dash through and W up: the wind wall toward her (her projectiles).
+y = Yasuo()
+y.q.hud = False
+mi, log = micro()
+mi.hp_pct = 40.0
+sc = scene(track(unit("champion", 500, 0, 0.99), now), [], "WE")
+assert y.escape(mi, sc, now, (-1.0, 0.0))
+print("chased, no minions:", mi.last_action)
+assert "wind wall" in mi.last_action
+print("FIGHT OK (wind wall escape)")
