@@ -284,3 +284,20 @@ for stacks in (0, 1):
 print("Q on the wave with her in view, 0 vs 1 stack:", vals)
 assert vals[0] is None and vals[1] is not None and vals[1] >= 5.0   # the first stack by her: no; the tornado: yes
 print("LANEPLAN OK (tornado stack)")
+
+# The tornado at her keeps a floor however the trade weights scale it: behind in HP against a matchup
+# the learner says loses (weight 0.5), it is still worth more than a step to a better spot.
+y8 = Yasuo()
+y8.q.hud = True
+pl8 = LanePlanner(y8)
+mi = micro()
+mi.hp_pct = 60.0
+from jev.lanelearn import LaneLearner as _LL
+mi.learner = _LL(opponent="sett", path=__import__("pathlib").Path("/dev/null/x"))
+mi.learner.edge["sett"] = -40.0
+her = tr("champion", 600, 0, 0.9, 9, role="")
+sc = scene([tr("minion", 450, 60, 1.0, 80)], champ=her, ready="Q")
+opts = {o.kind: o.value for o in pl8.options(sc, mi, now, False)}
+print("tornado at her, behind and losing the matchup:", round(opts.get("q3_champ", -99), 1))
+assert opts.get("q3_champ", -99) >= 10.0
+print("LANEPLAN OK (tornado floor)")

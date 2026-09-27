@@ -511,3 +511,15 @@ print("Q hits:", mi.q_stats)
 assert mi.q_stats["Q"] == {"casts": 1, "units": 3, "multi": 1, "champ": 1}
 assert mi.q_stats["tornado"]["units"] == 0 and mi.q_stats["E+Q"]["units"] == 2
 print("FIGHT OK (units hit per Q)")
+
+# Retreating with the tornado up and her in its reach: throw it first (g38 walked away from Sett at
+# 200 units with it ready, 81% -> 45%, then burned Flash). Without it: the E through a minion.
+y = Yasuo()
+y.q.hud = True
+mi, log = micro()
+mi.hp_pct = 45.0
+sc = scene(track(unit("champion", 250, 0, 0.77), now), [track(unit("minion", -300, 20, 0.8), now)], "QE")
+assert y.escape(mi, sc, now, (-1.0, 0.0))
+print("escape with Q3 up:", mi.last_action)
+assert "Q3 tornado" in mi.last_action
+print("FIGHT OK (tornado to stop her)")

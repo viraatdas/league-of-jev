@@ -420,6 +420,10 @@ class LanePlanner:
                 r_up = bool(getattr(self.kit, "r_up", lambda t: False)(now))
                 follow = r_up or (ready.get("E") and cd <= VC.e_range + 350) or bool(sc.ally_champs) or ch.unit.hp < 0.35
                 v = (sc.q_dmg / 0.88 / her_hp_units * 100 + (12.0 if follow else 2.0)) * w - aggro_cost
+                # A floor: the knock-up is Yasuo's trade and it does not keep (the stacks die after 6 s). The
+                # trade weights scaled it under a step to a better spot, and g38 built it twice without
+                # throwing it at Sett 200-300 units away (the user: "not throwing tornadoes after two Qs").
+                v = max(v, 16.0 if follow else 10.0)
                 out.append(Option("q3_champ", v, ch, why=f"tornado{' with follow-up' if follow else ' bare'}, her wave {her_wave}"))
             if e_ok and ready.get("Q") and VC.eq_min <= cd <= VC.e_range and ch.e_marked_until <= now:
                 # (from closer the dash ends 245+ past her: the circle and the next auto miss)

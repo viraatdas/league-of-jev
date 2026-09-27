@@ -779,9 +779,21 @@ class Yasuo(Kit):
         return self.hit_or_chase(mi, sc, now, aspd, mode)
 
     def escape(self, mi: Micro, sc: Scene, now: float, home: tuple[float, float]) -> bool:
-        """E through a minion whose far side is toward home, when an enemy champion is near and
+        """The tornado at her first when it is up and she is in its reach (the knock-up stops the chase and
+        hits her: g38's Yasuo walked away from Sett at 200 units with it ready, 81% -> 45%, and burned
+        Flash); then E through a minion whose far side is toward home, when an enemy champion is near and
         I am hurt (the dash outruns a chase; it is Yasuo's only escape before Flash)."""
-        if not sc.ready.get("E") or sc.champ is None or (sc.champ_dist or 9e9) > 900 or mi.hp_pct > 60:
+        ch, d = sc.champ, sc.champ_dist or 9e9
+        if (ch is not None and sc.ready.get("Q") and self.q.q3(now) and d <= VC.q3_range * 0.85
+                and not mi.in_windup(now, getattr(mi, "aspd", 0.7)) and mi._can_order(now)):
+            x, y = tornado_aim(sc, ch, now, getattr(mi, "aspd", 0.7))
+            mi.aimed("tornado", ch, now, tornado_lead(d, getattr(mi, "aspd", 0.7)) + 0.5)
+            mi.cast(1, x, y)
+            self.q.cast(True, now)
+            self.tornado_at = now
+            mi._ordered(now, "escape: Q3 tornado to stop her")
+            return True
+        if not sc.ready.get("E") or ch is None or d > 900 or mi.hp_pct > 60:
             return False
         mx, my = sc.me_xy
         best, gain = None, 120.0
