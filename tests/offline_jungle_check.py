@@ -316,3 +316,35 @@ lee.fight(mi, sc, time.time(), 0.7, "all_in")
 print("insec:", mi.last_action, "| queued:", len(mi._later))
 assert "insec" in mi.last_action and len(mi._later) == 2
 print("JUNGLE OK (Flash, ward hop, insec)")
+
+# Gank choice: two laners overextended into our half, same distance; the one whose Flash is down is the
+# gank. Their jungler seen 1,500 units from her a second ago: no gank there (he is there first).
+from jev.lanes import Lane as _L
+def gank_setup():
+    p = Player(dry_run=True, champion="leesin", role="JUNGLE")
+    p.kit = LeeSin("JUNGLE")
+    p.side = "ORDER"
+    p.jungle_state = JungleState("ORDER")
+    p.whereabouts.jungler = "Udyr"
+    return p
+now_g = time.time()
+top_e = _L("top", "ORDER").point(0.40)
+bot_e = _L("mid", "ORDER").point(0.40)          # (mid: both within gank reach of our blue buff)
+me_pt = (3800.0, 7900.0)
+mm = MinimapState(self_pos=me_pt, ts=now_g, enemy_champions=[top_e, bot_e], ally_champions=[
+    (top_e[0] - 300, top_e[1] - 300), (bot_e[0] - 300, bot_e[1] - 300)])
+for flashless, want in (("Darius", "top"), ("Jinx", "mid")):
+    p = gank_setup()
+    p.whereabouts.update(now_g, [("Darius", top_e), ("Jinx", bot_e)])
+    p.flash_down = {flashless: now_g + 300}
+    plan = p._gank_plan(mm, mm.ally_champions, 400.0, {"level": 6, "hp_percent": 90}, now_g)
+    print(f"{flashless}'s Flash down ->", plan[2] if plan else None)
+    assert plan is not None and plan[2] == f"gank {want}"
+p = gank_setup()
+p.whereabouts.update(now_g - 1.0, [("Udyr", (top_e[0] + 1500, top_e[1]))])
+p.whereabouts.update(now_g, [("Darius", top_e)])
+mm_top = MinimapState(self_pos=me_pt, ts=now_g, enemy_champions=[top_e], ally_champions=[(top_e[0] - 300, top_e[1] - 300)])
+plan = p._gank_plan(mm_top, mm_top.ally_champions, 400.0, {"level": 6, "hp_percent": 90}, now_g)
+print("their jungler 1,500 units from Darius a second ago ->", plan)
+assert plan is None
+print("JUNGLE OK (gank choice)")

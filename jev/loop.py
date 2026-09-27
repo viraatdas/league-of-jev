@@ -2124,7 +2124,15 @@ class Player:
                 if prog > ln.center - ln.frac(150):
                     continue  # at the middle she walks back before Lee arrives: g30's five ganks at 45-52% of the lane
                               # ended "lost them" or "time"; only a laner already in our half is worth the walk
-                score = d - 1500 * friends - ln.units(ln.center - prog)  # near, with our laner there, overextended
+                who = self._name_at(e, now)
+                if who and who == self.whereabouts.jungler:
+                    continue   # their jungler walking a lane is not a laner to gank
+                jg_eta = self.whereabouts.jungler_eta(e, now)
+                if jg_eta is not None and jg_eta < 8.0 and self.whereabouts.age(self.whereabouts.jungler, now) < 10.0:
+                    continue   # their jungler was seen close enough to be there first: a counter-gank
+                flash_down = bool(who) and self.enemy_flash_down(who, now)
+                score = (d - 1500 * friends - ln.units(ln.center - prog)   # near, with our laner there, overextended
+                         - (1500 if flash_down else 0))                       # "Flash down overrides everything"
                 if best is None or score < best[0]:
                     best = (score, name, e, prog, friends)
         if best is None:
@@ -2134,6 +2142,15 @@ class Player:
         self.log_lines.append(f"gank {name}: their laner at {prog * 100:.0f}% of the lane, {friends} of us there, "
                               f"{dist(mm.pos, e):.0f} away")
         return ("objective", self._gank_approach(self._gank, mm), f"gank {name}")
+
+    def _name_at(self, pt, now: float) -> str | None:
+        """The enemy the minimap named at `pt` in the last second (iconid.py), or None."""
+        best = None
+        for name, (p, t) in self.whereabouts.seen.items():
+            dd = dist(p, pt)
+            if now - t <= 1.0 and dd < 400 and (best is None or dd < best[0]):
+                best = (dd, name)
+        return best[1] if best else None
 
     def _gank_approach(self, g: dict, mm):
         """Walk to where she will run, not to where she is: 500 units past her toward their tower
