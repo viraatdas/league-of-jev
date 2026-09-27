@@ -73,6 +73,13 @@ sc = scene(track(unit("champion", 600, 0, 0.5), now), [], "QER", r_lit=True)
 Yasuo().fight(mi, sc, now, 0.7, "all_in")
 print("yasuo r:", mi.last_action)
 assert "R Last Breath" in mi.last_action
+# ... but not in a trade on a healthy one (g42 12:49: R's 70 s on a 95% Nasus for 20% of his HP); at 45%, yes.
+for hp, want in ((0.95, False), (0.45, True)):
+    mi, log = micro()
+    sc = scene(track(unit("champion", 600, 0, hp), now), [], "QER", r_lit=True)
+    Yasuo().fight(mi, sc, now, 0.7, "trade")
+    print(f"yasuo r in a trade, her at {hp:.0%}:", mi.last_action)
+    assert ("R Last Breath" in mi.last_action) == want
 
 # Ignite a low champion in melee range when the spells are down.
 mi, log = micro()

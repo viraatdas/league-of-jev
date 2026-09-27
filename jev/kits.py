@@ -708,7 +708,8 @@ class Yasuo(Kit):
             return True
         ch, d, rdy = sc.champ, sc.champ_dist or 9e9, sc.ready
         q3 = self.q.q3(now)
-        if sc.r_lit and d <= VC.r_range:
+        if sc.r_lit and d <= VC.r_range and (mode == "all_in" or ch.unit.hp <= 0.5 or sc.ally_champs):
+            # (Not in a trade on a healthy one: g42 12:49 spent R's 70 s on a 95% Nasus, 20% of his HP.)
             mi.cast(4, ch.unit.x, ch.unit.y)
             mi._ordered(now, f"{mode}: R Last Breath")
             self.r_at = now
@@ -997,8 +998,9 @@ class Yasuo(Kit):
         allies_knock = (sc.r_lit and sc.champ is not None and len(sc.ally_champs) >= 1 and mi.hp_pct >= 40
                         and sc.enemy_champs <= len(sc.ally_champs) + 1 and (sc.champ_dist or 9e9) <= VC.r_range
                         and (sc.champ.unit.hp < 0.7 or len(sc.ally_champs) >= sc.enemy_champs))
-        if sc.r_lit and sc.champ is not None and ((now - self.tornado_at < FAST.r_watch_s and plan.get("fight_favorable", 0.5) >= 0.45)
-                                                  or allies_knock):
+        own_knock = (now - self.tornado_at < FAST.r_watch_s and plan.get("fight_favorable", 0.5) >= 0.45
+                     and (mi.mode == "all_in" or (sc.champ is not None and sc.champ.unit.hp <= 0.6) or len(sc.ally_champs) >= 1))
+        if sc.r_lit and sc.champ is not None and (own_knock or allies_knock):
             # (R lights for an ally's knock-up too: a team fight we are even in is Yasuo's best ult.)
             mi.cast(4, sc.champ.unit.x, sc.champ.unit.y)
             mi._ordered(now, "R reflex after tornado" if now - self.tornado_at < FAST.r_watch_s else "R on an ally's knock-up")
