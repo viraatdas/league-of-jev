@@ -275,6 +275,7 @@ class VisionReader:
             for bx0, by0, bx1, by1 in (self.vc.chat_block, self.vc.target_block, self.vc.portrait_block):
                 m[max(0, by0 - y0):max(0, by1 - y0), max(0, bx0 - x0):max(0, bx1 - x0)] = 0
         found = self._bars(masks, dark, x0, y0)
+        found += self._empty_enemy_bars(hsv, found, x0, y0, masks["enemy"])
         units = [u for u in found if u.team != "self"]
         mine = [u for u in found if u.team == "self" and u.kind == "champion"]
         me: Unit | None = None
@@ -285,6 +286,63 @@ class VisionReader:
             units = [u for u in units if not (u.team == "ally" and u.kind == "minion" and abs(u.bar[0] - me.bar[0]) < 30
                                               and 0 < u.bar[1] - me.bar[1] < 24)]
         return units, me
+
+    def _empty_enemy_bars(self, hsv: np.ndarray, found: list, ox: int, oy: int, red: np.ndarray | None = None) -> list:
+        """An enemy champion at 0-3%: the bar's last sliver is too dim for the red mask (S 60-80) and the
+        bar reads as nothing, so a nearly dead champion vanished from view at the kill (g42 9:26: Nasus at
+        2% walked away from a 79% Yasuo, who chased "no champ"). Such a bar is still an enemy level box
+        (saturated dark red, ~20 x 15 px) with a near-black empty bar right of it and the name above."""
+        vc = self.vc
+        v_ = hsv[:, :, 2]
+        box = cv2.inRange(hsv, (0, 150, 22), (8, 255, 80)) | cv2.inRange(hsv, (170, 150, 22), (180, 255, 80))
+        mx, my, _ = self.geo.minimap or (hsv.shape[1] + ox, hsv.shape[0] + oy, 0)
+        hx0, hy0, hx1, hy1 = vc.hud_block
+        box[max(0, my - 20 - oy):, max(0, mx - 20 - ox):] = 0
+        box[max(0, hy0 - oy):, max(0, hx0 - ox):max(0, hx1 - ox)] = 0
+        for bx0, by0, bx1, by1 in (vc.chat_block, vc.target_block, vc.portrait_block):
+            box[max(0, by0 - oy):max(0, by1 - oy), max(0, bx0 - ox):max(0, bx1 - ox)] = 0
+        n, _, stats, _ = cv2.connectedComponentsWithStats(box, connectivity=8)
+        H, W = box.shape
+        full = vc.champ_bar_w
+        out = []
+        for i in range(1, n):
+            x, y, w, h, a = (int(v) for v in stats[i])
+            if not (14 <= w <= 28 and 10 <= h <= 28 and a >= 0.45 * w * h):
+                continue
+            bx = x + w + 4
+            if bx + full + 2 >= W or y < 25:
+                continue
+            # The HP bar's row: the darkest band right of the box (the box spans the mana bar too).
+            dark_rows = [(float((v_[r, bx + 6:bx + full - 4] < 32).mean()), r) for r in range(y + 2, min(H - 3, y + h - 2))]
+            if not dark_rows:
+                continue
+            run = []   # the first band of near-black rows, 5+ tall: its middle
+            for f, r in dark_rows:
+                if f >= 0.95:
+                    run.append(r)
+                elif len(run) >= 5:
+                    break
+                else:
+                    run = []
+            if len(run) < 5:
+                continue
+            row = run[len(run) // 2]
+            if red is not None and np.count_nonzero(red[y:y + h, bx:bx + full]) > 0.08 * full:
+                continue   # red fill in the HP bar: a healthy one (the dark band was the empty mana bar)
+            seg = v_[row - 2:row + 3, bx + 6:bx + full - 4]
+            if seg.size == 0 or float((seg < 32).mean()) < 0.9:
+                continue   # the empty bar: near black across its whole width
+            if float((v_[row - 2:row + 3, bx + full + 8:bx + full + 30] < 32).mean()) > 0.8:
+                continue   # ... and it ends where a bar ends (not a dark wall)
+            txt = self._white[max(0, y - 20):max(0, y - 3), bx:bx + full] if getattr(self, "_white", None) is not None else None
+            if txt is None or txt.size == 0 or float((txt > 0).mean()) <= 0.004:
+                continue   # the name above it
+            ux, uy = ox + bx + full / 2 + vc.champ_body_offset[0], oy + row + vc.champ_body_offset[1]
+            if any(u.kind == "champion" and abs(u.x - ux) < 40 and abs(u.y - uy) < 30 for u in found):
+                continue
+            sliver = int(np.count_nonzero(v_[row, bx - 3:bx + 8] > 60))
+            out.append(Unit("champion", "enemy", ux, uy, max(0.01, min(0.04, sliver / full)), (ox + bx, oy + row - 5, max(1, sliver), 10)))
+        return out
 
     def champion_px(self) -> tuple[float, float]:
         return float(self.geo.champion_px[0]), float(self.geo.champion_px[1])
