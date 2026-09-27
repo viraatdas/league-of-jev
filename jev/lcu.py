@@ -85,7 +85,18 @@ class LCU:
         self.lockfile = lf
 
     def req(self, method: str, path: str, json: Any | None = None) -> tuple[int, Any]:
-        r = self.http.request(method, path, json=json)
+        # The client drops a connection now and then (g39: "Server disconnected without sending a
+        # response" mid champ select ended the session): two quick retries, then "no answer" (code 0)
+        # for the caller's own loop to retry, not an exception.
+        r = None
+        for attempt in range(3):
+            try:
+                r = self.http.request(method, path, json=json)
+                break
+            except (httpx.TransportError, httpx.TimeoutException):
+                time.sleep(0.5 * (attempt + 1))
+        if r is None:
+            return 0, None
         try:
             body = r.json()
         except ValueError:
