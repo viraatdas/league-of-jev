@@ -1634,6 +1634,9 @@ class Player:
         if real:
             js.last_seen_monster = gt
             js.low_seen = min(js.low_seen, min(t.unit.hp for t in real))
+            bigs = [t for t in real if t.unit.kind == "monster"]
+            if bigs:
+                js.big_last = min(t.unit.hp for t in bigs)
             return
         if self.scene is not None and self.scene.minions and gt - js.last_seen_monster <= 3.0:
             js.low_seen = min(js.low_seen, min(t.unit.hp for t in self.scene.minions))
@@ -1641,9 +1644,11 @@ class Player:
         # Cleared: monsters were seen here and none for 3 s; or none at all 20 s after arriving
         # (someone else took the camp). "None seen for 3 s" alone marked red cleared before it spawned.
         seen_here = js.last_seen_monster >= js.arrived_at
-        if seen_here and gt - js.last_seen_monster > 3.0 and js.low_seen > 0.35:
+        if seen_here and gt - js.last_seen_monster > 3.0 and (js.low_seen > 0.35 or (js.big_last is not None and js.big_last > 0.3)):
             # Gone while still healthy: we walked off or it leashed (red buff back to full, g05). Retry.
-            js.arrived_at, js.last_seen_monster, js.low_seen = None, 0.0, 1.0
+            # The large monster's own last reading decides when there was one: a small wolf at 5% marked
+            # g36's blue "killed" while the buff itself had healed back to 69% off screen (Lee level 2 at 5:15).
+            js.arrived_at, js.last_seen_monster, js.low_seen, js.big_last = None, 0.0, 1.0, None
             return
         js_low = js.low_seen
         if seen_here and gt - js.last_seen_monster > 3.0 and gt - js.arrived_at < 8.0 and self._recent_gold_jump(6.0) < 20:

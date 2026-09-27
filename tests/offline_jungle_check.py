@@ -78,3 +78,55 @@ act = p.micro.last_action if p.micro else ""
 print("at the gank spot with their wave, no champion:", repr(act), "|", p.mech.last_action)
 assert "smite" not in act.lower() and "camp" not in act.lower()
 print("JUNGLE OK (gank spot is not a camp)")
+
+# A camp is "killed" only when its large monster was last seen low: g36's blue buff healed back to 69%
+# off screen after Lee walked off it (a small wolf had read 5%), was marked killed, and Lee was level 2
+# at 5:15. Last seen at 69% and gone: back to it. Last seen at 12% and gone: cleared.
+from types import SimpleNamespace as NS
+for big_hp, want_cleared in ((0.69, False), (0.12, True)):
+    p = Player(dry_run=True, champion="leesin", role="JUNGLE")
+    p.kit = LeeSin("JUNGLE")
+    p.side = "ORDER"
+    p.lane = Lane("mid", "ORDER")
+    p.mech = Mechanics(p.ctl, p.screen, p.kb, "ORDER", lane=p.lane, skill_order=p.kit.skill_order)
+    p.jungle_state = JungleState("ORDER")
+    p._micro_step = lambda *a, **k: False
+    p._recent_gold_jump = lambda s: 0.0
+    blue = camps("ORDER")["blue"]
+    p.jungle_state.current, p.jungle_state.arrived_at = "blue", 200.0
+    p.mm_state = MinimapState(self_pos=blue, ts=time.time())
+    d2 = load_fixture("tests/fixtures/midgame_yasuo_vs_zed.json")
+    for i in range(0, 16):
+        gt = 200.0 + i
+        d2["gameData"]["gameTime"] = gt
+        p.mm_state.ts = time.time()
+        units = [NS(unit=NS(kind="monster", hp=big_hp)), NS(unit=NS(kind="minion", hp=0.05))] if i < 10 else []
+        p.scene = NS(minions=units)
+        p._jungle_step(d2, d2["activePlayer"], d2["activePlayer"].get("championStats", {}), time.time())
+    print(f"blue last seen at {big_hp:.0%}, gone 6 s:", "cleared" if "blue" in p.jungle_state.cleared else "not cleared",
+          "| current:", p.jungle_state.current, p.jungle_state.arrived_at)
+    assert ("blue" in p.jungle_state.cleared) == want_cleared
+print("JUNGLE OK (large monster decides)")
+
+# On a camp, autos and Q stay on the camp in front of me: a low bar 700 units off is not the target.
+from jev import config as _c, keybinds
+from jev.control import Controller
+from jev.micro import Micro, Scene, Track
+from jev.screen import Screen
+from jev.vision import Unit
+PPU = _c.VISION.px_per_unit
+ME = (862.0, 490.0)
+def trk(dx, hp, kind, tid):
+    u = Unit(kind, "enemy", ME[0] + dx * PPU, ME[1], hp, (0, 0, 60, 4))
+    t = Track(id=tid, unit=u, seen=time.time())
+    t.hist.append((time.time(), hp))
+    return t
+lee = LeeSin("JUNGLE")
+mi = Micro(Controller(dry_run=True, log=lambda m: None), Screen(), keybinds.load(), "ORDER")
+buff, far = trk(250, 0.8, "monster", 1), trk(700, 0.2, "minion", 2)
+sc = Scene(me_xy=ME, minions=[buff, far])
+sc.ready = {}
+lee.continuous(mi, sc, time.time(), 0.7, "farm", False)
+print("camp target:", mi.last_action)
+assert "monster 80%" in mi.last_action
+print("JUNGLE OK (camp target)")

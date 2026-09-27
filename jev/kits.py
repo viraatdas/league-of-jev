@@ -1318,8 +1318,11 @@ class LeeSin(Kit):
 
     def continuous(self, mi: Micro, sc: Scene, now: float, aspd: float, mode: str, pushing: bool) -> bool:
         if self.jungle and mode == "farm" and sc.minions:
-            # Clearing a camp: E when monsters are in reach, Q the healthiest one, otherwise attack.
-            near = [t for t in sc.minions if sc.dist(t) <= self.E_RADIUS]
+            # Clearing a camp: E when monsters are in reach, Q the healthiest one, otherwise attack; all
+            # on the camp in front of me. The lowest bar anywhere on screen drew autos at a unit 682 units
+            # off and the Q2 after it, the buff leashed back to full and was marked cleared (g36).
+            at_camp = [t for t in sc.minions if sc.dist(t) <= 600] or sc.minions
+            near = [t for t in at_camp if sc.dist(t) <= self.E_RADIUS]
             if sc.ready.get("W") and near and mi.hp_pct < 60 and now - getattr(self, "_w_at", 0.0) > 4 and mi._can_order(now):
                 mi.ctl.press(mi.kb.self_cast(2))  # shield, and the recast's lifesteal, while the camp hits back
                 self._w_at = now
@@ -1331,7 +1334,7 @@ class LeeSin(Kit):
                 mi._ordered(now, "E on camp")
                 return True
             if sc.ready.get("Q") and now - self.q_at > 3.5 and mi._can_order(now):
-                big = max(sc.minions, key=lambda t: t.unit.hp)
+                big = max(at_camp, key=lambda t: (t.unit.kind == "monster", t.unit.hp))
                 mi.cast(1, big.unit.x, big.unit.y)
                 self.q_at = now
                 mi._ordered(now, "Q on camp")
@@ -1341,7 +1344,7 @@ class LeeSin(Kit):
                 mi._ordered(now, "Q2 on camp")
                 return True
             if mi.attack_ready(now, aspd):
-                tgt = min(sc.minions, key=lambda t: (t.unit.hp, sc.dist(t)))
+                tgt = min(at_camp, key=lambda t: (t.unit.hp, sc.dist(t)))
                 mi.attack(tgt, now, f"attack camp ({tgt.unit.kind} {int(tgt.unit.hp * 100)}% at {int(sc.dist(tgt))}u)", right_click=True)
             return True
         return super().continuous(mi, sc, now, aspd, mode, pushing)

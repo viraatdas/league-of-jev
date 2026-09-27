@@ -38,6 +38,7 @@ class JungleState:
     arrived_at: float | None = None                           # game time we reached the current camp
     last_seen_monster: float = 0.0
     low_seen: float = 1.0                                     # lowest monster HP seen at the current camp
+    big_last: float | None = None                             # the large monster's HP when last seen there
 
     def up(self, camp: str, gt: float) -> bool:
         if gt < FIRST_SPAWN:
@@ -63,4 +64,4 @@ class JungleState:
         if self.route_i < len(ROUTE) and ROUTE[self.route_i] == camp:
             self.route_i += 1
         self.current, self.arrived_at = None, None
-        self.low_seen = 1.0
+        self.low_seen, self.big_last = 1.0, None
