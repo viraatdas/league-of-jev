@@ -525,3 +525,18 @@ p.data = {"activePlayer": {"riotId": "Me#NA1"}, "allPlayers": [{"summonerName": 
 sc.ally_champs = [Unit("champion", "ally", ME[0] - 50, ME[1], 0.9, (0, 0, 1, 1))] * 2
 assert not p._avoid_nemesis(sc, p.micro, now)
 print("NEMESIS OK")
+# No fight back against an early bully at level 1 (g49 0:51: Tryndamere, 91/79 -> 27% and Flash); at level 6, yes.
+p = setup(now)
+p._hp_lost = 10.0
+t_ = track(250, 0.79, 1, now); t_.name = "Tryndamere"
+p.champ_tracker.tracks = {1: t_}
+sc = Scene(me_xy=ME); sc.champ, sc.champ_dist, sc.enemy_champs = t_, sc.dist(t_), 1
+sc.ready = {"Q": True, "E": True}
+sc.lane = {"opp": "Tryndamere"}
+p.micro.hp_pct = 91.0
+for lvl, want in ((1, False), (6, True)):
+    sc.ctx = {"level": lvl}
+    got = p._fight_back(sc, p.micro, now)
+    print(f"Tryndamere on me at level {lvl}: fight back {got}")
+    assert got == want
+print("EARLY BULLY OK (fight back)")

@@ -1021,6 +1021,9 @@ class Player:
             return False
         if not (sc.ready.get("Q") or sc.ready.get("E") or sc.ready.get("R")):
             return False
+        from jev.laneplan import early_bully
+        if early_bully(sc, mi):
+            return False   # (g49 0:51: fought Tryndamere back at level 1, 91/79 -> 27% and Flash)
         fr = self.fights.read if self.fights is not None else None
         if fr is not None and fr.age(now) < 0.9 and fr.in_danger >= 0.85:
             return False
