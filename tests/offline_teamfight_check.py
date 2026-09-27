@@ -245,10 +245,11 @@ e = track(200, 0.97, 1, now)
 p.champ_tracker.tracks = {1: e}
 sc = Scene(me_xy=ME)
 sc.champ, sc.champ_dist, sc.enemy_champs = e, sc.dist(e), 1
-sc.ready = {"W": True}
+sc.ready = {"Q": True, "W": True}
+p.guards.retreat_until = now + 5.0      # a heavy-damage retreat just called: fighting back cancels it
 p._fight_triggers(sc, p.micro, now)
 print("she is on me:", p.micro.mode, list(p.log_lines)[-1])
-assert p.micro.mode == "all_in" and p.guards.fight_back_until > now
+assert p.micro.mode == "all_in" and p.guards.fight_back_until > now and p.guards.retreat_until <= now
 from jev.loop import choose_intent
 from jev.state import Perception as _P
 pp = _P()

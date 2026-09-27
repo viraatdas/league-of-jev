@@ -783,6 +783,8 @@ class Player:
         if self.kit.execute_ok and mi._can_order(now) and self._execute(kit, mi, sc, now):
             mi.reacted("reflex", view.ts)
             return self._took(sc, "execute", True)
+        if escaping and self._fight_back(sc, mi, now):
+            escaping = False   # one of them on me and I am not behind: turning my back loses (g40)
         if escaping:
             # Walking out: no fight entries; reflexes only (Flash, defensive summoners, potion,
             # the kit's escape dash). Retreats used to skip this step entirely, so a Yasuo taking
@@ -890,6 +892,33 @@ class Player:
         self._committed_until = now + 5.0
         return True
 
+    def _fight_back(self, sc, mi, now: float) -> bool:
+        """One of them is on me, hitting (8%+ lost in the damage window), within 450 units, alone (no other
+        champion of theirs on screen or by her on the minimap), and I am not behind (40%+, at most 10
+        under her) with a spell up: fight back, all in, and hold the heavy-damage retreat 3 s. g40's
+        Yasuo turned and walked away from a single champion at 96% and at 100% and died from behind both
+        times; walking away from a melee diver loses the race. Not when Jev reads me about to die."""
+        ch = sc.champ
+        if ch is None or sc.enemy_champs != 1 or self.kit.support:
+            return False
+        d = sc.champ_dist or 9e9
+        lost = getattr(self, "_hp_lost", 0.0)
+        if d > 450 or lost < 8 or mi.hp_pct < 40 or mi.hp_pct < ch.unit.hp * 100 - 10:
+            return False
+        if not (sc.ready.get("Q") or sc.ready.get("E") or sc.ready.get("R")):
+            return False
+        fr = self.fights.read if self.fights is not None else None
+        if fr is not None and fr.age(now) < 0.9 and fr.in_danger >= 0.85:
+            return False
+        if self._her_team_near(sc) or self.kit.under_their_tower(sc, ch.unit.x, ch.unit.y):
+            return False
+        if mi.mode != "all_in":
+            self._commit(ch, mi, now, f"she is on me ({ch.unit.hp * 100:.0f}% at {d:.0f}u, me {mi.hp_pct:.0f}%, "
+                                      f"-{lost:.0f}%), fighting back")
+        self.guards.fight_back_until = now + 3.0
+        self.guards.retreat_until = min(self.guards.retreat_until, now)
+        return True
+
     def _her_team_near(self, sc) -> bool:
         """Two or more of them within 1500 units of her on the minimap, more than of us there (me counted):
         the fight she leads me into. g39's Yasuo chased a 48% champion and re-engaged her twice this way
@@ -935,7 +964,7 @@ class Player:
             return
         self._focus_target(sc, mi, now)
         fr = self.fights.read if self.fights is not None else None
-        if self._initiate(sc, mi, now, fr) or self._gank_commit(sc, mi, now, fr):
+        if self._fight_back(sc, mi, now) or self._initiate(sc, mi, now, fr) or self._gank_commit(sc, mi, now, fr):
             return
         if fr is not None and fr.age(now) < 0.9 and (sc.champ is not None or fr.plan in ("back_off", "escape")):
             self._apply_fight_read(fr, sc, mi, now)
@@ -1014,12 +1043,6 @@ class Player:
             # No read from Jev's fight head (this branch): out of API credits in g35 from 15:55, Xin Zhao
             # walked up on a full-HP Yasuo, hit first, and Yasuo walked away until he died (20:04). Two rules
             # stand in: the kit's own trade window, and fighting back when she is on me and I am not behind.
-            lost = getattr(self, "_hp_lost", 0.0)
-            if lost >= 8 and d < 450 and mi.hp_pct >= 35 and mi.hp_pct >= their * 100 - 15:
-                self._commit(ch, mi, now, f"she is on me ({their * 100:.0f}% at {d:.0f}u, me {mi.hp_pct:.0f}%, "
-                                          f"-{lost:.0f}%), fighting back")
-                self.guards.fight_back_until = now + 3.0
-                return
             window = self._kit_trade_window(sc, mi, now)
             if window:
                 if window == "all_in":
