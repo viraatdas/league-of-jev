@@ -348,3 +348,19 @@ _d = {"activePlayer": {"riotId": "Me#NA1"}, "allPlayers": [{"riotId": "Me#NA1", 
 print("killed by Mundo:", macro.killed_by(_d, "Dr. Mundo"), "| by Sivir:", macro.killed_by(_d, "Sivir"), "| by Ziggs:", macro.killed_by(_d, "Ziggs"))
 assert macro.killed_by(_d, "Dr. Mundo") == 2 and macro.killed_by(_d, "Sivir") == 1 and macro.killed_by(_d, "Ziggs") == 0
 print("MACRO OK (killed by)")
+
+# A full bag buys only the item that consumes owned parts (g45: a Pickaxe and a Recurve Bow tried every 10 s
+# with six items and 2,000+ gold); with one slot free, one component.
+try:
+    from jev.items import Catalog as _Cat
+    _c = _Cat()
+    _t = _c.get("Blade of The Ruined King")
+except Exception as _e:  # noqa: BLE001  (no item data cached)
+    _t = None
+    print("(no item data: full-bag check skipped)", _e)
+if _t is not None:
+    _own = ["Doran's Blade", "Infinity Edge", "Immortal Shieldbow", "Quicksilver Sash", "Mercury's Treads", "Vampiric Scepter", "Stealth Ward"]
+    a, b, c5 = ([x.name for x in _c.purchases(_t, o, g)] for o, g in ((_own, 1800), (_own, 2466), (_own[1:], 1800)))
+    print("full bag at 1800:", a, "| at 2466:", b, "| five items at 1800:", c5)
+    assert a == [] and b == ["Blade of The Ruined King"] and len(c5) == 1
+    print("MACRO OK (full bag)")

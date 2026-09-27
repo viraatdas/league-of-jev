@@ -211,6 +211,8 @@ class Catalog:
         c = self.champs.get((name or "").lower())
         return float(c["stats"]["attackrange"]) if c and "attackrange" in c.get("stats", {}) else None
 
+    TRINKETS = {"stealth ward", "warding totem", "farsight alteration", "oracle lens"}
+
     def cost_to_finish(self, item: Item, owned: list[str]) -> int:
         """Gold still needed for `item`, counting owned components that the recipe consumes."""
         pool = [o.lower() for o in owned]
@@ -231,10 +233,15 @@ class Catalog:
         owned = list(owned)
         buys: list[Item] = []
         g = gold
+        # Six items in the bag (the trinket has its own slot): a component has nowhere to go, only the item
+        # that consumes owned parts does. g45 tried a Pickaxe and a Recurve Bow every 10 s from 56:00 with
+        # 2,000+ gold and a full bag ("could not buy").
         for _ in range(limit):
             need = self.cost_to_finish(target, owned)
             if need <= g:
                 buys.append(target)
+                break
+            if sum(1 for o in owned if o.lower() not in self.TRINKETS) >= 6:
                 break
             best: Item | None = None
 
