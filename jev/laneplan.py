@@ -28,6 +28,8 @@ GOLD = {"melee": 21.0, "caster": 14.0, "": 17.0}
 HP_GOLD = 1.2            # gold-equivalent of 1% of my HP in lane (more when low, below)
 CHAMP_HP_GOLD = 1.6      # gold-equivalent of 1% of her HP at aggression 1
 Q_STACK = 4.0            # a Q stack toward the tornado
+Q_STACK_TO_TORNADO = 10.0  # ... the one that makes it, with her in view: the tornado then R is Yasuo's kill
+                           # (sim_yasuo.py: runners died 100% of fights begun with it ready, 5% without)
 E_COST = 2.0             # an E is cheap (0.5 s cooldown), but the target locks for 10 s (moot when it dies)
 Q_COST = 4.0             # Q on a minion: ~3.5 s without the trade tool (E's cooldown is 0.5 s)
 E_MOVE_MIN = 6.0         # a dash that kills nothing must reach a clearly better spot
@@ -268,6 +270,8 @@ class LanePlanner:
         q = getattr(self.kit, "q", None)
         q3 = bool(q.q3(now)) if q is not None else False
         ch, cd = sc.champ, (sc.champ_dist or 9e9)
+        stacks = int(getattr(q, "stacks", 0) or 0) if q is not None else 0
+        stack_v = Q_STACK_TO_TORNADO if (ch is not None and not q3 and stacks >= 1) else Q_STACK
         windup = FAST.windup_frac / max(0.3, sc.aspd)
         attack_ready = mi.attack_ready(now, sc.aspd)
         agg = float(lane.get("aggression", 1.0))
@@ -323,13 +327,13 @@ class LanePlanner:
                       for u in line if not getattr(u, "ally_takes", False)}
                 gold = sum(qp[u.id][0] * self._gold(u) * (0.3 if auto_p.get(u.id, 0.0) >= 0.7 else 1.0)
                            for u in line if u.id in qp)
-                v = gold + (Q_STACK if (line and not q3) else 0.0) - q_later - Q_COST
+                v = gold + (stack_v if (line and not q3) else 0.0) - q_later - Q_COST
                 if q3 and not pushing and gold < 10:
                     v -= 8.0  # the tornado on a wave that dies anyway: keep it for her
                 if q3 and ch is not None and cd <= VC.q3_range:
                     v -= 30.0  # the tornado is for her
-                if ch is not None and cd < 800:
-                    v -= Q_COST_NEAR_HER * agg
+                if ch is not None and cd < 800 and stack_v == Q_STACK:
+                    v -= Q_COST_NEAR_HER * agg   # (not for the Q that makes the tornado: that is what Q is kept for)
                 if ch is not None and self._line_passes(sc, tr.unit.x, tr.unit.y, rng, ch.unit) and her_wave >= 3 and ch.unit.hp > 0.3:
                     v -= aggro_cost  # the Q also hits her: her whole wave turns on me (g16)
                 if v > 1.0:
@@ -382,7 +386,7 @@ class LanePlanner:
                     if around:
                         qg = sum(self._pk(mi, "Q", sc.q_dmg, self._at(u, now, FAST.lasthit_lead_s + 0.25), getattr(u, "hp_max", 400.0))[0]
                                  * self._gold(u) for u in around if not getattr(u, "ally_takes", False))
-                        v2 = v + qg + Q_STACK - q_later - Q_COST - (Q_COST_NEAR_HER * agg if (ch is not None and cd < 800) else 0.0)
+                        v2 = v + qg + stack_v - q_later - Q_COST - (Q_COST_NEAR_HER * agg if (ch is not None and cd < 800) else 0.0)
                         if champ_w and ch is not None and self._dist_px((ch.unit.x, ch.unit.y), land) <= r:
                             v2 += sc.q_dmg / 0.88 / her_hp_units * 100 * champ_w - aggro_cost  # the circle catches her too
                         elif champ_w:

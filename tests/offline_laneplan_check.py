@@ -267,3 +267,20 @@ towered = {o.kind: o.value for o in pl6.options(sc, mi, now, False)}
 print("auto on her in the open / under her tower:", round(open_best.get("auto_champ", -99), 1), round(towered.get("auto_champ", -99), 1))
 assert open_best["auto_champ"] > 0 > towered["auto_champ"]
 print("LANEPLAN OK (their tower)")
+
+# The Q that makes the tornado, with her in view, is worth more than a stack (the tornado then R is
+# Yasuo's kill: sim_yasuo.py). Same minion line: with no stack, a Q by her is not worth it; with one, it is.
+y7 = Yasuo()
+y7.q.hud = False
+pl7 = LanePlanner(y7)
+mi = micro()
+her = tr("champion", 700, 0, 0.8, 9, role="")
+line = [tr("minion", 300, 0, 0.9, 70), tr("minion", 380, 10, 0.9, 71)]
+vals = []
+for stacks in (0, 1):
+    y7.q.stacks, y7.q.last_gain = stacks, now
+    sc = scene(line, champ=her, ready="Q")
+    vals.append(max((o.value for o in pl7.options(sc, mi, now, False) if o.kind == "q"), default=None))
+print("Q on the wave with her in view, 0 vs 1 stack:", vals)
+assert vals[0] is None and vals[1] is not None and vals[1] >= 5.0   # the first stack by her: no; the tornado: yes
+print("LANEPLAN OK (tornado stack)")
