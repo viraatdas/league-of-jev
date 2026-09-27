@@ -1212,10 +1212,18 @@ class Player:
         if now - self._no_wave_since < 3.0 or not mm.enemy_minions:
             return False
         groups = []
+        sit = getattr(self, "situation", None)
+        unseen_many = sit is not None and sit.unseen >= 3 and not sit.power_play
         for e in mm.enemy_minions:
             n = sum(1 for o in mm.enemy_minions if dist(o, e) < 900)
             danger = sum(1 for c in mm.enemy_champions if dist(c, e) < 1500)
             if n >= 2 and danger < 2:
+                if unseen_many:
+                    # Three or more of them unseen: only waves in our half. g39's Yasuo farmed deep in their
+                    # half of bot at 19:00 with four unseen, then Amumu and Lissandra came out of the fog.
+                    ln = min((Lane(k, self.side) for k in ("top", "mid", "bot")), key=lambda l: l.project(e)[1])
+                    if ln.project(e)[0] > ln.center + ln.frac(150):
+                        continue
                 groups.append((dist(mm.pos, e) - 400 * n, e))
         if not groups:
             return False
@@ -2010,8 +2018,13 @@ class Player:
         if foes_here >= 2 and foes_here > friends_here + 1:
             return None
 
+        sit = getattr(self, "situation", None)
+        fog = sit is not None and sit.unseen >= 3
+
         def outnumbered_at(pit, near: int) -> bool:
-            return sum(1 for e in mm.enemy_champions if dist(e, pit) < 2000) > near + 1
+            # (Seen ones, and the fog: with three or more of them unseen, only with three of ours there;
+            # g39 walked to "dragon with allies" at 19:00 and two came out of the fog, 100% -> 0 in 4 s.)
+            return sum(1 for e in mm.enemy_champions if dist(e, pit) < 2000) > near + 1 or (fog and near < 3)
 
         if gt >= 300 and (obj.get("next_dragon_in_s") or 0) <= 0:
             pit = places["dragon_pit"][0]

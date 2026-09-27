@@ -211,9 +211,14 @@ p.situation = macro.analyze(base, None, "ORDER", set(), set())
 pit = _places.places("ORDER")["dragon_pit"][0]
 ours = [(pit[0] - 300.0, pit[1] + 200.0), (pit[0] + 200.0, pit[1] - 300.0)]
 p.mm_state = MinimapState(self_pos=(pit[0] - 3500.0, pit[1] + 2500.0), ts=time.time(), ally_champions=ours, enemy_champions=[])
+p.situation.unseen = 1
 plan = p._objective_plan(base, time.time())
 print("dragon, two of ours there:", plan)
 assert plan is not None and plan[2] == "dragon with allies"
+p.situation.unseen = 4
+print("... with four of theirs unseen:", p._objective_plan(base, time.time()))
+assert p._objective_plan(base, time.time()) is None
+p.situation.unseen = 1
 me_pt = p.mm_state.self_pos
 p.mm_state.enemy_champions = [(me_pt[0] + 500.0, me_pt[1] - 400.0), (me_pt[0] + 700.0, me_pt[1] - 100.0)]
 print("... two of theirs next to me:", p._objective_plan(base, time.time()))
@@ -294,3 +299,27 @@ late = p2._join_fight_plan(mm_j, mm_j.ally_champions, 1200.0, 90.0, time.time())
 print(f"1v1 in mid, {d_j:.0f} away, laning top: at 10:00 -> {early}; at 20:00 -> {late}")
 assert early is None and late is not None
 print("MACRO OK (laners stay in lane)")
+
+# After laning, with three or more of them unseen, the wave farming takes a wave in our half of a lane,
+# not one deep in theirs (g39, 19:00: four unseen, deep in their half of bot, two came out of the fog).
+from jev.lanes import Lane as _Ln
+p = Player(dry_run=True)
+p.mech = Mechanics(p.ctl, p.screen, p.kb, "ORDER", lane=p.lane)
+d7 = copy.deepcopy(base)
+d7["gameData"]["gameTime"] = 1200.0
+p.data = d7
+p.situation = macro.analyze(d7, None, "ORDER", set(), set())
+tv = time.time()
+me7 = Unit("champion", "self", 862.0, 490.0, 0.9, (830, 400, 100, 10))
+p.view = View(units=[me7], me=me7, ts=tv + 3.5)
+deep = _Ln("bot", "ORDER").point(0.72)
+ours = _Ln("mid", "ORDER").point(0.40)
+p.mm_state = MinimapState(self_pos=(7000.0, 4000.0), ts=tv, enemy_minions=[deep, (deep[0] + 100, deep[1] + 80), ours, (ours[0] + 90, ours[1] - 60)])
+p._no_wave_since = tv
+p.situation.unseen = 4
+assert p._farm_the_waves(tv + 3.5)
+print("four unseen, waves deep in bot and in our half of mid ->", p.mech.last_action)
+import re as _re
+_tx, _ty = (int(v) for v in _re.search(r"at (\d+),(\d+)", p.mech.last_action).groups())
+assert abs(_tx - ours[0]) < 300 and abs(_ty - ours[1]) < 300
+print("MACRO OK (fog keeps the wave farming at home)")
