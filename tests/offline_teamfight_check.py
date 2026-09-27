@@ -465,3 +465,22 @@ assert not p._hunt(gone, p.micro, now + 1.4)
 p._last_champ["hp"] = 0.08
 assert not p._hunt(gone, p.micro, now + 3.5)   # 3 s on, she is gone
 print("HUNT OK")
+
+# The kill margin grows with the walk in: the same 50% target that is a go at 350u is not at 900u without the
+# tornado (g43: in on a 50% Mundo from 607u at 1.1x, 61% -> 35% and a Flash); a self-healer needs more.
+from jev.kits import Yasuo as _Y2
+def _go(d, name="Garen", tornado=False):
+    y = _Y2(); y.q.hud = tornado; y.r_rank = 1
+    mi = setup(now).micro; mi.hp_pct = 90.0
+    her = track(d, 0.5, 1, now)
+    sc = Scene(me_xy=ME)
+    sc.champ, sc.champ_dist, sc.enemy_champs = her, sc.dist(her), 1
+    sc.ready = {"Q": True, "E": True}
+    sc.ctx = {"ranks": {"Q": 3, "E": 2, "R": 1}, "level": 8, "ad": 120.0, "bonus_ad": 40.0, "crit": 0.2,
+              "target_max_hp": 1100.0, "target_armor": 45.0, "target_mr": 35.0, "target": name}
+    return y.go(sc, mi, now, 0, None)
+near, far, heal = _go(350), _go(900), _go(350, "Dr. Mundo")
+print(f"go at 350u: {near} | at 900u: {far} | Mundo at 350u: {heal}")
+assert near is not None and far is None
+assert heal is None or float(heal.split('kill ')[1].split('x')[0]) < float(near.split('kill ')[1].split('x')[0])
+print("INITIATE OK (margin with distance, healers)")

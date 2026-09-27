@@ -901,6 +901,9 @@ class Yasuo(Kit):
             d += 50 + 20 * int(c.get("level", 1))
         return d, sc.champ.unit.hp * float(c.get("target_max_hp", 700.0))
 
+    HEALERS = {"drmundo", "warwick", "aatrox", "vladimir", "swain", "sylas", "fiora", "olaf", "soraka", "illaoi",
+               "briar", "nasus", "yuumi"}   # self-heal or heals that outlast a burst estimate
+
     def go(self, sc: Scene, mi: Micro, now: float, allies_on_her: int, her_half: bool | None) -> str | None:
         """Initiate? A reason, or None. The kill (my damage, our laner's 60% on top, against her HP pool
         and armor), or the tornado up with R ready at 0.75x (the knock-up into R), or 0.8x with her Flash
@@ -929,6 +932,13 @@ class Yasuo(Kit):
         eff = ratio - 0.04 * wave
         if not (d <= VC.q_range or sc.dash_options or tornado):
             eff *= 0.7
+        # Far out, the walk in is time for her to run, heal and hit back: g43 went in on a 50% Dr. Mundo
+        # from 607u at 1.1x, took his cleavers and minions on the way (61% -> 35%) and Flashed out; and
+        # champions that heal themselves outlast the burst estimate.
+        reach = 900.0 if tornado else (VC.q_range + (VC.e_range if sc.dash_options else 0.0))
+        eff -= 0.25 * max(0.0, d - reach) / 400.0 + 0.25 * max(0.0, d - 400.0) / 400.0 * (not tornado)
+        if str(sc.ctx.get("target") or "").lower().replace(" ", "").replace(".", "") in self.HEALERS:
+            eff /= 1.15
         why = f"kill {eff:.1f}x ({dmg:.0f} on {hp:.0f} HP{', ally on her' if allies_on_her else ''}, her wave {wave})"
         if mi.hp_pct < 55:
             # Hurt myself, only a clear kill: g41 went back in at 43% on a 44% Garen, both ended near nothing
