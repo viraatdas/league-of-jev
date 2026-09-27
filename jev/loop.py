@@ -713,7 +713,9 @@ class Player:
         elif world is not None:
             # Jungle monsters have red bars like enemy minions: keep only units near the lane path.
             raw_minions = [u for u in raw_minions if self.lane.project(world(u))[1] < 900]
-        minions = self.min_tracker.update(raw_minions, now)
+        # A minion seen in 3 reads (~60 ms): a one-frame read of scenery drew a Q and an E "inside their wave"
+        # in our own jungle (g42 26:06, after respawn), and Q stacks and cooldowns went to nothing.
+        minions = [t for t in self.min_tracker.update(raw_minions, now) if len(t.hist) >= 3]
         self._audit_lasthits(mi, now)
         mi.score_skills(now)
         fwd = self._wave_fwd(view, raw_minions, world if camp_pt is None else None)
