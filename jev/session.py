@@ -81,7 +81,14 @@ def harness_alive() -> bool:
 
 
 def stop_harness() -> None:
+    """SIGTERM, then SIGKILL after 3 s: a harness took 36-80 s to exit on SIGTERM mid-game, and the
+    champion walked on its last order meanwhile (g42 19:57, dead in bot lane without a harness)."""
     subprocess.run(["pkill", "-f", "jev pla[y]"], check=False)
+    for _ in range(6):
+        time.sleep(0.5)
+        if not harness_alive():
+            return
+    subprocess.run(["pkill", "-9", "-f", "jev pla[y]"], check=False)
 
 
 def code_hash() -> str:
@@ -161,10 +168,20 @@ def run(champion: str = "yasuo", minutes: float = 18.0, tag: str = "", difficult
             time.sleep(2)
     if not harness_alive():
         start_harness()
-    last_note, gone, gt = 0.0, 0, 0.0
+    last_note, gone, gt, polled, restarted = 0.0, 0, 0.0, 0.0, 0.0
     try:
         while True:
-            time.sleep(5)
+            # The harness every second (a mid-game restart for new code leaves the champion on its last
+            # order until the next one is up); the game and its clock every 5 s.
+            time.sleep(1)
+            if time.time() - restarted > 5 and not harness_alive() and game_alive():
+                _say("harness not running: restarting it")
+                start_harness()
+                restarted = time.time()
+                continue
+            if time.time() - polled < 5:
+                continue
+            polled = time.time()
             if not game_alive():
                 gone += 1
                 if gone >= 3:
@@ -175,10 +192,7 @@ def run(champion: str = "yasuo", minutes: float = 18.0, tag: str = "", difficult
             d = riot.all_game_data()
             if d is not None:
                 gt = float((d.get("gameData") or {}).get("gameTime", 0.0))
-            if not harness_alive():
-                _say("harness not running: restarting it")
-                start_harness()
-            elif log.exists() and time.time() - log.stat().st_mtime > 60:
+            if log.exists() and time.time() - log.stat().st_mtime > 60:
                 # Alive but silent: the harness writes its log every second. g33's froze for two minutes
                 # (no error) until stopped by hand; a hung harness now gets the same restart as a dead one.
                 _say("harness silent for 60 s: restarting it")
