@@ -138,3 +138,15 @@ if all(champion_art(n) is not None for n in _meta["enemies"]):
     print("VISION OK (minimap icons)")
 else:
     print("(no champion art cached: minimap icon check skipped)")
+
+# Champion bars come with a dark frame (g35's Nasus) or a purple one and a hexagonal level box (g37's
+# Dr. Mundo, unread on every frame before, so Yasuo never saw his opponent): both are champions.
+for b in _json.load(open("tests/fixtures/frames/champ_bars.json")):
+    crop = cv2.imread(f"tests/fixtures/frames/{b['file']}")
+    frame = np.full((1117, 1728, 3), (70, 95, 80), np.uint8)
+    frame[b["y0"]:b["y0"] + crop.shape[0], b["x0"]:b["x0"] + crop.shape[1]] = crop
+    units, _ = _reader.read_units(frame)
+    hit = [u for u in units if u.kind == "champion" and u.team == "enemy" and abs(u.bar[0] - b["bar"][0]) <= 3]
+    print(f"{b['file']}: {[(round(u.hp, 2)) for u in hit]} (want {b['hp']})")
+    assert hit and abs(hit[0].hp - b["hp"]) < 0.05, b
+print("VISION OK (champion bar frames)")

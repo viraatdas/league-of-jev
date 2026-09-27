@@ -22,7 +22,7 @@ from jev.lanes import Lane  # noqa: E402
 from jev.micro import Micro, UnitTracker, build_scene  # noqa: E402
 from jev.minimap import MinimapReader  # noqa: E402
 from jev.screen import Screen  # noqa: E402
-from jev.vision import Unit, View, VisionReader  # noqa: E402
+from jev.vision import Hud, Unit, View, VisionReader  # noqa: E402
 
 
 def wall(f: str) -> float:
@@ -30,6 +30,30 @@ def wall(f: str) -> float:
 
 
 _readers: dict = {}
+
+
+def build_cache(tag: str) -> int:
+    """Read each frame of `tag` once, in order (the minimap reader keeps state), and write what the
+    replay uses to replay_cache.jsonl: the HUD's ready icons, the Q3 icon, the minimap position."""
+    screen = Screen()
+    vr, mr = VisionReader(), MinimapReader(screen)
+    x0, y0, side = config.GEOMETRY.minimap
+    fdir = f"snapshots/night/{tag}"
+    n = 0
+    with open(f"{fdir}/replay_cache.jsonl", "w") as out:
+        for line in open(f"{fdir}/vision.jsonl"):
+            r = json.loads(line)
+            path = f"{fdir}/{r['f']}.jpg" if os.path.exists(f"{fdir}/{r['f']}.jpg") else f"{fdir}/{r['f']}.png"
+            img = cv2.imread(path)
+            if img is None:
+                continue
+            bgra = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+            hud = vr.read_hud(bgra)
+            pos = mr.read(bgra[y0:y0 + side, x0:x0 + side]).pos
+            out.write(json.dumps({"f": r["f"], "ready": hud.ready, "q3": hud.q3,
+                                  "mm_pos": [round(pos[0], 1), round(pos[1], 1)] if pos else None}) + "\n")
+            n += 1
+    return n
 
 
 def run(tag: str, lane_name: str, planner: bool) -> tuple[collections.Counter, list]:
@@ -41,6 +65,11 @@ def run(tag: str, lane_name: str, planner: bool) -> tuple[collections.Counter, l
     screen, vr, mr = _readers["screen"], _readers["vr"], _readers["mr"]
     fdir = f"snapshots/night/{tag}"
     rows = [json.loads(line) for line in open(f"{fdir}/vision.jsonl")]
+    # What the replay reads off each frame (HUD icons, the Q3 icon, the minimap position), cached so the
+    # frames themselves can be deleted (build_cache).
+    cache = None
+    if os.path.exists(f"{fdir}/replay_cache.jsonl"):
+        cache = {c["f"]: c for c in (json.loads(line) for line in open(f"{fdir}/replay_cache.jsonl"))}
     lane = Lane(lane_name, "ORDER")
     x0, y0, side = config.GEOMETRY.minimap
     saved = config.FAST.lane_planner
@@ -61,19 +90,26 @@ def run(tag: str, lane_name: str, planner: bool) -> tuple[collections.Counter, l
         if t_prev is not None and t - t_prev > 1.5:
             mins, champs = UnitTracker(), UnitTracker(max_jump_px=90)  # a gap: tracks would lie
         t_prev = t
-        path = f"{fdir}/{r['f']}.jpg" if os.path.exists(f"{fdir}/{r['f']}.jpg") else f"{fdir}/{r['f']}.png"
-        img = cv2.imread(path)
-        if img is None:
-            continue
-        bgra = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
-        hud = vr.read_hud(bgra)
+        if cache is not None:
+            c = cache.get(r["f"])
+            if c is None:
+                continue
+            hud = Hud(ready=dict(c["ready"]), q3=c["q3"])
+            mm_pos = tuple(c["mm_pos"]) if c["mm_pos"] else None
+        else:
+            path = f"{fdir}/{r['f']}.jpg" if os.path.exists(f"{fdir}/{r['f']}.jpg") else f"{fdir}/{r['f']}.png"
+            img = cv2.imread(path)
+            if img is None:
+                continue
+            bgra = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+            hud = vr.read_hud(bgra)
+            mm_pos = mr.read(bgra[y0:y0 + side, x0:x0 + side]).pos
         for key in ("Q", "E"):
             hud.ready[key] = bool(hud.ready.get(key)) and t >= cd[key]
         k, team, x, y, hp, bar = r["me"]
         me = Unit(k, team, x, y, hp, tuple(bar))
         view = View(units=units, me=me, hud=hud, ts=t)
-        mm = mr.read(bgra[y0:y0 + side, x0:x0 + side])
-        fwd = lane.screen_dir(lane.project(mm.pos)[0]) if mm.pos else mi.fwd
+        fwd = lane.screen_dir(lane.project(mm_pos)[0]) if mm_pos else mi.fwd
         mi.fwd = fwd
         gmin = r["t"] / 60
         ad = 68 + 3.2 * gmin + (15 if gmin > 10 else 0)

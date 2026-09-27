@@ -199,8 +199,16 @@ class VisionReader:
             # The border may sit one row further out: the fill's last row can render dimmer than
             # the colour threshold (4 px bars read as 3), so accept the darker of two rows each side.
             xa = max(0, x - 1)
-            above = max(dark[y - 1, xa:x_end].mean(), dark[max(0, y - 2), xa:x_end].mean())
-            below = max(dark[y + h, xa:x_end].mean(), dark[min(H - 1, y + h + 1), xa:x_end].mean())
+            # A champion bar's frame is dark, or purple: g37's Dr. Mundo had a purple frame and a hexagonal
+            # level box (Nasus in g35 a dark one), failed the dark-frame check on every frame, and Yasuo
+            # stood in lane "with no champion" while Mundo took him from 100% to 37%.
+            fr = dark if kind != "champion" or getattr(self, "_purple", None) is None else None
+            def frame_row(r):
+                if fr is not None:
+                    return dark[r, xa:x_end].mean()
+                return (dark[r, xa:x_end] | self._purple[r, xa:x_end]).mean()
+            above = max(frame_row(y - 1), frame_row(max(0, y - 2)))
+            below = max(frame_row(y + h), frame_row(min(H - 1, y + h + 1)))
             # (The left edge of the frame renders lighter on some settings, so only above/below are checked.)
             if above < 0.55 or below < 0.55:
                 continue
@@ -254,6 +262,7 @@ class VisionReader:
         hsv = cv2.cvtColor(to_bgr(frame[y0:y1, x0:x1]), cv2.COLOR_BGR2HSV)
         dark = hsv[:, :, 2] < self.vc.frame_dark_v
         self._val = hsv[:, :, 2]
+        self._purple = cv2.inRange(hsv, (140, 60, 40), (179, 255, 175)) > 0   # the purple champion-bar frame
         # Blank the minimap corner and the HUD so their icons are never read as units.
         mx, my, _ = self.geo.minimap or (x1, y1, 0)
         hx0, hy0, hx1, hy1 = self.vc.hud_block
