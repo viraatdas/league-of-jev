@@ -388,3 +388,28 @@ assert not p._gank_converging(st, t0)
 st.enemy_champions = [(5900.0, 5000.0), (5000.0, 6800.0)]
 assert p._gank_converging(st, t0 + 1.0)
 print("GANK RETREAT OK (converging, not just near)")
+
+# Initiation is not into her team: two of theirs by her on the minimap and me alone -> no go, and a hold
+# ends; with two of ours there -> go.
+from jev.kits import Yasuo as _Y
+from jev.minimap import MinimapState as _MS2
+for allies, want in ((0, False), (2, True)):
+    p = setup(now)
+    p.kit = _Y()
+    p.kit.q.hud = True
+    p.kit.r_rank = 1
+    p.micro.hp_pct = 90.0
+    her = track(400, 0.45, 1, now)
+    p.champ_tracker.tracks = {1: her}
+    sc = Scene(me_xy=ME)
+    sc.champ, sc.champ_dist, sc.enemy_champs = her, sc.dist(her), 1
+    sc.ready = {"Q": True, "E": True, "R": True}
+    sc.ctx = {"ranks": {"Q": 5, "E": 3, "R": 2}, "level": 13, "ad": 190.0, "bonus_ad": 110.0, "crit": 0.5,
+              "target_max_hp": 1800.0, "target_armor": 70.0, "target_mr": 50.0}
+    her_map = (7400.0 + 400.0, 7400.0)        # (the river: no tower's range)
+    p.mm_state = _MS2(self_pos=(7400.0, 7400.0), ts=time.time(), enemy_champions=[her_map, (her_map[0] + 600, her_map[1])],
+                      ally_champions=[(7500.0, 7500.0 + 200 * k) for k in range(allies)])
+    p._fight_triggers(sc, p.micro, now)
+    print(f"her at 45% with a friend of hers by her, {allies} of ours near: mode {p.micro.mode}")
+    assert (p.micro.mode == "all_in") == want
+print("INITIATE OK (not into her team)")

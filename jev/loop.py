@@ -858,7 +858,7 @@ class Player:
             # The combo plays out (the next back_off read would end it a tick after it started), unless
             # Jev reads me about to die, I am low, a second one of theirs came, or she is gone.
             if (sc.champ is None or mi.hp_pct < 25 or (fresh_danger or 0.0) >= 0.85
-                    or sc.enemy_champs > len(sc.ally_champs) + 1):
+                    or sc.enemy_champs > len(sc.ally_champs) + 1 or self._her_team_near(sc)):
                 self._committed_until = 0.0
                 return False
             return True
@@ -876,6 +876,11 @@ class Player:
             ln = min((Lane(n, self.side) for n in ("top", "mid", "bot")), key=lambda l: l.project((hx, hy))[1])
             prog, off = ln.project((hx, hy))
             her_half = off < 1200 and prog <= ln.center
+        if self._her_team_near(sc):
+            return False
+        sit = getattr(self, "situation", None)
+        if sit is not None and sit.unseen >= 3 and her_half is False and ch.unit.hp >= 0.25 and not sit.power_play:
+            return False   # into their half with three or more of them in the fog
         why = go(sc, mi, now, on_her, her_half)
         if why is None:
             return False
@@ -884,6 +889,19 @@ class Player:
         self._commit(ch, mi, now, f"initiate on {ch.unit.hp * 100:.0f}% at {sc.champ_dist or 0:.0f}u: {why}")
         self._committed_until = now + 5.0
         return True
+
+    def _her_team_near(self, sc) -> bool:
+        """Two or more of them within 1500 units of her on the minimap, more than of us there (me counted):
+        the fight she leads me into. g39's Yasuo chased a 48% champion and re-engaged her twice this way
+        and went 100% -> 30% in two seconds both times (deaths at 37:03 and 42:47)."""
+        mm, ch = self.mm_state, sc.champ
+        if mm is None or mm.pos is None or ch is None:
+            return False
+        ppu = config.VISION.px_per_unit
+        her = (mm.pos[0] + (ch.unit.x - sc.me_xy[0]) / ppu, mm.pos[1] - (ch.unit.y - sc.me_xy[1]) / ppu)
+        foes = sum(1 for e in mm.enemy_champions if dist(e, her) < 1500)
+        friends = 1 + sum(1 for a in mm.ally_champions if dist(a, her) < 1500)
+        return foes >= 2 and foes > friends
 
     def _gank_commit(self, sc, mi, now: float, fr) -> bool:
         """A jungler on a gank who sees his target within Sonic Wave reach goes in: all in on it, Q from
@@ -985,12 +1003,14 @@ class Player:
         flash_down = self.enemy_flash_down(getattr(ch, "name", "") or "", now)
         if (their is not None and their < (0.55 if flash_down else 0.45) and max(recent) < 0.6
                 and mi.hp_pct >= their * 100 + (15 if flash_down else 25) and d < 700
-                and sc.enemy_champs == 1 and self.kit.minions_near_champ(sc) < 4 and mi.mode != "back_off"):
+                and sc.enemy_champs == 1 and self.kit.minions_near_champ(sc) < 4 and mi.mode != "back_off"
+                and not self._her_team_near(sc)):
             # Lane kill pressure: she is under 45% and I am well ahead in HP, with no full wave around her.
             self._commit(ch, mi, now, f"kill pressure ({their * 100:.0f}% vs me {mi.hp_pct:.0f}% at {d:.0f}u), all in")
             return
         if ((fr is None or fr.age(now) > 3.0) and sc.enemy_champs == 1 and mi.mode not in FIGHT_MODES
-                and mi.mode != "back_off" and their is not None and now >= getattr(mi, "trade_cooldown_until", 0.0)):
+                and mi.mode != "back_off" and their is not None and now >= getattr(mi, "trade_cooldown_until", 0.0)
+                and not self._her_team_near(sc)):
             # No read from Jev's fight head (this branch): out of API credits in g35 from 15:55, Xin Zhao
             # walked up on a full-HP Yasuo, hit first, and Yasuo walked away until he died (20:04). Two rules
             # stand in: the kit's own trade window, and fighting back when she is on me and I am not behind.
@@ -1027,14 +1047,16 @@ class Player:
             self.log_lines.append(f"fight: outmatched ({mi.hp_pct:.0f}% vs {ch.unit.hp * 100:.0f}% at {d:.0f}u), "
                                   f"{'retreating' if mi.hp_pct < 40 else 'backing off'}")
             return
-        steady_low = their is not None and their < 0.3 and max(recent) < 0.45
+        team_near = self._her_team_near(sc)
+        steady_low = their is not None and their < (0.15 if team_near else 0.3) and max(recent) < 0.45
         # One low reading is not a kill window: an overlapped bar read Kayle at 15% while she had
         # 79%, and the all-in cost Yasuo 30% HP (game 4). The median of half a second must agree.
+        # (With her team by her on the minimap, only when she is nearly dead.)
         if steady_low and d < 700 and mi.hp_pct > 35:
             self._commit(ch, mi, now, f"kill window ({ch.unit.hp * 100:.0f}% at {d:.0f}u), all in")
             mi.flash_in_ok = ch.unit.hp < 0.2 and mi.hp_pct > 40
             return
-        mode = self._kit_trade_window(sc, mi, now)
+        mode = None if team_near else self._kit_trade_window(sc, mi, now)
         if mode:
             mi.set_mode(mode, now)
             self.log_lines.append(f"fight: trade window, {mode} ({ch.unit.hp * 100:.0f}% at {d:.0f}u, me {mi.hp_pct:.0f}%)")
@@ -1678,6 +1700,8 @@ class Player:
         outnumbered = sc.enemy_champs >= 2 and not sc.ally_champs
         if plan in ("all_in", "trade") and outnumbered and fr.win_all_in < 0.8:
             plan = "back_off"
+        if plan in ("all_in", "trade") and self._her_team_near(sc) and fr.win_all_in < 0.8:
+            plan = "poke"   # her team by her on the minimap: not after her (g39, 37:03 and 42:47)
         if (plan in ("all_in", "trade") and ch is not None and mi.hp_pct < 25 and ch.unit.hp > mi.hp_pct / 100 + 0.15
                 and fr.win_all_in < 0.8):
             plan = "back_off"  # losing floor: low and behind
