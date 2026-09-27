@@ -116,6 +116,11 @@ home = (-0.707, 0.707)
 sc = scene(track(unit("champion", 300, -100, 0.9), now), [track(unit("minion", -300, 300, 0.8), now)], "E")
 assert Yasuo().escape(mi, sc, now, home)
 print("yasuo escape:", mi.last_action)
+# ... not when that dash lands next to her (she stands home-side of me: g41 7:01-7:13, ten E's in Garen's reach).
+mi, log = micro()
+mi.hp_pct = 25
+sc = scene(track(unit("champion", -350, 350, 0.9), now), [track(unit("minion", -300, 300, 0.8), now)], "E")
+assert not Yasuo().escape(mi, sc, now, home), mi.last_action
 sc_bad = scene(track(unit("champion", 300, -100, 0.9), now), [track(unit("minion", 300, -300, 0.8), now)], "E")
 assert not Yasuo().escape(mi, sc_bad, now, home)  # the only minion is toward the enemy
 

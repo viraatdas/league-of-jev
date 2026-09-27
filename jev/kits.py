@@ -810,12 +810,16 @@ class Yasuo(Kit):
             return False
         mx, my = sc.me_xy
         best, gain = None, 120.0
+        cx, cy = ch.unit.x, ch.unit.y
         for tr in sc.minions:
             if tr.e_marked_until > now or sc.dist(tr) > VC.e_range:
                 continue
             dx, dy = tr.unit.x - mx, tr.unit.y - my
             n = math.hypot(dx, dy) or 1.0
             along = (dx / n * home[0] + dy / n * home[1]) * VC.e_range  # units gained toward home
+            lx, ly = self._landing(sc, tr)
+            if math.hypot(lx - cx, ly - cy) < math.hypot(mx - cx, my - cy) + 100 * VC.px_per_unit:
+                continue   # the dash must end farther from her (g41 7:01-7:13: ten E's in Garen's reach, dead)
             if along > gain:
                 best, gain = tr, along
         if best is None:
