@@ -1134,7 +1134,9 @@ class LeeSin(Kit):
         boots=["Plated Steelcaps", "Mercury's Treads", "Ionian Boots of Lucidity"],
         note="Lee Sin is a jungler who ganks early and plays skirmishes",
     )
-    Q_RANGE, E_RADIUS, R_RANGE, W_RANGE = 1100.0, 430.0, 375.0, 700.0
+    Q_RANGE, E_RADIUS, R_RANGE, W_RANGE = 1200.0, 430.0, 375.0, 700.0   # (wiki; Q was 1100 and thrown only
+    # inside 990, a fifth of its reach left unused)
+    Q_SPEED, Q_CAST = 1800.0, 0.25
 
     def __init__(self, role: str = "") -> None:
         super().__init__(role)
@@ -1153,6 +1155,11 @@ class LeeSin(Kit):
         return bool(sc.ready.get("Q")) and 0.3 < now - self.q_at < 3.0
 
     def _q(self, ctx: Ctx, spec: Spec, tgt, pt) -> str:
+        if tgt is not None and getattr(getattr(tgt, "unit", None), "kind", "") == "champion":
+            aim = self.q_aim(ctx.mi, ctx.sc, tgt, ctx.now)
+            if aim is not None:
+                ctx.mi.aimed("Sonic Wave", tgt, ctx.now, aim[2] + 0.5)
+                pt = aim[:2]
         ctx.mi.cast(1, *pt)
         self.q_at = ctx.now
         return "Q sonic wave"
@@ -1192,10 +1199,42 @@ class LeeSin(Kit):
             return None
         if sc.enemy_champs >= 2 and not sc.ally_champs:
             return None  # alone against two: not a gank
-        if sc.ready.get("Q") and d <= self.Q_RANGE * 0.9 and self.q_clear(sc, *ground(sc.champ.lead(now, 0.25 + d / 1800)), d):
+        if sc.ready.get("Q") and d <= self.Q_RANGE and self.q_aim(mi, sc, sc.champ, now) is not None:
             self._last_window = now
             return "all_in"   # (a minion in the line would take the Sonic Wave: no gank opener through the wave)
         return None
+
+    def q_aim(self, mi: Micro, sc: Scene, tr, now: float) -> tuple[float, float, float] | None:
+        """Where to throw Sonic Wave at `tr`: where it will be when the wave gets there (cast plus flight,
+        solved twice since the flight depends on the lead), with my own walk added back to its screen
+        motion (Track.lead), half the lead when it just turned (bots juke), and None when that point is
+        out of reach or a minion stands in the line."""
+        me_v = mi.self_velocity(now, sc.me_xy, sc.move_speed)
+        v_now, v_before = tr.velocity(now, 0.2), tr.velocity(now - 0.25, 0.25)
+        turned = (math.hypot(*v_now) > 60 and math.hypot(*v_before) > 60
+                  and (v_now[0] * v_before[0] + v_now[1] * v_before[1]) < 0.3 * math.hypot(*v_now) * math.hypot(*v_before))
+        # (after a turn: the new direction, from the last 0.2 s, and half of it)
+        frac, window = (0.5, 0.2) if turned else (1.0, 0.35)
+        mx, my = sc.me_xy
+        t = self.Q_CAST + sc.dist(tr) / self.Q_SPEED
+        for _ in range(2):
+            x, y = ground(tr.lead(now, t, me_v, frac, window))
+            d = math.hypot(x - mx, y - my) / VC.px_per_unit
+            t = self.Q_CAST + d / self.Q_SPEED
+        if d > self.Q_RANGE - 50 or not self.q_clear(sc, x, y, d):
+            return None
+        return x, y, t
+
+    def throw_q(self, mi: Micro, sc: Scene, tr, now: float, what: str) -> bool:
+        aim = self.q_aim(mi, sc, tr, now)
+        if aim is None:
+            return False
+        x, y, t = aim
+        mi.aimed("Sonic Wave", tr, now, t + 0.5)
+        mi.cast(1, x, y)
+        self.q_at = now
+        mi._ordered(now, what)
+        return True
 
     @staticmethod
     def q_clear(sc: Scene, x: float, y: float, d_units: float) -> bool:
@@ -1214,13 +1253,8 @@ class LeeSin(Kit):
 
     def poke(self, mi: Micro, sc: Scene, now: float, aspd: float) -> bool:
         d = sc.champ_dist or 9e9
-        if mi._can_order(now) and sc.ready.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE * 0.9 and now - self.q_at > 3.0 \
-                and self.q_clear(sc, *ground(sc.champ.lead(now, 0.25 + d / 1800)), d):
-            x, y = ground(sc.champ.lead(now, 0.25 + d / 1800))
-            mi.aimed("Sonic Wave", sc.champ, now, 0.25 + d / 1800 + 0.5)
-            mi.cast(1, x, y)
-            self.q_at = now
-            mi._ordered(now, "poke: Q Sonic Wave")
+        if (mi._can_order(now) and sc.ready.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE and now - self.q_at > 3.0
+                and self.throw_q(mi, sc, sc.champ, now, "poke: Q Sonic Wave")):
             return True
         return self.poke_auto(mi, sc, now, aspd) or self.continuous(mi, sc, now, aspd, "farm", False)
 
@@ -1243,13 +1277,8 @@ class LeeSin(Kit):
             self.e_at = now
             mi._ordered(now, "execute: E Tempest")
             return True
-        if sc.ready.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE * 0.9 \
-                and self.q_clear(sc, *ground(tr.lead(now, 0.25 + d / 1800)), d):
-            x, y = ground(tr.lead(now, 0.25 + d / 1800))
-            mi.aimed("Sonic Wave", tr, now, 0.25 + d / 1800 + 0.5)
-            mi.cast(1, x, y)
-            self.q_at = now
-            mi._ordered(now, "execute: Q Sonic Wave")
+        if sc.ready.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE \
+                and self.throw_q(mi, sc, tr, now, "execute: Q Sonic Wave"):
             return True
         return super().execute(mi, sc, tr, now)
 
@@ -1282,14 +1311,10 @@ class LeeSin(Kit):
             mi.attack(ch, now, f"{mode}: flurry auto")
             self.autos_since = getattr(self, "autos_since", 0) + 1
             return True
-        if rdy.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE * 0.9 and now - self.q_at > 3.0 \
-                and self.q_clear(sc, *ground(ch.lead(now, 0.25 + d / 1800)), d):
-            x, y = ground(ch.lead(now, 0.25 + d / 1800))
-            mi.aimed("Sonic Wave", ch, now, 0.25 + d / 1800 + 0.5)
-            mi.cast(1, x, y)
-            self.q_at = self.spell_at = now
+        if (rdy.get("Q") and not self.q2_up(sc, now) and d <= self.Q_RANGE and now - self.q_at > 3.0
+                and self.throw_q(mi, sc, ch, now, f"{mode}: Q Sonic Wave at the champion")):
+            self.spell_at = now
             self.autos_since = 0
-            mi._ordered(now, f"{mode}: Q Sonic Wave at the champion")
             return True
         if self.e2_up(sc, now) and d <= 500 and mode == "all_in":
             mi.ctl.press(mi.kb.ability(3))

@@ -52,9 +52,15 @@ class Track:
         dt = pts[-1][0] - pts[0][0]
         return (pts[-1][1] - pts[0][1]) / dt, (pts[-1][2] - pts[0][2]) / dt
 
-    def lead(self, now: float, delay_s: float) -> tuple[float, float]:
-        """Where the unit will be after `delay_s` if it keeps walking the same way (capped)."""
-        vx, vy = self.velocity(now)
+    def lead(self, now: float, delay_s: float, me_v: tuple[float, float] = (0.0, 0.0), frac: float = 1.0,
+             window: float = 0.35) -> tuple[float, float]:
+        """Where the unit will be after `delay_s` if it keeps walking the same way (capped). The camera
+        follows me, so its screen motion is its own minus mine: `me_v` (my screen velocity, from my
+        last move order) adds mine back. Chasing a champion that walks away at my speed, the screen
+        said she stood still and Sonic Wave went where she had been (g30: 2 of 10 landed). `frac` takes
+        part of the lead (a champion that just turned)."""
+        vx, vy = self.velocity(now, window)
+        vx, vy = (vx + me_v[0]) * frac, (vy + me_v[1]) * frac
         cap = 420 * config.VISION.px_per_unit  # no faster than ~420 units/s
         n = math.hypot(vx, vy)
         if n > cap:
@@ -462,6 +468,7 @@ class Micro:
         # Jungle monsters get a right-click on the body: an attack-move does not start a fight with
         # a camp that is not already fighting us.
         pt = self._pt(tr.unit.x, tr.unit.y)
+        self._goal = (tr.unit.x, tr.unit.y, now)   # out of reach, the attack walks me to it
         self.attacked_ids[tr.id] = now
         if tr.unit.kind == "minion" and self.ad:
             # lands after the input and the wind-up (Yasuo is melee: no projectile)
@@ -479,6 +486,7 @@ class Micro:
             return
         self.ctl.move_to(*self._pt(x, y))
         self.last_move = now
+        self._goal = (x, y, now)
         # A move does not close the order gate (its own `every` spaces moves): holding, backing out and
         # sidestepping every 0.15-0.3 s kept the 0.11 s gate shut when minions became killable, and 22
         # last hits in six minutes were "not taken (order rate limit)" (g29).
@@ -489,6 +497,21 @@ class Micro:
     def cast(self, idx: int, x: float, y: float) -> None:
         """Ability `idx` (1-4) at a screen point, honouring the player's quick-cast setting."""
         self.ctl.cast(self.kb.ability(idx), *self._pt(x, y), self.kb.quick_cast(idx))
+        self._cast_t = time.time()
+
+    def self_velocity(self, now: float, me_xy: tuple[float, float], move_speed: float) -> tuple[float, float]:
+        """My screen velocity (px/s) while walking to my last move or attack point: toward it at my move
+        speed. Zero once in reach of it (200 units), after a cast (it stops me), or with no order in
+        the last 0.5 s. Skillshot leads add it back (Track.lead)."""
+        g = getattr(self, "_goal", None)
+        if g is None or now - g[2] > 0.5 or now - getattr(self, "_cast_t", 0.0) < 0.3:
+            return 0.0, 0.0
+        dx, dy = g[0] - me_xy[0], g[1] - me_xy[1]
+        d = math.hypot(dx, dy)
+        if d < 200 * VC.px_per_unit:
+            return 0.0, 0.0
+        sp = move_speed * VC.px_per_unit
+        return dx / d * sp, dy / d * sp
 
     def reacted(self, kind: str, since_ts: float) -> None:
         """Record screen-to-input latency: `since_ts` is when the frame behind this order was read."""

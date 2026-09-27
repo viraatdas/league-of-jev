@@ -130,3 +130,39 @@ lee.continuous(mi, sc, time.time(), 0.7, "farm", False)
 print("camp target:", mi.last_action)
 assert "monster 80%" in mi.last_action
 print("JUNGLE OK (camp target)")
+
+# A gank that finds its target goes in, whatever the fight head's timid read (32 ganks over g30, g32
+# and g36 made no kill). Not when Jev reads me about to die.
+from jev.fight import FightRead
+from jev.minimap import dist as _dist
+for danger, want in ((0.2, "all_in"), (0.9, None)):
+    p = Player(dry_run=True, champion="leesin", role="JUNGLE")
+    p.kit = LeeSin("JUNGLE")
+    p.jungle_state = JungleState("ORDER")
+    p.micro = Micro(Controller(dry_run=True, log=lambda m: None), Screen(), keybinds.load(), "ORDER")
+    p.micro.hp_pct = 85.0
+    p.intent = "objective"
+    p._gank = {"lane": "top", "pt": (3000.0, 12000.0), "seen": time.time(), "until": time.time() + 30}
+    her = trk(900, 0.9, "champion", 5)
+    p.champ_tracker.tracks = {5: her}
+    sc = Scene(me_xy=ME)
+    sc.champ, sc.champ_dist, sc.enemy_champs = her, sc.dist(her), 1
+    sc.ready = {"Q": True}
+    fr = FightRead(seq=1, ts=time.time(), latency_ms=150.0, plan="back_off", plan_probs={"back_off": 0.6}, win_all_in=0.2,
+                   trade_worth=0.4, in_danger=danger, gank_coming=0.4)
+    p.fights = NS(read=fr, log=NS(record=lambda *a, **k: None))
+    p._fight_triggers(sc, p.micro, time.time())
+    print(f"gank, target at 900u, Jev back_off with danger {danger}:", p.micro.mode, "|", list(p.log_lines)[-1:])
+    assert (p.micro.mode == "all_in") == (want == "all_in")
+# Far from the target: walk to 500 units past her toward their tower (where she will run), not to her.
+p = Player(dry_run=True, champion="leesin", role="JUNGLE")
+p.side = "ORDER"
+g = {"lane": "top", "pt": Lane("top", "ORDER").point(0.42)}
+mm = MinimapState(self_pos=(4000.0, 7000.0), ts=time.time())
+ap = p._gank_approach(g, mm)
+ln = Lane("top", "ORDER")
+print("approach:", tuple(int(v) for v in ap), "her at", tuple(int(v) for v in g["pt"]), "progress", round(ln.project(ap)[0], 3), "vs", round(ln.project(g["pt"])[0], 3))
+assert ln.project(ap)[0] > ln.project(g["pt"])[0] + ln.frac(400)
+mm.self_pos = (g["pt"][0] + 800.0, g["pt"][1])
+assert p._gank_approach(g, mm) == g["pt"]
+print("JUNGLE OK (gank commit and approach)")

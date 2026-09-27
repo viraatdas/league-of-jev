@@ -424,3 +424,49 @@ for her_dx, her_hp, my_hp, want_trade in ((600, 0.7, 90, False), (600, 0.15, 90,
     if not want_trade:
         assert window is None and "under her tower" in mi.last_action
 print("FIGHT OK (their tower)")
+
+# Sonic Wave leads where she will be. The camera follows Lee, so a champion walking away at Lee's own
+# speed stands still on screen: the lead must add Lee's walk back (g30 landed 2 of 10). She stands
+# still and Lee stands: aim at her. She just turned: half the lead.
+import math as _m
+def moving_track(dx_units, vx_units_s, now, turn=False):
+    u = unit("champion", dx_units, 0, 0.8)
+    t = Track(id=77, unit=u, seen=now)
+    for k in range(8):
+        dt = 0.05 * (7 - k)
+        vx = -vx_units_s if (turn and dt > 0.2) else vx_units_s
+        t.path.append((now - dt, u.x - vx * dt * VC.px_per_unit, u.y))
+        t.hist.append((now - dt, 0.8))
+    return t
+lee = LeeSin("JUNGLE")
+mi, log = micro()
+sc = scene(None, [], "Q")
+# 1. both standing: at her
+her = moving_track(800, 0.0, now)
+sc.champ, sc.champ_dist = her, sc.dist(her)
+x, y, tfl = lee.q_aim(mi, sc, her, now)
+print(f"standing: aim {(x - her.unit.x) / VC.px_per_unit:+.0f}u from her, flight {tfl:.2f}s")
+assert abs(x - her.unit.x) / VC.px_per_unit < 5
+# 2. Lee chasing her as she walks away at 345 u/s: on screen she does not move; Lee's move order is toward her
+her = moving_track(800, 0.0, now)
+sc.champ, sc.champ_dist = her, sc.dist(her)
+sc.move_speed = 345.0
+mi._goal = (her.unit.x, her.unit.y, now - 0.1)
+x, y, tfl = lee.q_aim(mi, sc, her, now)
+ahead = (x - her.unit.x) / VC.px_per_unit
+print(f"chasing: aim {ahead:+.0f}u past her (she walks {345 * tfl:.0f}u in the flight)")
+assert abs(ahead - 345 * tfl) < 40
+# 3. she walks away but just turned back toward Lee: half the lead
+mi._goal = None
+her = moving_track(800, 300.0, now, turn=True)
+sc.champ, sc.champ_dist = her, sc.dist(her)
+x, y, tfl = lee.q_aim(mi, sc, her, now)
+half = (x - her.unit.x) / VC.px_per_unit
+print(f"juked: aim {half:+.0f}u (full lead would be {300 * tfl:+.0f}u)")
+assert abs(half - 0.5 * 300 * tfl) < 40
+# 4. out of reach once led: no throw
+mi._goal = None
+far = moving_track(1150, 300.0, now)
+sc.champ, sc.champ_dist = far, sc.dist(far)
+assert lee.q_aim(mi, sc, far, now) is None
+print("FIGHT OK (Sonic Wave lead)")

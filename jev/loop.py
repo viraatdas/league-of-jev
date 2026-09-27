@@ -841,6 +841,30 @@ class Player:
             mi.reacted("lasthit", view.ts)
         return ok
 
+    def _gank_commit(self, sc, mi, now: float, fr) -> bool:
+        """A jungler on a gank who sees his target within Sonic Wave reach goes in: all in on it, Q from
+        range first. The fight head read ganks as back_off or poke (win 0.2 against a full-HP laner it
+        cannot see our laner next to), and 32 ganks over g30, g32 and g36 made no kill: Lee walked to
+        the lane, looked, and left. Not when Jev reads me about to die, when I am under 40%, into more
+        of them than of us, or under their tower (unless she is nearly dead)."""
+        if self.jungle_state is None or getattr(self, "_gank", None) is None or self.intent != "objective":
+            return False
+        ch = sc.champ
+        if ch is None or (sc.champ_dist or 9e9) > getattr(self.kit, "Q_RANGE", 1200.0) + 100:
+            return False
+        if mi.hp_pct < 40 or sc.enemy_champs > len(sc.ally_champs) + 1:
+            return False
+        if fr is not None and fr.age(now) < 0.9 and fr.in_danger >= 0.75:
+            return False
+        if self.kit.under_their_tower(sc, ch.unit.x, ch.unit.y) and ch.unit.hp >= 0.3:
+            return False
+        if mi.mode != "all_in":
+            self._commit(ch, mi, now, f"gank {self._gank['lane']}: on {ch.unit.hp * 100:.0f}% at {sc.champ_dist or 0:.0f}u "
+                                      f"({len(sc.ally_champs)} of ours, {sc.enemy_champs} of theirs in view)")
+        else:
+            self._focus_id, self._focus_until = ch.id, now + 4.0
+        return True
+
     def _fight_triggers(self, sc, mi, now: float) -> None:
         """Code-level entries and exits around Jev's fight modes: a kill window (enemy champion
         low and close, me healthy) goes all in at once; the strategy head's all_in intent does
@@ -849,6 +873,8 @@ class Player:
             return
         self._focus_target(sc, mi, now)
         fr = self.fights.read if self.fights is not None else None
+        if self._gank_commit(sc, mi, now, fr):
+            return
         if fr is not None and fr.age(now) < 0.9 and (sc.champ is not None or fr.plan in ("back_off", "escape")):
             self._apply_fight_read(fr, sc, mi, now)
             return
@@ -1939,7 +1965,7 @@ class Player:
                 # levels under their jungler (g23). Longer back to the camps after a miss.
                 self._gank, self._gank_next = None, now + (75.0 if why in ("lost them", "time") else 45.0)
                 return None
-            return ("objective", g["pt"], f"gank {g['lane']}")
+            return ("objective", self._gank_approach(g, mm), f"gank {g['lane']}")
         if gt < 195 or int(me.get("level") or 1) < 3 or hp < 60 or now < getattr(self, "_gank_next", 0.0):
             return None
         lanes = self._gank_lanes = getattr(self, "_gank_lanes", None) or {n: Lane(n, self.side) for n in ("top", "mid", "bot")}
@@ -1968,7 +1994,17 @@ class Player:
         self._gank = {"lane": name, "pt": e, "seen": now, "until": now + 30.0}
         self.log_lines.append(f"gank {name}: their laner at {prog * 100:.0f}% of the lane, {friends} of us there, "
                               f"{dist(mm.pos, e):.0f} away")
-        return ("objective", e, f"gank {name}")
+        return ("objective", self._gank_approach(self._gank, mm), f"gank {name}")
+
+    def _gank_approach(self, g: dict, mm):
+        """Walk to where she will run, not to where she is: 500 units past her toward their tower
+        while I am still far (half of the ganks ended "lost them": she saw Lee coming up the lane
+        and walked home ahead of him). Close, straight at her."""
+        if mm.pos is None or dist(mm.pos, g["pt"]) < 1600:
+            return g["pt"]
+        ln = Lane(g["lane"], self.side)
+        prog, _ = ln.project(g["pt"])
+        return ln.point(min(ln.center, prog + ln.frac(500)))
 
     def _do_objective(self, data: dict, ap: dict, stats: dict, now: float) -> None:
         """Walk to the objective answering fights on the way; there, fight and hit what is there
