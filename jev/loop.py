@@ -728,6 +728,9 @@ class Player:
         champs = self.champ_tracker.update(view.enemies("champion"), now)
         self._name_tracks(champs, now)
         self._note_blinks(champs, now)
+        # A champion seen in 3 reads, like a minion: g48 6:03 initiated on a one-frame "Shen at 8%" with no
+        # champion on screen and hunted it for 2 s toward their tower.
+        champs = [t for t in champs if len(t.hist) >= 3]
         if not minions and not champs and not (self.kit.support and view.allies("champion")):
             self.scene = None
             return False
