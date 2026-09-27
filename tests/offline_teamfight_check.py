@@ -420,6 +420,23 @@ assert not p._gank_converging(st, t0)
 st.enemy_champions = [(5900.0, 5000.0), (5000.0, 6800.0)]
 assert p._gank_converging(st, t0 + 1.0)
 print("GANK RETREAT OK (converging, not just near)")
+# ... and held while they hide in the fog next to me (g46 3:40: back to farming the second they left the
+# minimap, dead to their dive 5 s later); seen walking away, or 8 s on, it ends.
+p = setup(now)
+st = _MS(self_pos=me_pt, ts=t0, enemy_champions=[(5900.0, 5000.0), (5000.0, 6400.0)])
+p._gank_guard(st, t0, 60.0)
+assert p.guards.retreat_until >= t0 + 2.9
+st.enemy_champions = []
+p._gank_guard(st, t0 + 4.0, 60.0)
+print("gank, then they vanish:", round(p.guards.retreat_until - t0, 1), "s", list(p.log_lines)[-1])
+assert p.guards.retreat_until >= t0 + 4.9
+p.guards.retreat_until = 0.0
+p._gank_guard(st, t0 + 9.0, 60.0)
+assert p.guards.retreat_until == 0.0
+st.enemy_champions = [(8300.0, 5000.0), (5000.0, 8400.0)]   # both seen again, 3,300 off and not closing
+p._gank_guard(st, t0 + 5.0, 60.0)
+assert p.guards.retreat_until == 0.0
+print("GANK RETREAT OK (held through the fog)")
 
 # Initiation is not into her team: two of theirs by her on the minimap and me alone -> no go, and a hold
 # ends; with two of ours there -> go.

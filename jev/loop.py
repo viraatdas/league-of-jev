@@ -2753,6 +2753,26 @@ class Player:
         closing = len(ds) >= 2 and before is not None and before[1] - ds[1] >= 200
         return foes if len(foes) >= 2 and not friends and (ds[1] <= 1600 or closing) else []
 
+    def _gank_guard(self, mmg, now: float, hp_pct: float) -> None:
+        """The minimap gank retreat: two of them converging on me with none of ours (3 s), held while they
+        stay hidden in the fog next to me after it (8 s)."""
+        foes = self._gank_converging(mmg, now)
+        if foes:
+            # Two of them converging on the minimap and none of us: the gank that killed Yasuo in
+            # g08 and g11 showed there seconds before it arrived.
+            self.guards.retreat_until = now + 3.0
+            self._gank_seen, self._gank_n = now, len(foes)
+            self.log_lines.append(f"gank: {len(foes)} enemy champions within 2200 on the minimap, no ally: retreat")
+        elif (now - getattr(self, "_gank_seen", -99.0) < 8.0 and hp_pct < 90
+              and sum(1 for e in mmg.enemy_champions if dist(mmg.pos, e) < 5000) < getattr(self, "_gank_n", 2)):
+            # They converged on me a moment ago and dropped into the fog: they are still there. g46's
+            # Yasuo went back to farming at his tower the second Urgot and Briar left the minimap
+            # (3:40) and died to their dive five seconds later.
+            self.guards.retreat_until = now + 1.0
+            if now - getattr(self, "_gank_fog_note", 0.0) > 8.0:
+                self._gank_fog_note = now
+                self.log_lines.append("gank: they dropped into the fog next to me: still retreating")
+
     def _tick(self, data: dict, now: float) -> Perception:
         m = self.mech
         assert m is not None
@@ -2768,12 +2788,7 @@ class Player:
         mmg = self.mm_state
         if (mmg is not None and mmg.pos is not None and now - mmg.ts < 1.0 and now >= self.guards.retreat_until
                 and self.jungle_state is None and self.micro is not None and self.micro.mode not in FIGHT_MODES):
-            foes = self._gank_converging(mmg, now)
-            if foes:
-                # Two of them converging on the minimap and none of us: the gank that killed Yasuo in
-                # g08 and g11 showed there seconds before it arrived.
-                self.guards.retreat_until = now + 3.0
-                self.log_lines.append(f"gank: {len(foes)} enemy champions within 2200 on the minimap, no ally: retreat")
+            self._gank_guard(mmg, now, hp_pct)
         bleed = self._trail_change(3.0, now)
         fr = self.fights.read if self.fights is not None else None
         winning = fr is not None and now - fr.ts < 1.0 and fr.plan == "all_in" and fr.win_all_in >= 0.6
