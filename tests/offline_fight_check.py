@@ -523,3 +523,19 @@ assert y.escape(mi, sc, now, (-1.0, 0.0))
 print("escape with Q3 up:", mi.last_action)
 assert "Q3 tornado" in mi.last_action
 print("FIGHT OK (tornado to stop her)")
+
+# The tornado leads a champion I chase: on screen she stands still (we both walk at 345), my walk is
+# added back and the aim goes ahead of her by her walk during the ~1 s flight.
+from jev.kits import tornado_aim, tornado_lead
+her = track(unit("champion", 800, 0, 0.6), now)
+sc = scene(her, [], "Q")
+sc.champs, sc.move_speed = [her], 345.0
+mi, log = micro()
+mi._goal = (her.unit.x, her.unit.y, now - 0.1)
+x0, _ = tornado_aim(sc, her, now, 0.8)
+x1, _ = tornado_aim(sc, her, now, 0.8, mi.self_velocity(now, sc.me_xy, sc.move_speed))
+lead_u = (x1 - her.unit.x) / VC.px_per_unit
+print(f"tornado while chasing: {(x0 - her.unit.x) / VC.px_per_unit:+.0f}u without my walk, {lead_u:+.0f}u with it "
+      f"(she walks {345 * tornado_lead(800, 0.8):.0f}u in the flight)")
+assert abs(lead_u - 345 * tornado_lead(800, 0.8)) < 30
+print("FIGHT OK (tornado lead while chasing)")

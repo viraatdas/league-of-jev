@@ -299,18 +299,21 @@ def ground(pt: tuple[float, float]) -> tuple[float, float]:
     return pt[0], pt[1] + VC.champ_ground_dy
 
 
-def tornado_aim(sc: Scene, target, now: float, aspd: float | None = None) -> tuple[float, float]:
+def tornado_aim(sc: Scene, target, now: float, aspd: float | None = None,
+                me_v: tuple[float, float] = (0.0, 0.0)) -> tuple[float, float]:
     """Where to throw the tornado: the line (1150 long, ~155 units either side counting hitboxes) that
-    catches the most enemy champions at their led positions; the target's own line on a tie."""
+    catches the most enemy champions at their led positions; the target's own line on a tie. `me_v`:
+    my own screen velocity (Micro.self_velocity), added back to their screen motion, as for Lee's
+    Sonic Wave: chasing, she stood still on screen and the ~1 s tornado went where she had been."""
     mx, my = sc.me_xy
     ppu = VC.px_per_unit
     led = []
     for t in (sc.champs or [target]):
         d = sc.dist(t)
         if d <= VC.q3_range * 0.95:
-            led.append((t, t.lead(now, tornado_lead(d, aspd))))
+            led.append((t, t.lead(now, tornado_lead(d, aspd), me_v)))
     if not led:
-        return ground(target.lead(now, tornado_lead(sc.dist(target), aspd)))
+        return ground(target.lead(now, tornado_lead(sc.dist(target), aspd), me_v))
     best, best_n = None, -1
     for t, (ax, ay) in led:
         dx, dy = ax - mx, ay - my
@@ -605,7 +608,7 @@ class Yasuo(Kit):
         if k in ("q_champ", "q3_champ"):
             q3 = k == "q3_champ"
             d = sc.champ_dist or 0.0
-            x, y = tornado_aim(sc, tr, now, aspd) if q3 else ground(tr.lead(now, q_cast_time(aspd) + 0.05))
+            x, y = tornado_aim(sc, tr, now, aspd, mi.self_velocity(now, sc.me_xy, sc.move_speed)) if q3 else ground(tr.lead(now, q_cast_time(aspd) + 0.05))
             mi.aimed("tornado" if q3 else "Q", tr, now, (tornado_lead(d, aspd) if q3 else q_cast_time(aspd)) + 0.5)
             mi.cast(1, x, y)
             self.q.cast(True, now)
@@ -683,7 +686,7 @@ class Yasuo(Kit):
         if mi._can_order(now) and rdy.get("Q"):
             q3 = self.q.q3(now)
             if (q3 and d <= VC.q3_range * 0.9) or (not q3 and d <= VC.q_range + 20):
-                x, y = tornado_aim(sc, ch, now, aspd) if q3 else ground(ch.lead(now, q_cast_time(aspd) + 0.05))
+                x, y = tornado_aim(sc, ch, now, aspd, mi.self_velocity(now, sc.me_xy, sc.move_speed)) if q3 else ground(ch.lead(now, q_cast_time(aspd) + 0.05))
                 mi.cast(1, x, y)
                 self.q.cast(True, now)
                 if q3:
@@ -715,7 +718,7 @@ class Yasuo(Kit):
         if mode == "all_in" and self._beyblade_in(mi, sc, now, q3):
             return True
         if rdy.get("Q") and q3 and d <= VC.q3_range * 0.92 and d > VC.e_range:
-            x, y = tornado_aim(sc, ch, now, aspd)
+            x, y = tornado_aim(sc, ch, now, aspd, mi.self_velocity(now, sc.me_xy, sc.move_speed))
             mi.aimed("tornado", ch, now, tornado_lead(d, aspd) + 0.5)
             mi.cast(1, x, y)
             self.q.cast(True, now)
@@ -749,7 +752,7 @@ class Yasuo(Kit):
                 mi._ordered(now, f"{mode}: E onto the champion")
             return True
         if rdy.get("Q") and d <= VC.q_range + 30:
-            x, y = tornado_aim(sc, ch, now, aspd) if q3 else ground(ch.lead(now, q_cast_time(aspd) + 0.05))
+            x, y = tornado_aim(sc, ch, now, aspd, mi.self_velocity(now, sc.me_xy, sc.move_speed)) if q3 else ground(ch.lead(now, q_cast_time(aspd) + 0.05))
             mi.aimed("tornado" if q3 else "Q", ch, now, (tornado_lead(d, aspd) if q3 else q_cast_time(aspd)) + 0.5)
             mi.cast(1, x, y)
             self.q.cast(True, now)
@@ -786,7 +789,7 @@ class Yasuo(Kit):
         ch, d = sc.champ, sc.champ_dist or 9e9
         if (ch is not None and sc.ready.get("Q") and self.q.q3(now) and d <= VC.q3_range * 0.85
                 and not mi.in_windup(now, getattr(mi, "aspd", 0.7)) and mi._can_order(now)):
-            x, y = tornado_aim(sc, ch, now, getattr(mi, "aspd", 0.7))
+            x, y = tornado_aim(sc, ch, now, getattr(mi, "aspd", 0.7), mi.self_velocity(now, sc.me_xy, sc.move_speed))
             mi.aimed("tornado", ch, now, tornado_lead(d, getattr(mi, "aspd", 0.7)) + 0.5)
             mi.cast(1, x, y)
             self.q.cast(True, now)
