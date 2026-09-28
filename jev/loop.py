@@ -2133,15 +2133,15 @@ class Player:
             return None
         hp = float(me.get("hp_percent") or 0)
         gt = float((data.get("gameData") or {}).get("gameTime", 0.0))
-        if hp < 45:
-            return None
+        if hp < 60:
+            return None   # (g51 25:20: "baron with allies" at 50%, dead to Lissandra and Mordekaiser on the way)
         allies = list(mm.ally_champions)
         if self.jungle_state is not None:
             g = self._gank_plan(mm, allies, gt, me, now)
             if g is not None:
                 return g
         sit = getattr(self, "situation", None)
-        if sit is not None and sit.power_play and hp >= 50 and gt >= 300:
+        if sit is not None and sit.power_play and hp >= 60 and gt >= 300:
             # Two or more of them dead: the time to take something. Bots push after fights; Yasuo walked
             # back to farm (g18-g26).
             pp = None
