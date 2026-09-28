@@ -341,6 +341,7 @@ class Player:
                     excl = True
                     self.log_lines.append("capture: the overlay is now left out of the stream")
                 seq = f.seq
+                self._frame_wall = time.time()
                 if self.paused:
                     continue
                 try:
@@ -2715,6 +2716,14 @@ class Player:
                     if data is None:
                         time.sleep(0.2)
                         continue
+                    last_frame = getattr(self, "_frame_wall", None)
+                    if not self.dry_run and last_frame is not None and t0 - last_frame > 5.0 and not self.paused:
+                        # The capture stopped delivering frames (g50 02:11: none from 14:52 to the end, 31:23;
+                        # Yasuo played blind and died five times): exit, the session starts a fresh harness.
+                        self.log_lines.append(f"capture: no frame for {t0 - last_frame:.0f} s: exiting for a restart")
+                        self._logline(perception, t0)
+                        import os as _os
+                        _os._exit(3)
                     if not self.dry_run and not self.ctl.keys_ok():
                         if self.keep_front and t0 - self._last_activate > 3.0:
                             self._last_activate = t0
