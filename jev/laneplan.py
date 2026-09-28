@@ -26,7 +26,7 @@ VC, FAST = config.VISION, config.FAST
 
 GOLD = {"melee": 21.0, "caster": 14.0, "": 17.0}
 HP_GOLD = 1.2            # gold-equivalent of 1% of my HP in lane (more when low, below)
-CHAMP_HP_GOLD = 1.6      # gold-equivalent of 1% of her HP at aggression 1
+CHAMP_HP_GOLD = 2.0      # gold-equivalent of 1% of her HP at aggression 1 (was 1.6: 2.6 kills a game in g42-g51, few chances made)
 Q_STACK = 4.0            # a Q stack toward the tornado
 # Top laners who win the level 1-3 all-in against Yasuo: no hits on them that early (g47 1:11: an auto on
 # Tryndamere at level 1 drew his Q/E/W and crits, 100% -> 36% and Flash in 6 s, still level 1 at 2:17).
